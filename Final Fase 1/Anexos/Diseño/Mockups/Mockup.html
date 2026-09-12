@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conciliación — Hotel Plaza San Francisco</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy-deep:#201F3A;
+    --navy-panel:#36354E;
+    --navy-panel-2:#3F3E59;
+    --red:#EB1120;
+    --red-dim:#5A1620;
+    --ink:#F3F2F8;
+    --ink-muted:#A6A4C0;
+    --line:#46455F;
+    --green:#3FBF87;
+    --amber:#E3A63E;
+    --radius-s:6px;
+    --radius-m:10px;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-font-smoothing:antialiased;}
+  body{
+    margin:0;
+    background:var(--navy-deep);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    font-size:15px;
+    line-height:1.5;
+  }
+  h1,h2,h3,.brand-word{
+    font-family:'Space Grotesk',sans-serif;
+    margin:0;
+  }
+  a{color:inherit;}
+  button{font-family:inherit;}
+  :focus-visible{
+    outline:2px solid var(--red);
+    outline-offset:2px;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important;}
+  }
+
+  /* ---------- layout ---------- */
+  .shell{
+    display:grid;
+    grid-template-columns:232px 1fr;
+    min-height:100vh;
+  }
+
+  /* ---------- sidebar ---------- */
+  .sidebar{
+    background:#1A1930;
+    border-right:1px solid var(--line);
+    padding:28px 18px;
+    display:flex;
+    flex-direction:column;
+    gap:34px;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:0 6px;
+  }
+  .brand-mark{
+    width:30px;height:30px;
+    border-radius:8px;
+    background:var(--red);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:15px;
+    color:var(--ink);
+    flex-shrink:0;
+  }
+  .brand-text{line-height:1.15;}
+  .brand-word{font-size:15px;font-weight:600;}
+  .brand-sub{font-size:11.5px;color:var(--ink-muted);}
+
+  .nav{display:flex;flex-direction:column;gap:2px;}
+  .nav-label{
+    font-size:11.5px;
+    color:var(--ink-muted);
+    padding:0 12px 6px;
+    letter-spacing:.02em;
+  }
+  .nav a{
+    display:flex;
+    align-items:center;
+    gap:11px;
+    padding:9px 12px;
+    border-radius:var(--radius-s);
+    text-decoration:none;
+    color:var(--ink-muted);
+    font-size:14px;
+    font-weight:500;
+    cursor:pointer;
+    border:none;
+    background:none;
+    width:100%;
+    text-align:left;
+  }
+  .nav a svg{flex-shrink:0;opacity:.85;}
+  .nav a:hover{background:#252445; color:var(--ink);}
+  .nav a.active{
+    background:var(--navy-panel);
+    color:var(--ink);
+    box-shadow:inset 3px 0 0 var(--red);
+  }
+
+  .sidebar-foot{
+    margin-top:auto;
+    border-top:1px solid var(--line);
+    padding-top:16px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    cursor:pointer;
+    background:none;
+    border:none;
+    color:inherit;
+    text-align:left;
+  }
+  .avatar{
+    width:32px;height:32px;border-radius:50%;
+    background:var(--navy-panel-2);
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:600;
+    color:var(--ink);
+    flex-shrink:0;
+  }
+  .who{line-height:1.2;}
+  .who-name{font-size:13.5px;font-weight:500;}
+  .who-role{font-size:11.5px;color:var(--ink-muted);}
+
+  /* ---------- main ---------- */
+  .main{padding:34px 40px 60px;}
+  @media (max-width:640px){.main{padding:24px 18px 48px;}}
+
+  .topbar-mobile{
+    display:none;
+    align-items:center;
+    justify-content:space-between;
+    padding:16px 18px;
+    border-bottom:1px solid var(--line);
+    background:#1A1930;
+    position:sticky;
+    top:0;
+    z-index:20;
+  }
+  .topbar-mobile button{
+    background:none;border:none;color:var(--ink);cursor:pointer;
+    padding:4px;
+  }
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .page-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:16px;
+    margin-bottom:28px;
+  }
+  .page-head h1{font-size:23px;font-weight:600;letter-spacing:-.01em;}
+  .page-head p{margin:6px 0 0;color:var(--ink-muted);font-size:14px;}
+
+  .btn{
+    border:none;
+    border-radius:var(--radius-s);
+    padding:10px 18px;
+    font-size:13.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .btn-primary{background:var(--red); color:#fff;}
+  .btn-primary:hover{background:#d80f1d;}
+  .btn-ghost{
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--ink);
+  }
+  .btn-ghost:hover{border-color:var(--ink-muted);}
+  .head-actions{display:flex;gap:10px;}
+
+  /* stat cards */
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:16px;
+    margin-bottom:30px;
+  }
+  @media (max-width:760px){.stats{grid-template-columns:1fr;}}
+  .stat{
+    background:var(--navy-panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius-m);
+    padding:20px 22px;
+  }
+  .stat-label{font-size:12.5px;color:var(--ink-muted);}
+  .stat-value{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:30px;
+    font-weight:600;
+    margin-top:8px;
+    letter-spacing:-.01em;
+  }
+  .stat-value.accent{color:var(--red);}
+  .stat-sub{font-size:12.5px;color:var(--ink-muted);margin-top:6px;}
+  .stat-sub b{color:var(--green);font-weight:600;}
+
+  /* panel + table */
+  .panel{
+    background:var(--navy-panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius-m);
+    overflow:hidden;
+  }
+  .panel + .panel{margin-top:20px;}
+  .panel-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:18px 22px;
+    border-bottom:1px solid var(--line);
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .panel-head h2{font-size:16px;font-weight:600;}
+  .panel-body{padding:22px;}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;}
+  .chip{
+    font-size:12.5px;
+    padding:6px 12px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    color:var(--ink-muted);
+    cursor:pointer;
+    background:transparent;
+  }
+  .chip.active{
+    background:var(--red-dim);
+    border-color:var(--red);
+    color:#fff;
+  }
+
+  table{width:100%;border-collapse:collapse;}
+  thead th{
+    text-align:left;
+    font-size:11.5px;
+    color:var(--ink-muted);
+    font-weight:500;
+    padding:12px 22px;
+    letter-spacing:.02em;
+    border-bottom:1px solid var(--line);
+  }
+  tbody td{
+    padding:15px 22px;
+    font-size:13.5px;
+    border-bottom:1px solid var(--line);
+    vertical-align:middle;
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:#3B3A56;}
+  .mono{font-variant-numeric:tabular-nums;color:var(--ink-muted);font-size:13px;}
+  .amount{font-variant-numeric:tabular-nums;font-weight:600;}
+
+  .badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:4px 10px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:500;
+  }
+  .badge .dot{width:6px;height:6px;border-radius:50%;}
+  .badge.pendiente{background:rgba(227,166,62,.14);color:var(--amber);}
+  .badge.pendiente .dot{background:var(--amber);}
+  .badge.resuelta{background:rgba(63,191,135,.14);color:var(--green);}
+  .badge.resuelta .dot{background:var(--green);}
+  .badge.descartada{background:rgba(166,164,192,.14);color:var(--ink-muted);}
+  .badge.descartada .dot{background:var(--ink-muted);}
+  .badge.completo{background:rgba(63,191,135,.14);color:var(--green);}
+  .badge.completo .dot{background:var(--green);}
+  .badge.enproceso{background:rgba(227,166,62,.14);color:var(--amber);}
+  .badge.enproceso .dot{background:var(--amber);}
+
+  .row-action{
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--ink);
+    border-radius:var(--radius-s);
+    padding:6px 12px;
+    font-size:12.5px;
+    cursor:pointer;
+  }
+  .row-action:hover{border-color:var(--ink-muted);}
+
+  .panel-foot{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:16px 22px;
+    font-size:12.5px;
+    color:var(--ink-muted);
+  }
+
+  /* ---------- Inicio: quick actions ---------- */
+  .quick-actions{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    margin-bottom:20px;
+  }
+  @media (max-width:760px){.quick-actions{grid-template-columns:1fr;}}
+  .quick-card{
+    background:var(--navy-panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius-m);
+    padding:22px;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    cursor:pointer;
+    text-align:left;
+    color:inherit;
+  }
+  .quick-card:hover{border-color:var(--ink-muted);}
+  .quick-icon{
+    width:38px;height:38px;
+    border-radius:9px;
+    background:var(--red-dim);
+    color:var(--red);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .quick-card h3{font-size:15px;font-weight:600;}
+  .quick-card p{margin:0;font-size:13px;color:var(--ink-muted);}
+
+  .activity-list{display:flex;flex-direction:column;}
+  .activity-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:14px 22px;
+    border-bottom:1px solid var(--line);
+    font-size:13.5px;
+  }
+  .activity-item:last-child{border-bottom:none;}
+  .activity-item span.when{color:var(--ink-muted);font-size:12.5px;}
+
+  /* ---------- Cargar insumos ---------- */
+  .upload-row{
+    display:flex;
+    align-items:center;
+    gap:16px;
+    padding:16px 22px;
+    border-bottom:1px solid var(--line);
+  }
+  .upload-row:last-child{border-bottom:none;}
+  .upload-icon{
+    width:36px;height:36px;border-radius:8px;
+    background:var(--navy-panel-2);
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+    color:var(--ink-muted);
+  }
+  .upload-info{flex:1;min-width:0;}
+  .upload-name{font-size:14px;font-weight:500;}
+  .upload-sub{font-size:12.5px;color:var(--ink-muted);margin-top:2px;}
+  .upload-actions{display:flex;align-items:center;gap:12px;flex-shrink:0;}
+
+  .note{
+    font-size:12.5px;
+    color:var(--ink-muted);
+    padding:14px 22px;
+    border-top:1px solid var(--line);
+  }
+
+  /* ---------- Mi cuenta ---------- */
+  .account-card{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    padding:26px 22px;
+    border-bottom:1px solid var(--line);
+  }
+  .avatar-lg{
+    width:64px;height:64px;border-radius:50%;
+    background:var(--navy-panel-2);
+    display:flex;align-items:center;justify-content:center;
+    font-size:22px;font-weight:600;
+    flex-shrink:0;
+  }
+  .field-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+    padding:22px;
+  }
+  @media (max-width:640px){.field-grid{grid-template-columns:1fr;}}
+  .field label{
+    display:block;
+    font-size:12px;
+    color:var(--ink-muted);
+    margin-bottom:6px;
+  }
+  .field .value{
+    font-size:14px;
+    padding:10px 12px;
+    background:var(--navy-panel-2);
+    border-radius:var(--radius-s);
+    border:1px solid var(--line);
+  }
+  .field-actions{
+    padding:0 22px 22px;
+    display:flex;
+    gap:10px;
+  }
+
+  /* ---------- mobile overrides (kept last so they win the cascade) ---------- */
+  @media (max-width: 860px){
+    .shell{grid-template-columns:1fr;}
+    .sidebar{
+      position:fixed;
+      inset:0 30% 0 0;
+      z-index:30;
+      transform:translateX(-100%);
+      transition:transform .2s ease;
+      box-shadow:20px 0 40px rgba(0,0,0,.35);
+    }
+    .sidebar.open{transform:translateX(0);}
+    .sidebar-scrim{
+      display:none;
+      position:fixed;inset:0;
+      background:rgba(0,0,0,.4);
+      z-index:25;
+    }
+    .sidebar-scrim.open{display:block;}
+    .topbar-mobile{display:flex;}
+  }
+</style>
+</head>
+<body>
+
+<div class="sidebar-scrim" id="scrim"></div>
+
+<div class="shell">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">PS</div>
+      <div class="brand-text">
+        <div class="brand-word">Plaza San Francisco</div>
+        <div class="brand-sub">Conciliación contable</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <span class="nav-label">General</span>
+      <a data-view="inicio" class="active">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9h12v-9"/></svg>
+        Inicio
+      </a>
+      <a data-view="cargar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v11"/><path d="M8 8l4-4 4 4"/><path d="M5 15v4h14v-4"/></svg>
+        Cargar insumos
+      </a>
+      <a data-view="reporte">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14v16l-4-2-3 2-3-2-4 2Z"/><path d="M8 9h8M8 13h8"/></svg>
+        Reporte de excepciones
+      </a>
+      <a data-view="historial">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
+        Historial
+      </a>
+
+      <span class="nav-label" style="margin-top:14px;">Cuenta</span>
+      <a data-view="cuenta">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c1.5-4 4.2-6 7-6s5.5 2 7 6"/></svg>
+        Mi cuenta
+      </a>
+    </nav>
+
+    <button class="sidebar-foot" data-view="cuenta">
+      <div class="avatar">EG</div>
+      <div class="who">
+        <div class="who-name">Eva González</div>
+        <div class="who-role">Analista Contable</div>
+      </div>
+    </button>
+  </aside>
+
+  <div>
+    <div class="topbar-mobile">
+      <div class="brand">
+        <div class="brand-mark">PS</div>
+        <div class="brand-word" style="font-size:14px;">Plaza San Francisco</div>
+      </div>
+      <button id="menuBtn" aria-label="Abrir menú">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
+
+    <main class="main">
+
+      <!-- ===== INICIO ===== -->
+      <section class="view active" id="view-inicio">
+        <div class="page-head">
+          <div>
+            <h1>Hola, Eva</h1>
+            <p>Este es el resumen de la conciliación del periodo actual</p>
+          </div>
+        </div>
+
+        <section class="stats">
+          <div class="stat">
+            <div class="stat-label">Conciliado automáticamente</div>
+            <div class="stat-value">92,4%</div>
+            <div class="stat-sub"><b>1.184</b> de 1.281 registros cruzados</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Excepciones pendientes</div>
+            <div class="stat-value accent">14</div>
+            <div class="stat-sub">de 97 registros no conciliados</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Último cruce ejecutado</div>
+            <div class="stat-value" style="font-size:22px;">Hoy, 09:14</div>
+            <div class="stat-sub">Periodo 04–09 de septiembre</div>
+          </div>
+        </section>
+
+        <div class="quick-actions">
+          <button class="quick-card" data-view="cargar">
+            <div class="quick-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v11"/><path d="M8 8l4-4 4 4"/><path d="M5 15v4h14v-4"/></svg>
+            </div>
+            <h3>Cargar insumos</h3>
+            <p>Sube la cartola bancaria, los reportes de Transbank y el borderó del periodo.</p>
+          </button>
+          <button class="quick-card" data-view="reporte">
+            <div class="quick-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14v16l-4-2-3 2-3-2-4 2Z"/><path d="M8 9h8M8 13h8"/></svg>
+            </div>
+            <h3>Revisar excepciones</h3>
+            <p>Quedan 14 excepciones pendientes por resolver o descartar.</p>
+          </button>
+        </div>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Actividad reciente</h2></div>
+          <div class="activity-list">
+            <div class="activity-item"><span>Cruce y validación ejecutado — 97 registros no conciliados</span><span class="when">Hoy, 09:14</span></div>
+            <div class="activity-item"><span>3 excepciones marcadas como resueltas</span><span class="when">Ayer, 17:40</span></div>
+            <div class="activity-item"><span>Insumos del periodo cargados y normalizados</span><span class="when">Ayer, 08:52</span></div>
+            <div class="activity-item"><span>1 excepción descartada (falso positivo)</span><span class="when">Lunes, 16:05</span></div>
+          </div>
+        </section>
+      </section>
+
+      <!-- ===== CARGAR INSUMOS ===== -->
+      <section class="view" id="view-cargar">
+        <div class="page-head">
+          <div>
+            <h1>Cargar insumos de conciliación</h1>
+            <p>Sube los archivos tal como se descargan de cada fuente, sin editarlos</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-primary">Procesar y normalizar</button>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Insumos del periodo</h2></div>
+
+          <div class="upload-row">
+            <div class="upload-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6Z"/><path d="M15 3v3h3"/></svg>
+            </div>
+            <div class="upload-info">
+              <div class="upload-name">Cartola bancaria — Banco de Chile</div>
+              <div class="upload-sub">cartola.xlsx · cargado hoy, 08:40</div>
+            </div>
+            <div class="upload-actions">
+              <span class="badge completo"><span class="dot"></span>Cargado</span>
+              <button class="row-action">Reemplazar</button>
+            </div>
+          </div>
+
+          <div class="upload-row">
+            <div class="upload-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6Z"/><path d="M15 3v3h3"/></svg>
+            </div>
+            <div class="upload-info">
+              <div class="upload-name">Transbank — Créditos</div>
+              <div class="upload-sub">CREDITOS_TBK_08-09.xlsx · cargado hoy, 08:41</div>
+            </div>
+            <div class="upload-actions">
+              <span class="badge completo"><span class="dot"></span>Cargado</span>
+              <button class="row-action">Reemplazar</button>
+            </div>
+          </div>
+
+          <div class="upload-row">
+            <div class="upload-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6Z"/><path d="M15 3v3h3"/></svg>
+            </div>
+            <div class="upload-info">
+              <div class="upload-name">Transbank — Débitos</div>
+              <div class="upload-sub">DEBITOS_TBK_08-09.xls · cargado hoy, 08:41</div>
+            </div>
+            <div class="upload-actions">
+              <span class="badge completo"><span class="dot"></span>Cargado</span>
+              <button class="row-action">Reemplazar</button>
+            </div>
+          </div>
+
+          <div class="upload-row">
+            <div class="upload-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v13"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+            </div>
+            <div class="upload-info">
+              <div class="upload-name">Transbank — Prepago</div>
+              <div class="upload-sub">Formato .xls o .xlsx — aún no se ha cargado</div>
+            </div>
+            <div class="upload-actions">
+              <span class="badge pendiente"><span class="dot"></span>Pendiente</span>
+              <button class="btn btn-ghost">Subir archivo</button>
+            </div>
+          </div>
+
+          <div class="upload-row">
+            <div class="upload-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v13"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+            </div>
+            <div class="upload-info">
+              <div class="upload-name">Borderó — ERP / FrontOffice</div>
+              <div class="upload-sub">Formato .xls — aún no se ha cargado</div>
+            </div>
+            <div class="upload-actions">
+              <span class="badge pendiente"><span class="dot"></span>Pendiente</span>
+              <button class="btn btn-ghost">Subir archivo</button>
+            </div>
+          </div>
+
+          <div class="note">Se aceptan archivos .xls y .xlsx de hasta 20 MB. Los archivos se validan automáticamente antes de guardarse.</div>
+        </section>
+      </section>
+
+      <!-- ===== REPORTE DE EXCEPCIONES ===== -->
+      <section class="view" id="view-reporte">
+        <div class="page-head">
+          <div>
+            <h1>Reporte de excepciones</h1>
+            <p>Conciliación del periodo 04–09 de septiembre, 2026</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-ghost">Exportar reporte</button>
+            <button class="btn btn-primary">Ejecutar cruce</button>
+          </div>
+        </div>
+
+        <section class="stats">
+          <div class="stat">
+            <div class="stat-label">Conciliado automáticamente</div>
+            <div class="stat-value">92,4%</div>
+            <div class="stat-sub"><b>1.184</b> de 1.281 registros cruzados</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Excepciones pendientes</div>
+            <div class="stat-value accent">14</div>
+            <div class="stat-sub">de 97 registros no conciliados</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Monto en excepciones</div>
+            <div class="stat-value">$1.284.600</div>
+            <div class="stat-sub">sobre un total procesado de $48.960.000</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Excepciones detectadas</h2>
+            <div class="filters">
+              <button class="chip active">Todas</button>
+              <button class="chip">Pendientes</button>
+              <button class="chip">Resueltas</button>
+              <button class="chip">Descartadas</button>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Documento</th>
+                <th>Fecha</th>
+                <th>Fuente</th>
+                <th>Tipo de anomalía</th>
+                <th>Monto</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">DOC-48213</td>
+                <td class="mono">05-09-2026</td>
+                <td>Transbank crédito</td>
+                <td>Desfase de tiempo</td>
+                <td class="amount">$146.500</td>
+                <td><span class="badge pendiente"><span class="dot"></span>Pendiente</span></td>
+                <td><button class="row-action">Revisar</button></td>
+              </tr>
+              <tr>
+                <td class="mono">DOC-48219</td>
+                <td class="mono">05-09-2026</td>
+                <td>Borderó ERP</td>
+                <td>Error de tipeo</td>
+                <td class="amount">$32.000</td>
+                <td><span class="badge pendiente"><span class="dot"></span>Pendiente</span></td>
+                <td><button class="row-action">Revisar</button></td>
+              </tr>
+              <tr>
+                <td class="mono">DOC-48226</td>
+                <td class="mono">06-09-2026</td>
+                <td>Cartola bancaria</td>
+                <td>Agrupación de pagos</td>
+                <td class="amount">$298.900</td>
+                <td><span class="badge resuelta"><span class="dot"></span>Resuelta</span></td>
+                <td><button class="row-action">Ver detalle</button></td>
+              </tr>
+              <tr>
+                <td class="mono">DOC-48231</td>
+                <td class="mono">06-09-2026</td>
+                <td>Transbank débito</td>
+                <td>Nota de crédito</td>
+                <td class="amount">$54.300</td>
+                <td><span class="badge descartada"><span class="dot"></span>Descartada</span></td>
+                <td><button class="row-action">Ver detalle</button></td>
+              </tr>
+              <tr>
+                <td class="mono">DOC-48244</td>
+                <td class="mono">07-09-2026</td>
+                <td>Transbank prepago</td>
+                <td>Desfase de tiempo</td>
+                <td class="amount">$412.100</td>
+                <td><span class="badge pendiente"><span class="dot"></span>Pendiente</span></td>
+                <td><button class="row-action">Revisar</button></td>
+              </tr>
+              <tr>
+                <td class="mono">DOC-48250</td>
+                <td class="mono">07-09-2026</td>
+                <td>Borderó ERP</td>
+                <td>Error de tipeo</td>
+                <td class="amount">$18.750</td>
+                <td><span class="badge resuelta"><span class="dot"></span>Resuelta</span></td>
+                <td><button class="row-action">Ver detalle</button></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="panel-foot">
+            <span>Mostrando 6 de 14 excepciones</span>
+            <span>Página 1 de 3</span>
+          </div>
+        </section>
+      </section>
+
+      <!-- ===== HISTORIAL ===== -->
+      <section class="view" id="view-historial">
+        <div class="page-head">
+          <div>
+            <h1>Historial de conciliaciones</h1>
+            <p>Ejecuciones anteriores del motor de cruce y validación</p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <table>
+            <thead>
+              <tr>
+                <th>Periodo</th>
+                <th>Fecha de ejecución</th>
+                <th>% Conciliado</th>
+                <th>Excepciones</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>04–09 sept 2026</td>
+                <td class="mono">09-09-2026, 09:14</td>
+                <td class="amount">92,4%</td>
+                <td>14</td>
+                <td><span class="badge enproceso"><span class="dot"></span>En revisión</span></td>
+                <td><button class="row-action">Ver reporte</button></td>
+              </tr>
+              <tr>
+                <td>28 ago–03 sept 2026</td>
+                <td class="mono">03-09-2026, 08:50</td>
+                <td class="amount">95,1%</td>
+                <td>9</td>
+                <td><span class="badge completo"><span class="dot"></span>Cerrado</span></td>
+                <td><button class="row-action">Ver reporte</button></td>
+              </tr>
+              <tr>
+                <td>21–27 ago 2026</td>
+                <td class="mono">27-08-2026, 09:02</td>
+                <td class="amount">93,8%</td>
+                <td>11</td>
+                <td><span class="badge completo"><span class="dot"></span>Cerrado</span></td>
+                <td><button class="row-action">Ver reporte</button></td>
+              </tr>
+              <tr>
+                <td>14–20 ago 2026</td>
+                <td class="mono">20-08-2026, 08:47</td>
+                <td class="amount">90,6%</td>
+                <td>17</td>
+                <td><span class="badge completo"><span class="dot"></span>Cerrado</span></td>
+                <td><button class="row-action">Ver reporte</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="panel-foot">
+            <span>Mostrando 4 de 12 periodos</span>
+            <span>Página 1 de 3</span>
+          </div>
+        </section>
+      </section>
+
+      <!-- ===== MI CUENTA ===== -->
+      <section class="view" id="view-cuenta">
+        <div class="page-head">
+          <div>
+            <h1>Mi cuenta</h1>
+            <p>Información de tu perfil y acceso al sistema</p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="account-card">
+            <div class="avatar-lg">EG</div>
+            <div>
+              <div style="font-size:16px;font-weight:600;">Eva González</div>
+              <div style="font-size:13px;color:var(--ink-muted);margin-top:2px;">Analista Contable · Hotel Plaza San Francisco</div>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <div class="field">
+              <label>Nombre completo</label>
+              <div class="value">Eva González</div>
+            </div>
+            <div class="field">
+              <label>Correo electrónico</label>
+              <div class="value">eva.gonzalez@plazasanfrancisco.cl</div>
+            </div>
+            <div class="field">
+              <label>Rol</label>
+              <div class="value">Analista Contable</div>
+            </div>
+            <div class="field">
+              <label>Contraseña</label>
+              <div class="value">••••••••••</div>
+            </div>
+          </div>
+
+          <div class="field-actions">
+            <button class="btn btn-ghost">Cambiar contraseña</button>
+            <button class="btn btn-ghost" style="border-color:var(--red); color:var(--red);">Cerrar sesión</button>
+          </div>
+        </section>
+      </section>
+
+    </main>
+  </div>
+
+</div>
+
+<script>
+  const links = document.querySelectorAll('[data-view]');
+  const views = document.querySelectorAll('.view');
+  const navLinks = document.querySelectorAll('.nav a[data-view]');
+  const sidebar = document.getElementById('sidebar');
+  const scrim = document.getElementById('scrim');
+  const menuBtn = document.getElementById('menuBtn');
+
+  function showView(name){
+    views.forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    navLinks.forEach(l => l.classList.toggle('active', l.dataset.view === name));
+    closeSidebar();
+    window.scrollTo({top:0, behavior:'instant'});
+  }
+
+  links.forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      showView(el.dataset.view);
+    });
+  });
+
+  function openSidebar(){ sidebar.classList.add('open'); scrim.classList.add('open'); }
+  function closeSidebar(){ sidebar.classList.remove('open'); scrim.classList.remove('open'); }
+
+  menuBtn.addEventListener('click', openSidebar);
+  scrim.addEventListener('click', closeSidebar);
+</script>
+
+</body>
+</html>
