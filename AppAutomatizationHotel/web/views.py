@@ -21,13 +21,9 @@ from io import BytesIO
 import os
 import time
 
-import qrcode
 from io import BytesIO
 from django.core.files import File
-from PIL import Image,ImageDraw
-from django.core.mail import EmailMessage
 from django.http import HttpResponse
-from django.core.files.base import ContentFile
 import pandas as pd
 # Create your views here.
 import httpx
@@ -61,14 +57,7 @@ async def obtener_datos():
 
 
 def inicio(request):
-    request.session["datos"]=""
-    x={}
-
-    # x["valor"]=request.session["datos"]
-    # x["habitacion"]=habi(0)
-    comentarios=Comentario.objects.all()
-    mensaje={'comentarios':comentarios}
-    return render(request,"index.html",mensaje)
+    return render(request, "index.html")
 
 @login_required(login_url='LO')
 def procesamiento(request):
@@ -846,69 +835,6 @@ def procesamiento(request):
     return render(request,"procesamiento.html",contexto)
 
 
-data = {}
-def descargar_excel_ant(request):
-    # Datos de ejemplo
-    data = {
-        'Documento': documento_inf,
-        'Monto': monto_buscar_inf,
-        'Fecha': fecha_inf,
-        'TC':tc_inf
-    }
-    df = pd.DataFrame(data)
-
-
-    # Crear archivo Excel en memoria
-    buffer = BytesIO()
-    df.to_excel(buffer, index=False, engine='openpyxl')
-    buffer.seek(0)
-
-    # Crear respuesta HTTP para descarga
-    response = HttpResponse(
-        buffer,
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-    response['Content-Disposition'] = 'attachment; filename=mi_archivo.xlsx'
-    return response
-
-
-# descargar excel con titulo en la primera fila
-@login_required(login_url='LO')
-def descargar_excel(request):
-    # Datos de ejemplo
-    data = {
-        'Documento': documento_inf,
-        'Monto': monto_buscar_inf,
-        'Fecha': fecha_inf,
-        'TC': tc_inf
-    }
-    df = pd.DataFrame(data)
-
-    # Crear archivo Excel en memoria
-    buffer = BytesIO()
-    df.to_excel(buffer, index=False, engine='openpyxl', startrow=1)  # empezar en fila 2
-    buffer.seek(0)
-
-    # Abrir el workbook con openpyxl para agregar el título
-    wb = load_workbook(buffer)
-    ws = wb.active
-
-    # Agregar título en la primera fila
-    ws['A1'] = "Reporte de Transacciones No Encontradas"  # texto del título
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=df.shape[1])  # fusionar celdas del título
-
-    # Guardar nuevamente en el buffer
-    buffer = BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-
-    # Crear respuesta HTTP para descarga
-    response = HttpResponse(
-        buffer,
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
-    response['Content-Disposition'] = 'attachment; filename=mi_archivo.xlsx'
-    return response
    
    
 # descargar excel con titulo en la primera fila
@@ -986,26 +912,6 @@ def descargar_excel_nopresente(request):
    
    
    
-def generar_qr2(req):
-    # Datos a codificar
-    data = "https://example.com"
-    
-    # Crear código QR
-    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-    qr.add_data(data)
-    qr.make(fit=True)
-
-    img = qr.make_image(fill='black', back_color='white')
-
-    # Convertir a bytes
-    buf = BytesIO()
-    img.save(buf, format='PNG')
-    img_bytes = buf.getvalue()
-
-    # Guardar
-    qr_image = ContentFile(buf.getvalue(), 'qr_code.png')
-    # Responder con imagen
-    return HttpResponse(img_bytes, content_type='image/png')
      
 def login(request):
     contexto = {}
@@ -1018,10 +924,6 @@ def login(request):
             usuario=User.objects.get(email=request.POST.get("email"))
             print("usuario")
             print(usuario.id)
-            try:
-                cli=Cliente.objects.get(email=nombre)
-            except Cliente.DoesNotExist:
-                cli = None
             request.session["email"]=nombre
             return render(request,"index.html",contexto)
         else:
@@ -1029,50 +931,7 @@ def login(request):
             return render(request,"login.html",contexto)        
     return render(request,"login.html",contexto)
 
-def enviar_codigo_qr(request,clave,correo):
-    
-    # Datos que quieres convertir en un código QR
-    data = clave  # Reemplázalo con la URL o información que desees
-
-    # Generar el código QR
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-
-    # Crear la imagen del código QR
-    img = qr.make_image(fill_color="black", back_color="white")
-
-    # Guardar la imagen en un buffer
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    buffer.seek(0)
-
-    # Crear el mensaje de correo electrónico
-    email = EmailMessage(
-        subject=correo,
-        body='Adjunto encontrarás tu código QR.de tu reserva',
-        from_email='fm_campos@yahoo.com',  # Reemplaza con tu correo
-        to=[correo],   # Reemplaza con el correo del destinatario
-    )
-
-    # Adjuntar la imagen del código QR
-    email.attach('codigo_qr.png', buffer.getvalue(), 'image/png')
-
-    # Enviar el correo
-    email.send()
-
-    comentarios=Comentario.objects.all()
-    contexto={'comentarios':comentarios}
-    contexto["mensaje"]="OK"
-    return 1
-
 def cerrar_sesion(request):
-    contex = {}
     logout(request)
-    return render(request,"index.html",contex)
+    return redirect('INICIO')
     
