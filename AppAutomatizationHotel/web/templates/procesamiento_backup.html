@@ -1,0 +1,447 @@
+{% extends "base2.html" %} {% load static %} {% block contenido %}
+
+<!--  Start -->
+<div class="container-xxl py-5">
+  <div class="container">
+    <div class="text-center wow fadeInUp" data-wow-delay="0.1s">
+      <h6 class="section-title text-center text-primary text-uppercase">
+        Procesamiento de Achivos
+      </h6>
+      <h1 class="mb-5">
+        v.1.0
+        <span class="text-primary text-uppercase"
+          >Sistema Hotel San Francisco</span
+        >
+      </h1>
+    </div>
+
+    <div class="row g-5">
+      <!-- primera columna -->
+      <div class="col-lg-6">
+        <div class="row g-3">
+          <div
+            class="card shadow-lg border-0 rounded-4 mx-auto"
+            style="max-width: 600px"
+          >
+            <div class="card-body text-center">
+              <h5 class="card-title text-center mb-4">
+                Parametrizacion de Valores
+              </h5>
+              <div class="row g-2 align-items-center">
+                <div class="col-6 d-grid">
+                  <label for="archivo1" class="form-label"
+                    >Monto en Dolares:</label
+                  >
+                </div>
+
+                <!-- Select -->
+                <div class="col-6">
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="campo1"
+                    placeholder="US$0"
+                  />
+                </div>
+
+                <div class="col-6 d-grid">
+                  <label for="archivo1" class="form-label"
+                    >Monto en Pesos:</label
+                  >
+                </div>
+                <div class="col-6">
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="campo1"
+                    placeholder="US$0"
+                  />
+                </div>
+
+                <!-- Botón de carga -->
+                <button type="button" class="btn btn-primary w-100">
+                  <i class="bi bi-upload"></i> Cargar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- analizaremos primero los datos en dolares --->
+          <div
+            class="card shadow-lg border-0 rounded-4 mx-auto"
+            style="max-width: 700px"
+          >
+            <div class="card-body text-center">
+              <h5 class="card-title text-center mb-4">
+                Analisis de Consolidado en Dolares
+              </h5>
+
+              <form
+                action="{% url 'PR' %}"
+                method="post"
+                enctype="multipart/form-data"
+              >
+                {% csrf_token %}
+                <div class="row g-2 align-items-center">
+                  <!-- Primer botón Examinar (ERP) -->
+                  <div class="col-8">
+                    <input
+                      class="form-control"
+                      type="file"
+                      id="archivo1"
+                      name="archivo1"
+                    />
+                  </div>
+                  <div class="col-4 d-grid">
+                    <button class="btn btn-primary" disabled id="miBoton">
+                      <i class="bi bi-check-circle"></i>ERP
+                    </button>
+                  </div>
+
+                  <div class="col-12" style="height: 20px"></div>
+
+                  <!-- Segundo botón Examinar (Dolar Amex) -->
+                  <div class="col-8">
+                    <input
+                      class="form-control"
+                      type="file"
+                      id="archivo2"
+                      name="archivo2"
+                    />
+                  </div>
+                  <div class="col-4 d-grid">
+                    <button class="btn btn-primary" disabled id="miBoton">
+                      <i class="bi bi-check-circle"></i>Dolar Amex
+                    </button>
+                  </div>
+
+                  <!-- Tercer botón Examinar (Dinners) -->
+                  <div class="col-8">
+                    <input
+                      class="form-control"
+                      type="file"
+                      id="archivo3"
+                      name="archivo3"
+                    />
+                  </div>
+                  <div class="col-4 d-grid">
+                    <button class="btn btn-primary" disabled id="miBoton">
+                      <i class="bi bi-check-circle"></i>Dinners
+                    </button>
+                  </div>
+
+                  <!-- Cuarto botón Examinar (Dolar Visa) -->
+                  <div class="col-8">
+                    <input
+                      class="form-control"
+                      type="file"
+                      id="archivo4"
+                      name="archivo4"
+                    />
+                  </div>
+                  <div class="col-4 d-grid">
+                    <button class="btn btn-primary" disabled id="miBoton">
+                      <i class="bi bi-check-circle"></i>Dolar Visa
+                    </button>
+                  </div>
+
+                  <!-- Quinto botón Examinar (Dolar Mastercard) -->
+                  <div class="col-8">
+                    <input
+                      class="form-control"
+                      type="file"
+                      id="archivo5"
+                      name="archivo5"
+                    />
+                  </div>
+                  <div class="col-4 d-grid">
+                    <button class="btn btn-primary" disabled id="miBoton">
+                      <i class="bi bi-check-circle"></i>Mastercard
+                    </button>
+                  </div>
+                  <div class="col-12" style="height: 20px"></div>
+
+                  <!-- Sexto botón Examinar (Banco) -->
+                  <div class="col-8">
+                    <input
+                      class="form-control"
+                      type="file"
+                      id="archivo6"
+                      name="archivo6"
+                    />
+                  </div>
+                  <div class="col-4 d-grid">
+                    <button class="btn btn-primary" id="miBoton" disabled>
+                      <i class="bi bi-check-circle"></i>Banco
+                    </button>
+                  </div>
+
+                  <!-- Septimo botón Examinar (Transbank) -->
+                  <div class="col-8">
+                    <input
+                      class="form-control"
+                      type="file"
+                      id="archivo7"
+                      name="archivo7"
+                    />
+                  </div>
+                  <div class="col-4 d-grid">
+                    <button class="btn btn-primary" id="miBoton" disabled>
+                      <i class="bi bi-check-circle"></i>Transbank
+                    </button>
+                  </div>
+
+                  <div class="col-12" style="height: 20px"></div>
+                  <!-- Botón de carga -->
+                  <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-upload"></i> Analizar Archivos por ERP
+                  </button>
+
+                  <!-- <button type="button" class="btn btn-primary w-100">
+                    <i class="bi bi-upload"></i> Abrir Reporte
+                  </button> -->
+
+                  <a href="{% url 'descargar_excel' %}" class="btn btn-primary">Descargar Excel Transacciones Ubicadas</a>
+                  <a href="{% url 'descargar_excel_nopresente' %}" class="btn btn-primary">Descargar Excel Transacciones No Ubicadas</a>
+                </div>
+              </form>
+            </div>
+
+            
+
+
+          </div>
+
+          <!-- inicio grafico de reportes Dolar-->
+                       <h4 class="card-title text-center mb-4">Hoteleria San Francisco: Dolar</h4>
+            <!-- Tabla de resumen -->
+            <div class="table-responsive">
+             
+              <table class="table table-bordered table-hover align-middle">
+                <thead class="table-primary text-center">
+                  <tr>
+                    <th>Cuenta</th>
+                    <th>Ventas CM</th>
+                    <th>Ventas TBK</th>
+                    <th>Diferencia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in data_dolar %}
+                  <tr>
+                    {% for clave, valor in item.items %}
+                      {% if clave == "Total" %}
+                        <td style="background-color: bisque;">{{valor}}</td>
+                      {% else %}
+                        <td>{{valor}}</td>
+                      {% endif %}                      
+                    {% endfor %}
+                  </tr>
+                   {% endfor %}
+                </tbody>
+              </table>
+             
+            </div>
+
+          <!---->
+        </div>
+      </div>
+      <!-- segunda columna -->
+      <div class="col-lg-6">
+        <div
+          class="card shadow-lg border-0 rounded-4 mx-auto"
+          style="max-width: 800px"
+        >
+          <div class="card-body">
+            <!-- analisis consolidado en pesos -->
+            <div class="card-body text-center">
+              <h5 class="card-title text-center mb-4">
+                Analisis de Consolidado en Pesos (CLP)
+              </h5>
+
+              <div class="row g-2 align-items-center">
+                <!-- Primer botón Examinar (ERP) -->
+                <div class="col-8">
+                  <input class="form-control" type="file" id="archivo1" />
+                </div>
+                <div class="col-4 d-grid">
+                  <button class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>ERP
+                  </button>
+                </div>
+
+                <div class="col-12" style="height: 20px"></div>
+
+                <!-- Segundo botón Examinar (Dolar Amex) -->
+                <div class="col-8">
+                  <input class="form-control" type="file" id="archivo1" />
+                </div>
+                <div class="col-4 d-grid">
+                  <button class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>Amex
+                  </button>
+                </div>
+
+                <!-- Tercer botón Examinar (Dinners) -->
+                <div class="col-8">
+                  <input class="form-control" type="file" id="archivo1" />
+                </div>
+                <div class="col-4 d-grid">
+                  <button class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>Dinners
+                  </button>
+                </div>
+
+                <!-- Cuarto botón Examinar (Dolar Visa) -->
+                <div class="col-8">
+                  <input class="form-control" type="file" id="archivo1" />
+                </div>
+                <div class="col-4 d-grid">
+                  <button class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>Visa
+                  </button>
+                </div>
+
+                <!-- Quinto botón Examinar (Dolar Mastercard) -->
+                <div class="col-8">
+                  <input class="form-control" type="file" id="archivo1" />
+                </div>
+                <div class="col-4 d-grid">
+                  <button class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>Mastercard
+                  </button>
+                </div>
+
+                <!-- botón Examinar (Debito) -->
+                <div class="col-8">
+                  <input class="form-control" type="file" id="archivo1" />
+                </div>
+                <div class="col-4 d-grid">
+                  <button class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>Debito
+                  </button>
+                </div>
+
+                <div class="col-12" style="height: 20px"></div>
+
+                <!-- Sexto botón Examinar (Banco) -->
+                <div class="col-8">
+                  <input class="form-control" type="file" id="archivo6" name="archivo6" />
+                </div>
+                <div class="col-4 d-grid">
+                  <button class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>Banco
+                  </button>
+                </div>
+
+                <!-- Septimo botón Examinar (Transbank) -->
+                <div class="col-8">
+                  <input class="form-control" type="file" id="archivo7" name="archivo7" />
+                </div>
+                <div class="col-4 d-grid">
+                  <button class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i>Transbank
+                  </button>
+                </div>
+
+                <div class="col-12" style="height: 20px"></div>
+                <!-- Botón de carga -->
+                <button type="button" class="btn btn-primary w-100">
+                  <i class="bi bi-upload"></i> Analizar Archivos
+                </button>
+
+                <button type="button" class="btn btn-primary w-100">
+                  <i class="bi bi-upload"></i> Abrir Reporte
+                </button>
+              </div>
+            </div>
+
+            <h4 class="card-title text-center mb-4">Resumen General</h4>
+            <!-- Tabla de resumen -->
+            <div class="table-responsive">
+             
+              <table class="table table-bordered table-hover align-middle">
+                <thead class="table-primary text-center">
+                  <tr>
+                    <th>Cuenta</th>
+                    <th>Ventas CM</th>
+                    <th>Ventas TBK</th>
+                    <th>Diferencia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in data %}
+                  <tr>
+                    {% for clave, valor in item.items %}
+                      {% if clave == "Total" %}
+                        <td style="background-color: bisque;">{{valor}}</td>
+                      {% else %}
+                        <td>{{valor}}</td>
+                      {% endif %}                      
+                    {% endfor %}
+                  </tr>
+                   {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!--  End -->
+
+  <!--  Start -->
+  <div class="container newsletter mt-5 wow fadeIn" data-wow-delay="0.1s">
+    <div class="row justify-content-center">
+      <div class="col-lg-10 border rounded p-1">
+        <div class="border rounded text-center p-1">
+          <div class="bg-white rounded text-center p-5">
+            <h4 class="mb-4">
+              Enviar Resultados por Email
+              <span class="text-primary text-uppercase">Reportes Excel</span>
+            </h4>
+            <div class="position-relative mx-auto" style="max-width: 400px">
+              <input
+                class="form-control w-100 py-3 ps-4 pe-5"
+                type="text"
+                placeholder="Tu correo electronico"
+              />
+              <button
+                type="button"
+                class="btn btn-primary py-2 px-3 position-absolute top-0 end-0 mt-2 me-2"
+              >
+                Enviar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+                    <div>
+                    
+                    {% if ws == 1 %}
+                      
+                      {% if abonado > 0 %}
+                        <div class="alert alert-success" role="alert">
+                          <strong>Excelente!</strong> Existen {{ abonado }} en transacciones en Dolares que no fueron ubicadas en el ERP. y que se encontraron en el archivo de Transbank.
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning" role="alert">
+                          <strong>Atencion!</strong> No existen transacciones en Dolares que no hayan sido ubicadas en el ERP.{{msg}}
+                        {% endif %}
+                    {% endif %}
+                  </div>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+      document.getElementById("miBoton").addEventListener("click", function() {
+        event.preventDefault(); // Evita que recargue
+      });
+    });
+  </script>
+  {% endblock contenido %}
+</div>

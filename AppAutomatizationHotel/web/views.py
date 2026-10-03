@@ -1014,7 +1014,10 @@ def login(request):
             usuario=User.objects.get(email=request.POST.get("email"))
             print("usuario")
             print(usuario.id)
-            cli=Cliente.objects.get(email=nombre)
+            try:
+                cli=Cliente.objects.get(email=nombre)
+            except Cliente.DoesNotExist:
+                cli = None
             request.session["email"]=nombre
             return render(request,"index.html",contexto)
         else:
