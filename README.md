@@ -6,25 +6,48 @@ El **Sistema de Conciliación ERP** es una plataforma web interna (desarrollada 
 
 ## Fase 1: Consolidación en Dólares (v1.0)
 
-La primera fase del proyecto automatiza la conciliación de pagos y transacciones internacionales en **moneda extranjera (Dólares - USD)**. Su objetivo principal es erradicar el trabajo manual y asegurar que los montos registrados en el ERP del hotel coincidan de manera exacta con lo liquidado por las tarjetas y lo depositado finalmente en el banco.
+La primera fase del proyecto automatiza la conciliación de pagos y transacciones internacionales en **moneda extranjera (Dólares - USD)**. Su objetivo principal es erradicar el cruce manual de planillas y asegurar que los montos registrados en el ERP del hotel coincidan de manera exacta con lo liquidado por las tarjetas y lo depositado finalmente en el banco.
 
-### ¿Cómo funciona?
-Para ejecutar el ciclo de conciliación, el operador contable debe proveer **7 archivos Excel** clave al sistema:
-1. **Archivo ERP:** Reporte de ventas en dólares extraído del sistema de reservas/ERP del hotel.
-2. **Archivo Transbank:** Detalle de todas las transacciones procesadas a través de TBK.
-3. **Cartola del Banco:** Estado de cuenta bancario donde se deben reflejar los depósitos reales.
-4. **Archivos de Operadoras (4):** Reportes individuales detallados de **Visa, MasterCard, American Express y Diners Club**.
+### 1. Archivos de Entrada (El Insumo Diario)
+Cada mañana, el departamento de finanzas debe descargar **7 reportes Excel** (formato Legacy) desde distintas plataformas web. Estos archivos suelen venir llenos de "ruido visual" (logos, celdas combinadas, etc.). El sistema limpia esta basura y extrae con pinzas solo las columnas vitales:
 
-### Flujo de Cruce y Lógica de Negocio
-1. **Validación Transbank vs ERP:** El algoritmo contrasta cada transacción en el archivo de Transbank con el reporte del ERP del hotel, usando cruces lógicos para detectar cobros ausentes, duplicados o discrepancias numéricas.
-2. **Cruce al Detalle por Operadora:** Se compara la salida de Transbank contra el detalle individual de cada tarjeta de crédito. Esto permite auditar las comisiones retenidas y validar los valores netos de cada marca.
+* **A. El Archivo ERP (Sistema del Hotel)** 
+  * **Origen:** Exportado desde el sistema de reservas/ERP interno del hotel.
+  * **Qué le importa al código:** Extrae el Monto Cobrado, la Fecha y el **Código de Autorización** (la llave maestra digitada por el recepcionista). Ignora datos irrelevantes como el nombre del empleado o el folio de la habitación.
+  
+* **B. El Archivo Transbank (La Máquina)** 
+  * **Origen:** Descargado desde el Portal Privado de Transbank por el contador.
+  * **Qué le importa al código:** Extrae el Monto Bruto físico, el Tipo de Tarjeta (VI, MC, AX) y el **Código de Autorización** (el voucher de la máquina). Ignora desgloses de IVA, propinas o números de serie físicos de las máquinas POS.
+  
+* **C. Los Archivos de Operadoras (Visa, MasterCard, Amex, Diners)** 
+  * **Origen:** Descargados directamente de los portales de liquidación de cada marca corporativa.
+  * **Qué le importa al código:** Busca el mismo **Código de Autorización** para rescatar el Monto Bruto original y, lo más importante, el **Saldo Neto en Pesos** (el valor final real que la tarjeta transferirá al hotel luego de cobrar el "peaje" de comisión). Ignora asientos contables o días de mora.
+
+* **D. La Cartola del Banco** 
+  * **Origen:** Exportada desde el portal corporativo del banco donde el hotel tiene su cuenta corriente.
+  * **Qué le importa al código:** Solo escanea la columna de **Abonos** para confirmar que la suma masiva de todos los saldos netos calculados en el paso anterior ingresó efectivamente al banco.
+
+### 2. Flujo de Cruce y Lógica de Negocio
+El algoritmo cruza estos 7 archivos mediante los siguientes pasos lógicos:
+1. **Validación Transbank vs ERP:** El algoritmo contrasta cada transacción del archivo de Transbank con el reporte del ERP del hotel, usando el Código de Autorización para detectar cobros ausentes o discrepancias numéricas.
+2. **Cruce al Detalle por Operadora:** Se compara la salida de Transbank contra el detalle individual de cada tarjeta de crédito. Esto permite auditar las comisiones retenidas y validar los valores líquidos finales.
 3. **Confirmación Bancaria:** Se rastrea la cartola del banco en busca del abono exacto, confirmando que la sumatoria total del día ingresó efectivamente a la cuenta corriente del hotel.
-4. **Generación de Reportes:** 
-   - La pantalla renderiza dos **Tablas de Resumen** dinámicas que exponen las diferencias en rojo/verde por cada cuenta contable.
-   - Genera reportes en formato Excel (descargables) segmentados en **Transacciones Ubicadas** (cuadradas con éxito) y **No Ubicadas** (inconsistencias que requieren atención contable humana).
+
+### 3. Archivos de Salida y Flujo de Trabajo del Contador (Outputs)
+Al finalizar el procesamiento matemático, el sistema reduce el caos de los 7 archivos a solo **2 reportes Excel accionables**, cada uno con un propósito específico para el flujo de trabajo humano:
+
+#### A. Transacciones Ubicadas (`informacion_proceso.xlsx`)
+Este archivo contiene todas las transacciones donde el sistema logró enlazar con éxito el **Código de Autorización** en todos los archivos. Sin embargo, "ubicada" no significa "perfecta". El contador debe usar este archivo de la siguiente manera:
+* **Filtro de Diferencias:** El contador revisa la columna **Diferencia**. El 95% de los casos será `$0` (cuadre perfecto). Si la diferencia es de, por ejemplo, `-$15`, significa que la transacción existe, pero los montos no coinciden (ej. un descuento aplicado en la máquina pero no registrado en el ERP). El contador debe investigar y resolver manualmente estas discrepancias.
+* **Tolerancia al Redondeo:** El algoritmo está programado para perdonar diferencias minúsculas de centavos causadas por el tipo de cambio. Internamente, el código corta los decimales (`int()`) y fuerza un redondeo de dos cifras (`round(..., 2)`) para evitar que el equipo humano pierda tiempo revisando diferencias matemáticas de fracciones de dólar.
+
+#### B. Transacciones No Ubicadas (`transacciones_no_ubicadas.xlsx`)
+Este es el archivo de "errores graves" o "ventas huérfanas". 
+* **Transbank como Fuente de Verdad:** El algoritmo está diseñado asumiendo que **la máquina de Transbank manda**. El código lee Transbank de principio a fin y busca cada cobro en el ERP.
+* **El Diagnóstico:** Si el sistema encuentra una transacción en Transbank pero el código de autorización no existe en el ERP, la envía a este reporte con columnas en blanco y un diagnóstico claro en la columna `Status` (Ej: *"NO ENCONTRÓ EL CÓDIGO X"*).
+* **Acción Humana:** El contador toma este archivo, va a la recepción del hotel y exige explicaciones sobre por qué hay ingresos de dinero físico en la máquina que nunca fueron ingresados al sistema interno del hotel.
 
 ---
-
 
 ## Hito 1: Auditoría, Refactorización y Optimización del Sistema Legacy (Consolidación Dólares)
 
@@ -39,7 +62,7 @@ Se identificó una deuda técnica importante, vulnerabilidades de seguridad, pro
 
 ### 2. Corrección de Bugs Matemáticos y Pérdida de Datos
 * **Bug Crítico de Lectura (Punteros de Archivo):** El sistema original procesaba los Excels (`InMemoryUploadedFile`) dentro de un bucle sin reiniciar el puntero (`seek(0)`). Esto causaba que, tras la primera iteración, los archivos se leyeran como "vacíos", ignorando ~35% de transacciones válidas y enviándolas a "No Encontradas".
-* **Bug de Ruptura de Totales (NaN):** Se corrigió un error matemático en los cruces de MasterCard, donde las transacciones sin coincidencia asignaban un string vacío (`''`) al monto. Al convertirse a flotante, generaban un valor `NaN` que rompía toda la tabla de consolidación final. Ambos bugs fueron solucionados al 100%.
+* **Bug de Ruptura de Totales (El Virus NaN):** Se corrigió un error matemático grave que colapsaba la tabla final (específicamente visible en los reportes de MasterCard). En los Excels de operadoras, cuando una transacción tiene la columna "Otra Moneda" en blanco, Pandas lee esa celda como un objeto `NaN` (Not a Number). El código Legacy intentaba protegerse de letras o celdas vacías con un bloque `try: float(valor) except ValueError:`, pero ignoraba una trampa técnica de Python: `float(NaN)` es una operación matemática válida que no arroja error. Al no detenerse en el `except`, el `NaN` pasaba directo a la sumatoria, infectando el Total (`14000 + NaN = NaN`). Se solucionó inyectando una validación estricta con `math.isnan()` para sanitizar los flotantes.
 
 ### 3. Optimización Extrema de Rendimiento (Caché en RAM)
 * **Caché en Memoria:** El código anterior leía los archivos desde disco repetidas veces dentro de bucles anidados. Se implementó una arquitectura donde los 7 archivos se cargan una única vez en DataFrames de Pandas al inicio de la función. El cruce financiero ahora se realiza puramente en RAM, reduciendo el tiempo de procesamiento a milisegundos.

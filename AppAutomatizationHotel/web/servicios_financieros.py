@@ -431,6 +431,8 @@ def procesar_archivos(archivo1, archivo2, archivo3, archivo4, archivo5, archivo6
                 val_tbk = val_tbk.replace(',', '.')
             try:
                 val_tbk = float(val_tbk)
+                if math.isnan(val_tbk):
+                    val_tbk = 0.0
             except ValueError:
                 val_tbk = 0.0
             item['monto_transbank'] = val_tbk
