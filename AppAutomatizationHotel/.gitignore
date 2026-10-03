@@ -1,3 +1,8 @@
-# Carpeta temporal del asistente
 scratch/
-
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.env
+*.sqlite3
