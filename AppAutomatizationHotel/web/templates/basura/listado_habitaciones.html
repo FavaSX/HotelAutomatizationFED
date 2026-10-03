@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block contenido %}
+
+
+        <!-- listado de habitaciones-->
+                <div class="container-xxl py-5">
+            <div class="container">
+                <div class="text-center wow fadeInUp" data-wow-delay="0.1s">
+                    <h6 class="section-title text-center text-primary text-uppercase">Habitacion</h6>
+                    <h1 class="mb-5"><span class="text-primary text-uppercase">Registro Nueva Habitacion</span></h1>
+                </div>
+                <div class="row g-4">                   
+                    <div class="col-md-12">
+                        <div class="wow fadeInUp" data-wow-delay="0.2s">
+                           <table class="table">
+                            <tr>
+                                <td>id</td>
+                                <td>Piso</td>
+                                <td>Numero</td>
+                                <td>Personas</td>
+                                <td>Habitaciones</td>
+                                <td>Baños</td>
+                                <td>Mts</td>                                
+                                <td>Precio</td>
+                                <td>Estado</td>
+                                <td>Operaciones</td>
+                            </tr>
+                            {% for lh in lista_h %}
+                            
+                            
+                            <tr>
+                                <td>{{lh.id_h}}</td>
+                                <td>{{lh.piso}}</td>
+                                <td>{{lh.numero}}</td>
+                                <td>{{lh.cant_personas}}</td>
+                                <td>{{lh.habitaciones}}</td>
+                                <td>{{lh.banos}}</td>
+                                <td>{{lh.metros}}</td>
+                                <td>{{lh.precio_noche}}</td>
+                                <td>{{lh.activa}}</td>
+                                <td>                                    
+                                    <a href="{% url 'DA' lh.id_h %}">Ver</a>
+                                    /
+                                    <a href="{% url 'DA' lh.id_h %}">Agregar Imagen</a>
+                                    /
+                                    <a href="{% url 'DA' lh.id_h %}">Reservar</a>
+                                    /
+                                    <a href="{% url 'REHA' %}">Agregar Hab.</a>
+
+                                    <button class="btn btn-primary" onclick="galeria('{{lh.id_h}}')" data-bs-toggle="modal"
+                        data-bs-target="#exampleModal">Agregar
+                        Imagen</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                           </table>
+                           
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+            <!-- Modal -->
+    <div class="modal fade" id="exampleModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel">Agregar Imagen a Galeria</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="{% url 'IG' %}" method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="modal-body">
+                        <p>Agregar imagen a la galeria de la habitacion</p>
+                        <div style="color: red;font-size: x-large;" id="nombre_mascota"> </div>
+                        <input type="file" name="imagen" id="imagen">
+                        <input type="hidden" name="habitacion" id="habitacion">
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                        <button type="submit" class="btn btn-primary">Grabar</button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function eliminar(nombre) {
+    
+            Swal.fire({
+                title: 'Desea eliminar la mascota ' + nombre + ' ?',
+                showCancelButton: true,
+                confirmButtonText: `Eliminar`
+            }).then((result) => {
+                /* Read more about isConfirmed, isDenied below */
+                if (result.isConfirmed) {
+                    location.href = '/eliminar_mascota/' + nombre + '/';
+                }
+            })
+    
+        }
+    
+        function modificar(nombre) {
+            location.href = '/modi_mascota/' + nombre + '/';
+        }
+    
+        function galeria(nombre) {
+            document.getElementById("nombre_mascota").innerHTML = nombre;
+            document.getElementById("habitacion").value=nombre;
+        }
+    </script>
+
+
+        <!-- Contact Start -->
+        {% comment %} <div class="container-xxl py-5">
+            <div class="container">
+                <div class="text-center wow fadeInUp" data-wow-delay="0.1s">
+                    <h6 class="section-title text-center text-primary text-uppercase">Habitacion</h6>
+                    <h1 class="mb-5"><span class="text-primary text-uppercase">Registro Nueva Habitacion</span></h1>
+                </div>
+                <div class="row g-4">                   
+                    <div class="col-md-12">
+                        <div class="wow fadeInUp" data-wow-delay="0.2s">
+                            <form method="post" action="{% url 'REHA' %}" enctype="multipart/form-data">
+                                {% csrf_token %}
+                                <div class="row g-3">
+
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <select class="form-control" id="piso" name="piso" >
+                                                <option value="1" selected>1</option>
+                                                <option value="2" >2</option>
+                                                <option value="3" >3</option>
+                                                <option value="4" >4</option>
+                                                <option value="5" >5</option>
+                                                <option value="6" >6</option>
+                                                <option value="7" >7</option>
+                                            </select>
+                                            <label for="name">Piso</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <input type="number" class="form-control" id="numero" name="numero" placeholder="Numero de Habitacion">
+                                            <label for="numero">Numero Habitacion</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <input type="number" class="form-control" id="cant_personas" name="cant_personas" placeholder="Cantidad de Personas">
+                                            <label for="cant_personas">Cantidad de Personas</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <input type="number" class="form-control" id="cant_hab" name="cant_hab" placeholder="Cantidad de Habitaciones">
+                                            <label for="cant_personas">Cantidad de Habitaciones</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <input type="number" class="form-control" id="cant_banos" name="cant_banos" placeholder="Cantidad de Habitaciones">
+                                            <label for="cant_banos">Cantidad de Baños</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <input type="number" class="form-control" id="metros" name="metros" placeholder="Metros Cuadrados">
+                                            <label for="metros">Metros Cuadrados</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <select class="form-control" id="wifi" name="wifi">
+                                                <option value="Si" selected>Si</option>
+                                                <option value="No" >No</option>
+                                            </select>
+                                            <label for="wifi">Posee Wifi</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <select class="form-control" id="tv" name="tv">
+                                                <option value="Si" selected>Si</option>
+                                                <option value="No" >No</option>
+                                            </select>
+                                            <label for="tv">Posee Tv Cable</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <select class="form-control" id="desayuno" name="desayuno">
+                                                <option value="Si" selected>Si</option>
+                                                <option value="No" >No</option>
+                                            </select>
+                                            <label for="desayuno">Posee Desayuno</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <input type="number" class="form-control" id="precio" name="precio" placeholder="Metros Cuadrados">
+                                            <label for="precio">Precio Por Noche</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <input type="number" class="form-control" id="estrellas" name="estrellas" placeholder="Numero de Estrellas">
+                                            <label for="estrellas">Numero de Estrellas</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <div class="form-floating">
+                                            <textarea class="form-control" rows="8"  id="descripcion" name="descripcion" placeholder="Ingrese Descripcion"></textarea>
+                                            <label for="descripcion">Ingrese Descripcion</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <select class="form-control" id="tipo_habitacion" name="tipo_habitacion">
+                                                {% for th in t_hab %}                                    
+                                                    <option value="{{th.id_th}}" >{{th.descripcion}}</option>
+                                                {% endfor %}                                                
+                                            </select>
+                                            <label for="tipo_habitacion">Tipo de Habitacion</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-floating">
+                                            <input type="file" class="form-control" id="imagen" name="imagen">
+                                            <label for="imagen">Seleccione Imagen</label>
+                                        </div>
+                                    </div>
+
+
+                                    <div class="col-12">
+                                        <button class="btn btn-primary w-100 py-3" type="submit">Registrar</button>                                                                               
+                                            
+                                            {% if mensaje %}
+                                                <h2>{{mensaje}}</h2>
+                                            {% endif %}
+                                            
+                                        
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div> {% endcomment %}
+        <!-- Contact End -->
+
+
+        <!-- Newsletter Start -->
+        <div class="container newsletter mt-5 wow fadeIn" data-wow-delay="0.1s">
+            <div class="row justify-content-center">
+                <div class="col-lg-10 border rounded p-1">
+                    <div class="border rounded text-center p-1">
+                        <div class="bg-white rounded text-center p-5">
+                            <h4 class="mb-4">Suscribase a nuestras <span class="text-primary text-uppercase">ofertas</span></h4>
+                            <div class="position-relative mx-auto" style="max-width: 400px;">
+                                <input class="form-control w-100 py-3 ps-4 pe-5" type="text" placeholder="Ingrese su correo electronico">
+                                <button type="button" class="btn btn-primary py-2 px-3 position-absolute top-0 end-0 mt-2 me-2">Enviar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Newsletter Start -->
+        
+{% endblock contenido %}
