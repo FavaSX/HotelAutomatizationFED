@@ -70,6 +70,7 @@ def inicio(request):
     mensaje={'comentarios':comentarios}
     return render(request,"index.html",mensaje)
 
+@login_required(login_url='LO')
 def procesamiento(request):
     asyncio.run(obtener_datos())
     # definicion de variables que capturan las sumas por tipo de tarjeta
@@ -872,6 +873,7 @@ def descargar_excel_ant(request):
 
 
 # descargar excel con titulo en la primera fila
+@login_required(login_url='LO')
 def descargar_excel(request):
     # Datos de ejemplo
     data = {
@@ -910,6 +912,7 @@ def descargar_excel(request):
    
    
 # descargar excel con titulo en la primera fila
+@login_required(login_url='LO')
 def descargar_excel_dif(request):
 
     df = pd.DataFrame(informacion_proceso)
@@ -944,6 +947,7 @@ def descargar_excel_dif(request):
     return response
    
    # descargar excel con titulo en la primera fila
+@login_required(login_url='LO')
 def descargar_excel_nopresente(request):
 
     df = pd.DataFrame(informacion_proceso)
