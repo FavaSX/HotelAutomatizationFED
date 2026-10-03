@@ -80,3 +80,79 @@ def procesamiento(request):
         contexto["data_dolar"] = diccionario_dolar
         contexto["ws"] = ws
         contexto["abonado"] = abonado
+
+
+    return render(request, "procesamiento.html", contexto)
+
+
+@login_required(login_url='LO')
+def descargar_excel_dif(request):
+    df = pd.DataFrame(informacion_proceso)
+    df = df[df['extra'] == 'OK']
+    df.sort_values(by=['tipo_tarjeta','status'], inplace=True)
+    mascara_con_valor = pd.notna(df['documento'])
+    df[mascara_con_valor]
+    
+    buffer = BytesIO()
+    df.to_excel(buffer, index=False, engine='openpyxl', startrow=1)
+    buffer.seek(0)
+    
+    wb = load_workbook(buffer)
+    ws = wb.active
+    ws['A1'] = "Reporte de Transacciones Abonadas y Diferencias"
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=df.shape[1])
+    
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    response = HttpResponse(buffer, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename=informacion_proceso.xlsx'
+    return response
+
+@login_required(login_url='LO')
+def descargar_excel_nopresente(request):
+    df = pd.DataFrame(informacion_proceso)
+    df = df[df['extra'] == 'NO']
+    df.sort_values(by=['tipo_tarjeta','status'], inplace=True)
+    mascara_con_valor = pd.notna(df['documento'])
+    df[mascara_con_valor]
+    df = df.drop_duplicates()
+    
+    buffer = BytesIO()
+    df.to_excel(buffer, index=False, engine='openpyxl', startrow=1)
+    buffer.seek(0)
+    
+    wb = load_workbook(buffer)
+    ws = wb.active
+    ws['A1'] = "Reporte de Transacciones No Encontradas"
+    ws['A2'] = "(Transacciones que no se encuentran en el ERP)"
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=df.shape[1])
+    
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    response = HttpResponse(buffer, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename=transacciones_no_ubicadas.xlsx'
+    return response
+
+def login(request):
+    contexto = {}
+    if request.POST:
+        nombre = request.POST.get("email")
+        password = request.POST.get("pass")
+        us = authenticate(request,username=nombre,password=password)
+        if us is not None and us.is_active:
+            login_aut(request,us)
+            usuario=User.objects.get(email=request.POST.get("email"))
+            request.session["email"]=nombre
+            return render(request,"index.html",contexto)
+        else:
+            contexto = {"mensaje":"usuario y contraseña incorrecto"}
+            return render(request,"login.html",contexto)        
+    return render(request,"login.html",contexto)
+
+def cerrar_sesion(request):
+    logout(request)
+    return redirect('INICIO')
