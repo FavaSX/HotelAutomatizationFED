@@ -41,6 +41,8 @@
       <!-- PESTAÑA DÓLARES                            -->
       <!-- ========================================== -->
       <div class="tab-pane fade show active" id="pills-usd" role="tabpanel">
+
+        {% if not data_dolar and not data %}
         
         <!-- Toggle Modo Clásico vs Asistente -->
         <div class="d-flex justify-content-center mb-4 wow fadeIn">
@@ -51,7 +53,18 @@
         </div>
 
         <!-- FORMULARIO ÚNICO PARA ENVIAR DATOS -->
-        <form action="{% url 'PR' %}" method="post" enctype="multipart/form-data" id="mainForm">
+        
+          {% if error_validacion %}
+            <div class="alert alert-danger shadow-sm border-0 d-flex align-items-center mb-4" role="alert">
+              <i class="bi bi-shield-fill-exclamation fs-3 me-3"></i>
+              <div>
+                <strong>¡Error de Validación!</strong><br>
+                {{ error_validacion }}
+              </div>
+            </div>
+          {% endif %}
+          
+          <form action="{% url 'PR' %}" method="post" enctype="multipart/form-data" id="mainForm" onsubmit="return validateAndShowLoading()">
           {% csrf_token %}
           
           <!-- Archivos Ocultos Reales -->
@@ -185,8 +198,8 @@
           </div>
         </form>
 
-        <!-- SECCIÓN DE RESULTADOS (SOLO APARECE SI HAY DATOS) -->
-        {% if data_dolar or data %}
+        {% else %}
+        <!-- SECCIÓN DE RESULTADOS (PASO 2) -->
         <div class="card shadow-lg border-0 rounded-4 p-4 mt-5">
           
           <h2 class="text-center text-primary mb-4"><i class="bi bi-bar-chart-fill"></i> Resultados del Procesamiento</h2>
@@ -252,6 +265,11 @@
           </div>
 
         </div>
+        
+        <div class="text-center mt-5 mb-3">
+            <a href="{% url 'PR' %}" class="btn btn-primary px-5 py-3 shadow fs-5 rounded-pill"><i class="bi bi-arrow-repeat me-2"></i> Volver a Empezar (Nueva Conciliación)</a>
+        </div>
+
         {% endif %}
 
       </div>
@@ -338,6 +356,30 @@
     
     currentStep = step;
   }
+
+  // Formateo y Coloreado de Tablas
+  document.addEventListener("DOMContentLoaded", function() {
+    const tables = document.querySelectorAll("table");
+    tables.forEach(table => {
+        const rows = table.querySelectorAll("tbody tr");
+        rows.forEach(row => {
+            const cells = row.querySelectorAll("td");
+            if (cells.length === 4) {
+                const diffCell = cells[3];
+                const valStr = diffCell.innerText.trim().replace(/[^0-9.-]+/g,"");
+                const val = parseFloat(valStr);
+                if (!isNaN(val)) {
+                    if (val === 0) {
+                        diffCell.classList.add("text-success", "fw-bold");
+                        diffCell.innerHTML = "<i class='bi bi-check-circle-fill'></i> 0";
+                    } else {
+                        diffCell.classList.add("text-danger", "fw-bold");
+                    }
+                }
+            }
+        });
+    });
+  });
 </script>
 
 {% endblock contenido %}
