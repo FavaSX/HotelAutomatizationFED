@@ -1,8 +1,30 @@
-# Automatización Financiera - Hotel San Francisco
+# Sistema de Conciliación ERP - Hotel Plaza San Francisco
 
-> **Nota:** Este documento se encuentra en construcción. Posteriormente se agregará la descripción general del proyecto, los objetivos y la documentación de la Fase 2 (Conciliación en Pesos).
+El **Sistema de Conciliación ERP** es una plataforma web interna (desarrollada en Django) diseñada para automatizar y auditar el cruce masivo de datos financieros entre el sistema central del hotel, los abonos de Transbank, las cartolas bancarias y los reportes de los operadores de tarjetas de crédito internacionales.
 
 ---
+
+## Fase 1: Consolidación en Dólares (v1.0)
+
+La primera fase del proyecto automatiza la conciliación de pagos y transacciones internacionales en **moneda extranjera (Dólares - USD)**. Su objetivo principal es erradicar el trabajo manual y asegurar que los montos registrados en el ERP del hotel coincidan de manera exacta con lo liquidado por las tarjetas y lo depositado finalmente en el banco.
+
+### ¿Cómo funciona?
+Para ejecutar el ciclo de conciliación, el operador contable debe proveer **7 archivos Excel** clave al sistema:
+1. **Archivo ERP:** Reporte de ventas en dólares extraído del sistema de reservas/ERP del hotel.
+2. **Archivo Transbank:** Detalle de todas las transacciones procesadas a través de TBK.
+3. **Cartola del Banco:** Estado de cuenta bancario donde se deben reflejar los depósitos reales.
+4. **Archivos de Operadoras (4):** Reportes individuales detallados de **Visa, MasterCard, American Express y Diners Club**.
+
+### Flujo de Cruce y Lógica de Negocio
+1. **Validación Transbank vs ERP:** El algoritmo contrasta cada transacción en el archivo de Transbank con el reporte del ERP del hotel, usando cruces lógicos para detectar cobros ausentes, duplicados o discrepancias numéricas.
+2. **Cruce al Detalle por Operadora:** Se compara la salida de Transbank contra el detalle individual de cada tarjeta de crédito. Esto permite auditar las comisiones retenidas y validar los valores netos de cada marca.
+3. **Confirmación Bancaria:** Se rastrea la cartola del banco en busca del abono exacto, confirmando que la sumatoria total del día ingresó efectivamente a la cuenta corriente del hotel.
+4. **Generación de Reportes:** 
+   - La pantalla renderiza dos **Tablas de Resumen** dinámicas que exponen las diferencias en rojo/verde por cada cuenta contable.
+   - Genera reportes en formato Excel (descargables) segmentados en **Transacciones Ubicadas** (cuadradas con éxito) y **No Ubicadas** (inconsistencias que requieren atención contable humana).
+
+---
+
 
 ## Hito 1: Auditoría, Refactorización y Optimización del Sistema Legacy (Consolidación Dólares)
 
