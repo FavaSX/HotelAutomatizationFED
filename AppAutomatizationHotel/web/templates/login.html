@@ -8,7 +8,7 @@
         <div class="row justify-content-center">
             <div class="col-lg-5 col-md-8">
                 
-                <div class="card shadow-lg border-0 rounded-4 wow fadeInUp" data-wow-delay="0.1s">
+                <div class="card shadow-lg border-0 rounded-4">
                     <div class="card-body p-5">
                         
                         <!-- Header -->
@@ -35,9 +35,14 @@
                                 <label for="email"><i class="bi bi-envelope me-2"></i>Correo Electrónico</label>
                             </div>
                             
-                            <div class="form-floating mb-4">
-                                <input type="password" class="form-control" id="pass" name="pass" placeholder="Contraseña" required>
-                                <label for="pass"><i class="bi bi-key me-2"></i>Contraseña</label>
+                            <div class="mb-4 position-relative">
+                                <div class="form-floating">
+                                    <input type="password" class="form-control pe-5" id="pass" name="pass" placeholder="Contraseña" required>
+                                    <label for="pass"><i class="bi bi-key me-2"></i>Contraseña</label>
+                                </div>
+                                <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y me-2 border-0 bg-transparent" style="z-index:5;" onclick="togglePassword()">
+                                    <i class="bi bi-eye fs-5 text-muted" id="toggleIcon"></i>
+                                </button>
                             </div>
                             
                             <div class="d-grid mb-3">
@@ -48,18 +53,6 @@
                             
                         </form>
                     </div>
-                    
-                    <!-- Recuperacion de Contraseña -->
-                    <div class="card-footer bg-light p-4 text-center border-0 rounded-bottom-4">
-                        <p class="text-muted mb-2">¿Olvidaste tu contraseña?</p>
-                        <form class="position-relative mx-auto" style="max-width: 350px;">
-                            <input class="form-control py-2 ps-3 pe-5 rounded-pill border-secondary" type="email" placeholder="Ingresa tu correo">
-                            <button type="button" class="btn btn-primary rounded-pill position-absolute top-0 end-0 h-100 px-3">
-                                <i class="bi bi-send-fill"></i>
-                            </button>
-                        </form>
-                    </div>
-                    
                 </div>
                 
             </div>
@@ -68,5 +61,19 @@
     </div>
 </div>
 <!-- Login End -->
+
+<script>
+function togglePassword() {
+  const input = document.getElementById('pass');
+  const icon = document.getElementById('toggleIcon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.classList.replace('bi-eye', 'bi-eye-slash');
+  } else {
+    input.type = 'password';
+    icon.classList.replace('bi-eye-slash', 'bi-eye');
+  }
+}
+</script>
 
 {% endblock contenido %}

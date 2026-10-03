@@ -5,6 +5,7 @@
     <meta charset="utf-8" />
     <title>Plaza San Francisco - ERP</title>
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🏨</text></svg>" type="image/svg+xml">
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -35,6 +36,13 @@
 
         /* Footer */
         footer { background-color: #ffffff; border-top: 1px solid #dee2e6; color: #6c757d; text-align: center; padding: 20px 0; margin-top: auto; }
+        
+        .btn-primary { background-color: var(--primary) !important; border-color: var(--primary) !important; }
+        .btn-primary:hover { background-color: #7a5507 !important; border-color: #7a5507 !important; }
+        .text-primary { color: var(--primary) !important; }
+        .nav-pills .nav-link.active { background-color: var(--dark) !important; }
+        .navbar-toggler { border-color: rgba(255,255,255,0.3); }
+        .navbar-toggler-icon { filter: invert(1); }
     </style>
     {% block css %}{% endblock css %}
 </head>
@@ -46,7 +54,7 @@
             <a href="{% url 'INICIO' %}" class="navbar-brand text-uppercase">
                 <i class="bi bi-building me-2"></i>Plaza San Francisco
             </a>
-            <button class="navbar-toggler bg-light" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             
@@ -68,7 +76,7 @@
                     {% if user.is_authenticated %}
                     <div class="text-light">
                         <i class="bi bi-person-circle fs-5 me-2 align-middle"></i>
-                        <span class="me-3 align-middle">{{ user.first_name }} {{ user.last_name }}</span>
+                        <span class="me-3 align-middle">{{ user.first_name|default:user.username }} {{ user.last_name|default:'' }}</span>
                         <a href="{% url 'CC' %}" class="btn btn-outline-light btn-sm rounded-pill px-3"><i class="bi bi-box-arrow-right me-1"></i> Salir</a>
                     </div>
                     {% else %}
@@ -81,6 +89,16 @@
 
     <!-- Contenido Principal -->
     <main class="flex-grow-1 w-100">
+        {% if messages %}
+        <div class="container mt-3">
+          {% for message in messages %}
+          <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show shadow-sm" role="alert">
+            <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
         {% block contenido %}{% endblock contenido %}
     </main>
 

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block contenido %}
+<div class="container py-5 text-center" style="min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+  <i class="bi bi-exclamation-triangle display-1 text-primary mb-4"></i>
+  <h1 class="display-4 fw-bold text-dark">404</h1>
+  <p class="fs-4 text-muted mb-4">La página que buscas no existe.</p>
+  <a href="{% url 'INICIO' %}" class="btn btn-primary rounded-pill px-5 py-2 fs-5">
+    <i class="bi bi-house-door me-2"></i> Volver al Inicio
+  </a>
+</div>
+{% endblock contenido %}

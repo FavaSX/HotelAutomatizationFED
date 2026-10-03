@@ -1,32 +1,101 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block contenido %}
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
-            <div class="card shadow border-0 rounded-4 p-5 text-center mt-4">
-                <i class="bi bi-building text-primary" style="font-size: 5rem;"></i>
-                <h1 class="display-5 fw-bold text-dark mt-3">Plaza San Francisco</h1>
-                <h3 class="text-secondary mb-4">Sistema de Conciliación ERP</h3>
-                
-                <p class="fs-5 text-muted mb-5">
-                    Bienvenido al sistema interno de gestión financiera. Desde aquí podrás realizar el cruce de datos entre el sistema ERP del hotel, las cartolas bancarias y los reportes de tarjetas de crédito.
-                </p>
+{% block css %}
+<style>
+  .hero-section {
+    background: linear-gradient(135deg, #0C0C42 0%, #1a1a5e 50%, #0C0C42 100%);
+    min-height: 80vh;
+    display: flex;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-section::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(153,105,9,0.15) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .hero-section::after {
+    content: '';
+    position: absolute;
+    bottom: -30%;
+    left: -10%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(153,105,9,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .hero-icon { font-size: 4.5rem; color: #996909; }
+  .hero-badge { background: rgba(153,105,9,0.15); color: #996909; border: 1px solid rgba(153,105,9,0.3); }
+  .feature-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); transition: 0.3s; }
+  .feature-card:hover { background: rgba(255,255,255,0.1); transform: translateY(-5px); }
+</style>
+{% endblock css %}
 
-                <div class="d-flex justify-content-center gap-4">
-                    {% if user.is_authenticated %}
-                        <a href="{% url 'PR' %}" class="btn btn-primary btn-lg rounded-pill px-5 shadow-sm">
-                            <i class="bi bi-arrow-left-right me-2"></i> Iniciar Conciliación
-                        </a>
-                    {% else %}
-                        <a href="{% url 'LO' %}" class="btn btn-primary btn-lg rounded-pill px-5 shadow-sm">
-                            <i class="bi bi-box-arrow-in-right me-2"></i> Iniciar Sesión
-                        </a>
-                    {% endif %}
-                </div>
-            </div>
+{% block contenido %}
+<section class="hero-section">
+  <div class="container position-relative" style="z-index: 1;">
+    <div class="row align-items-center">
+      <div class="col-lg-7 text-white mb-5 mb-lg-0">
+        <span class="badge hero-badge rounded-pill px-3 py-2 mb-3 fs-6">
+          <i class="bi bi-shield-check me-1"></i> Sistema Interno
+        </span>
+        <h1 class="display-3 fw-bold mb-3">Plaza San Francisco</h1>
+        <p class="fs-4 text-white-50 mb-2">Sistema de Conciliación ERP</p>
+        <p class="fs-6 text-white-50 mb-5" style="max-width: 500px;">
+          Plataforma de cruce financiero entre el sistema ERP del hotel, las cartolas bancarias y los reportes de tarjetas de crédito internacionales.
+        </p>
+        <div class="d-flex gap-3 flex-wrap">
+          {% if user.is_authenticated %}
+            <a href="{% url 'PR' %}" class="btn btn-primary btn-lg rounded-pill px-5 shadow">
+              <i class="bi bi-arrow-left-right me-2"></i> Iniciar Conciliación
+            </a>
+          {% else %}
+            <a href="{% url 'LO' %}" class="btn btn-primary btn-lg rounded-pill px-5 shadow">
+              <i class="bi bi-box-arrow-in-right me-2"></i> Iniciar Sesión
+            </a>
+          {% endif %}
         </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="row g-3">
+          <div class="col-6">
+            <div class="feature-card rounded-4 p-4 text-center text-white">
+              <i class="bi bi-file-earmark-spreadsheet fs-1 mb-2" style="color: #996909;"></i>
+              <h6 class="mb-0">ERP</h6>
+              <small class="text-white-50">Consolidado</small>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="feature-card rounded-4 p-4 text-center text-white">
+              <i class="bi bi-credit-card-2-front fs-1 mb-2" style="color: #996909;"></i>
+              <h6 class="mb-0">Transbank</h6>
+              <small class="text-white-50">Abonos</small>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="feature-card rounded-4 p-4 text-center text-white">
+              <i class="bi bi-bank fs-1 mb-2" style="color: #996909;"></i>
+              <h6 class="mb-0">Banco</h6>
+              <small class="text-white-50">Cartola</small>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="feature-card rounded-4 p-4 text-center text-white">
+              <i class="bi bi-wallet2 fs-1 mb-2" style="color: #996909;"></i>
+              <h6 class="mb-0">Tarjetas</h6>
+              <small class="text-white-50">AX / VI / MC / DI</small>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-</div>
+  </div>
+</section>
 {% endblock contenido %}
