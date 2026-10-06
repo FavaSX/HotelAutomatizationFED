@@ -12,6 +12,22 @@
     return true;
   }
 
+  function validarPesos() {
+    const archivos = ['clp_credito','clp_debito','clp_prepago','clp_bordero','clp_cartola'];
+    const faltantes = archivos.filter(id => !document.getElementById(id).files.length);
+
+    if (faltantes.length > 0) {
+      alert('Faltan ' + faltantes.length + ' archivo(s) por seleccionar. Sube los 5 archivos antes de procesar.');
+      return false;
+    }
+
+    const overlay = document.getElementById('loadingOverlay');
+    overlay.querySelector('h4').innerText = 'Procesando 5 archivos...';
+    overlay.querySelector('p').innerText = 'Cruzando Transbank, Borderó y Cartola. Por favor espere.';
+    overlay.classList.add('active');
+    return true;
+  }
+
   // Función para actualizar UI cuando se selecciona un archivo
   function updateUI(inputId) {
     const fileInput = document.getElementById(inputId);
@@ -80,7 +96,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", function() {
-    const tables = document.querySelectorAll("table");
+    const tables = document.querySelectorAll("table:not(.tabla-clp)");
     tables.forEach(table => {
         const rows = table.querySelectorAll("tbody tr");
         const lastIdx = rows.length - 1;

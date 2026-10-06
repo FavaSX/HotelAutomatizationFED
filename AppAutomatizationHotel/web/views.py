@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from .servicios_financieros import procesar_archivos, informacion_proceso
+from .conciliacion_pesos import procesar_pesos, resultado_pesos
 from .i18n import *
 
 from .models import *
@@ -136,6 +137,53 @@ def descargar_excel_nopresente(request):
     response = HttpResponse(buffer, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = 'attachment; filename=transacciones_no_ubicadas.xlsx'
     return response
+
+@login_required(login_url='LO')
+def procesamiento_pesos(request):
+    contexto = {"tab": "clp"}
+    if request.method != 'POST':
+        return redirect('PR')
+
+    campos = ['clp_credito', 'clp_debito', 'clp_prepago', 'clp_bordero', 'clp_cartola']
+    archivos = [request.FILES.get(c) for c in campos]
+    if not all(archivos):
+        contexto["error_pesos"] = "Faltan archivos. Sube los 5 archivos (TBK Crédito, TBK Débito, TBK Prepago, Borderó y Cartola) para realizar el cruce."
+        return render(request, "procesamiento.html", contexto)
+
+    try:
+        contexto["pesos"] = procesar_pesos(*archivos)
+    except ValueError as e:
+        contexto["error_pesos"] = f"Formato de archivo no reconocido: {e} Verifica que cada Excel esté en su casilla correcta."
+    return render(request, "procesamiento.html", contexto)
+
+
+def _excel_pesos(filas, titulo, nombre_archivo):
+    df = pd.DataFrame(filas)
+    buffer = BytesIO()
+    df.to_excel(buffer, index=False, engine='openpyxl', startrow=1)
+    buffer.seek(0)
+
+    wb = load_workbook(buffer)
+    ws = wb.active
+    ws['A1'] = titulo
+    if df.shape[1] > 0:
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=df.shape[1])
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    response = HttpResponse(buffer, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename={nombre_archivo}'
+    return response
+
+@login_required(login_url='LO')
+def descargar_excepciones_pesos(request):
+    return _excel_pesos(resultado_pesos["excepciones"], "Reporte de Excepciones - Conciliación en Pesos", "reporte_excepciones_pesos.xlsx")
+
+@login_required(login_url='LO')
+def descargar_conciliadas_pesos(request):
+    return _excel_pesos(resultado_pesos["conciliadas"], "Transacciones Conciliadas - Conciliación en Pesos", "transacciones_conciliadas_pesos.xlsx")
 
 def login(request):
     contexto = {}

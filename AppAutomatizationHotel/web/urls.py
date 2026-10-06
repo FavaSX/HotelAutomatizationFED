@@ -16,5 +16,8 @@ urlpatterns = [
     path('cerrar',cerrar_sesion,name='CC'),
     path('descargar-excel/', descargar_excel_dif, name='descargar_excel'),
     path('descargar-excel-nopresente/', descargar_excel_nopresente, name='descargar_excel_nopresente'),
+    path('procesamiento-pesos', procesamiento_pesos, name='PR_CLP'),
+    path('descargar-excepciones-pesos/', descargar_excepciones_pesos, name='descargar_excepciones_pesos'),
+    path('descargar-conciliadas-pesos/', descargar_conciliadas_pesos, name='descargar_conciliadas_pesos'),
     
 ]
