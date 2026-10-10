@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block extra_css %}
+<style>
+  .upload-card {
+    border: 2px dashed #cbd5e1;
+    border-radius: 0.85rem;
+    background: #ffffff;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    position: relative;
+  }
+  .upload-card:hover {
+    border-color: var(--hotel-gold);
+    background: #fffbeb;
+    transform: translateY(-2px);
+  }
+  .upload-card.file-loaded {
+    border-style: solid;
+    border-color: #16a34a;
+    background: #f0fdf4;
+  }
+  #processingOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(12, 12, 66, 0.85);
+    backdrop-filter: blur(6px);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: #ffffff;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Processing Overlay -->
+<div id="processingOverlay">
+  <div class="spinner-border text-warning mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+  <h4 class="fw-bold mb-1">Analizando Conciliación en Dólares...</h4>
+  <p class="text-white-50 mb-0">Cruzando ERP vs. Transbank vs. Operadores en memoria. No se guardará nada hasta su confirmación.</p>
+</div>
+
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <span class="badge rounded-pill px-3 py-1 mb-1" style="background: rgba(153,105,9,0.14); color: var(--hotel-gold);">
+      <i class="bi bi-shield-check me-1"></i> Flujo Seguro: Previsualización en Memoria ➔ Confirmación en BD
+    </span>
+    <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">Conciliación en Dólares (USD) — Carga de Archivos</h3>
+    <p class="text-muted small mb-0">Seleccione los 7 archivos requeridos. El sistema procesará el cruce en memoria para que revise los resultados antes de persistirlos.</p>
+  </div>
+
+  <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
+  <div class="d-flex align-items-center gap-2 bg-white border rounded-4 px-3 py-2 shadow-sm">
+    <div class="me-1">
+      <div class="text-uppercase text-muted fw-bold" style="font-size: 0.65rem;">Estado BD (Pruebas)</div>
+      <div class="fw-bold small" style="color: var(--hotel-navy);">
+        <i class="bi bi-database me-1 text-primary"></i> {{ saved_processes_count|default:0 }} proceso(s) guardado(s)
+      </div>
+    </div>
+    <form method="post" action="{% url 'clear_test_db' %}" class="m-0" onsubmit="return confirm('¿Seguro que desea borrar todos los procesos de prueba guardados en la base de datos?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3" {% if not saved_processes_count %}disabled{% endif %}>
+        <i class="bi bi-trash3 me-1"></i> Vaciar BD Pruebas
+      </button>
+    </form>
+  </div>
+</div>
+
+<form method="post" enctype="multipart/form-data" onsubmit="showProcessingOverlay()">
+  {% csrf_token %}
+
+  <div class="card card-executive p-4 mb-4">
+    <div class="row g-3 align-items-center mb-3 pb-3 border-bottom">
+      <div class="col-md-7">
+        <h5 class="fw-bold mb-1" style="color: var(--hotel-navy);">
+          <i class="bi bi-file-earmark-spreadsheet text-primary me-1"></i> Archivos del Cierre en Dólares (7 Archivos)
+        </h5>
+        <p class="text-muted small mb-0">El motor detecta automáticamente el orden y nombres de las columnas en cada archivo.</p>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small fw-bold text-uppercase text-muted mb-1">Etiqueta del Periodo Contable</label>
+        <input type="text" name="accounting_period" class="form-control" placeholder="Ej: Cierre Diciembre 2025 - Dólares" value="Cierre Dólares - Diciembre 2025">
+      </div>
+    </div>
+
+    <!-- 1. Archivos Base -->
+    <h6 class="fw-bold text-uppercase text-muted small mb-3">1. Archivos Base (ERP, Liquidación y Cartola Bancaria)</h6>
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_erp">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-3 p-2 bg-primary-subtle text-primary fs-4"><i class="bi bi-building"></i></div>
+            <div class="overflow-hidden">
+              <div class="fw-bold text-dark small">1. Consolidado ERP Hotel</div>
+              <div class="text-muted" style="font-size: 0.75rem;" id="label_usd_erp">Ej: TERJETAS ERP.xlsx</div>
+            </div>
+          </div>
+          <input type="file" name="usd_erp_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_erp', 'label_usd_erp')">
+        </label>
+      </div>
+
+      <div class="col-md-4">
+        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_tbk">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-3 p-2 bg-info-subtle text-info fs-4"><i class="bi bi-receipt-cutoff"></i></div>
+            <div class="overflow-hidden">
+              <div class="fw-bold text-dark small">2. Liquidación Abonos TBK</div>
+              <div class="text-muted" style="font-size: 0.75rem;" id="label_usd_tbk">Ej: ABONO TBK 03122025.xlsx</div>
+            </div>
+          </div>
+          <input type="file" name="usd_transbank_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_tbk', 'label_usd_tbk')">
+        </label>
+      </div>
+
+      <div class="col-md-4">
+        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_bank">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-3 p-2 bg-success-subtle text-success fs-4"><i class="bi bi-bank2"></i></div>
+            <div class="overflow-hidden">
+              <div class="fw-bold text-dark small">3. Cartola Bancaria</div>
+              <div class="text-muted" style="font-size: 0.75rem;" id="label_usd_bank">Ej: cartola (2).xls</div>
+            </div>
+          </div>
+          <input type="file" name="usd_bank_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_bank', 'label_usd_bank')">
+        </label>
+      </div>
+    </div>
+
+    <!-- 2. Operadores Internacionales -->
+    <h6 class="fw-bold text-uppercase text-muted small mb-3">2. Reportes de Operadores Internacionales</h6>
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_ax">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-dark">AX</span>
+            <div class="fw-bold text-dark small">4. American Express</div>
+          </div>
+          <div class="text-muted mt-1" style="font-size: 0.75rem;" id="label_usd_ax">Ej: AMEX DOLAR.XLS</div>
+          <input type="file" name="usd_amex_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_ax', 'label_usd_ax')">
+        </label>
+      </div>
+
+      <div class="col-md-3">
+        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_di">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary">DI</span>
+            <div class="fw-bold text-dark small">5. Diners Club</div>
+          </div>
+          <div class="text-muted mt-1" style="font-size: 0.75rem;" id="label_usd_di">Ej: DINERS DOLAR.XLS</div>
+          <input type="file" name="usd_diners_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_di', 'label_usd_di')">
+        </label>
+      </div>
+
+      <div class="col-md-3">
+        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_vi">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary">VI</span>
+            <div class="fw-bold text-dark small">6. Visa Internacional</div>
+          </div>
+          <div class="text-muted mt-1" style="font-size: 0.75rem;" id="label_usd_vi">Ej: VISA DOLAR.XLS</div>
+          <input type="file" name="usd_visa_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_vi', 'label_usd_vi')">
+        </label>
+      </div>
+
+      <div class="col-md-3">
+        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_mc">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-warning text-dark">MC</span>
+            <div class="fw-bold text-dark small">7. MasterCard Int.</div>
+          </div>
+          <div class="text-muted mt-1" style="font-size: 0.75rem;" id="label_usd_mc">Ej: MASTERCARD DOLAR.XLS</div>
+          <input type="file" name="usd_mastercard_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_mc', 'label_usd_mc')">
+        </label>
+      </div>
+    </div>
+
+    <!-- Botón de Envío -->
+    <div class="d-flex justify-content-end">
+      <button type="submit" class="btn btn-gold btn-lg rounded-pill px-5 shadow-sm">
+        <i class="bi bi-search me-2"></i> Procesar y Previsualizar en Memoria
+      </button>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function markFileLoaded(input, cardId, labelId) {
+    const card = document.getElementById(cardId);
+    const label = document.getElementById(labelId);
+    if (input.files && input.files.length > 0) {
+      card.classList.add('file-loaded');
+      label.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>' + input.files[0].name;
+      label.classList.replace('text-muted', 'text-success');
+      label.classList.add('fw-semibold');
+    }
+  }
+
+  function showProcessingOverlay() {
+    document.getElementById('processingOverlay').style.display = 'flex';
+  }
+</script>
+{% endblock %}
+

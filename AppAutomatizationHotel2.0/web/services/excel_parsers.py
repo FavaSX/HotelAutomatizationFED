@@ -23,6 +23,7 @@ from .column_detector import (
     clean_code_string,
     safe_decimal,
     safe_date,
+    safe_time,
     safe_cell,
 )
 
@@ -64,7 +65,8 @@ def parse_and_validate_bank_deposits(
         )
         bank_movements_to_create.append(movement)
 
-    BankStatementMovement.objects.bulk_create(bank_movements_to_create)
+    if process is not None:
+        BankStatementMovement.objects.bulk_create(bank_movements_to_create)
 
     validations_summary = []
     for modality_code, expected_amount in expected_deposits:
@@ -75,20 +77,36 @@ def parse_and_validate_bank_deposits(
                 break
 
         is_matched = matched_movement is not None
-        BankDepositValidation.objects.create(
-            process=process,
-            bank_movement=matched_movement,
-            payment_modality=modality_code,
-            transbank_calculated_deposit=expected_amount,
-            bank_statement_deposit=matched_movement.deposit_amount if matched_movement else Decimal("0.00"),
-            deposit_date=matched_movement.movement_date if matched_movement else None,
-            is_matched=is_matched,
-        )
+        if process is not None:
+            BankDepositValidation.objects.create(
+                process=process,
+                bank_movement=matched_movement,
+                payment_modality=modality_code,
+                transbank_calculated_deposit=expected_amount,
+                bank_statement_deposit=matched_movement.deposit_amount if matched_movement else Decimal("0.00"),
+                deposit_date=matched_movement.movement_date if matched_movement else None,
+                is_matched=is_matched,
+            )
         validations_summary.append({
             "modality": modality_code,
             "transbank_deposit": float(expected_amount),
             "bank_deposit": float(matched_movement.deposit_amount) if matched_movement else 0.0,
+            "movement_date": matched_movement.movement_date if matched_movement else None,
             "is_matched": is_matched,
+            "movements_data": [
+                {
+                    "movement_date": m.movement_date.strftime("%d/%m/%Y") if m.movement_date else None,
+                    "description": m.description,
+                    "branch_or_channel": m.branch_or_channel,
+                    "document_number": m.document_number,
+                    "charge_amount": float(m.charge_amount),
+                    "deposit_amount": float(m.deposit_amount),
+                    "balance_amount": float(m.balance_amount),
+                    "is_transbank_deposit": m.is_transbank_deposit,
+                    "is_matched_target": (m is matched_movement),
+                }
+                for m in bank_movements_to_create
+            ],
         })
 
     return validations_summary
@@ -118,9 +136,10 @@ def parse_erp_transactions(
         if currency_mode == "USD":
             if "US$" not in description:
                 continue
-            amount_value = abs(safe_decimal(safe_cell(row, columns["amount"])))
-            if amount_value <= 0:
+            raw_amount = safe_decimal(safe_cell(row, columns["amount"]))
+            if raw_amount >= 0:
                 continue
+            amount_value = abs(raw_amount)
             card_code = (
                 "MC" if "MASTER" in description.upper() else
                 "VI" if "VISA" in description.upper() else
@@ -162,6 +181,7 @@ def parse_erp_transactions(
             document_number=document_number,
             authorization_code=auth_code,
             transaction_date=safe_date(safe_cell(row, columns["transaction_date"])),
+            transaction_time=safe_time(safe_cell(row, columns["transaction_time"])),
             cashier_username=str(safe_cell(row, columns["cashier_username"]) or "").strip(),
             guest_name=str(safe_cell(row, columns["guest_name"]) or "").strip(),
             amount=amount_value,
@@ -176,12 +196,14 @@ def parse_erp_transactions(
             erp_by_auth_code[auth_code].append({
                 "instance": erp_instance,
                 "document_number": document_number,
+                "invoice_number": erp_instance.invoice_number,
                 "amount_clp": amount_value,
                 "payment_code": payment_code,
                 "card_code": card_code,
             })
 
-    ErpTransaction.objects.bulk_create(erp_instances_to_create)
+    if process is not None:
+        ErpTransaction.objects.bulk_create(erp_instances_to_create)
     return erp_instances_to_create, erp_by_auth_code
 
 
@@ -209,14 +231,25 @@ def parse_card_operator_statements(
             if not document_number or not document_number.isdigit():
                 continue
 
-            foreign_currency = safe_decimal(safe_cell(row, columns["foreign_currency_amount"]))
-            balance_clp = safe_decimal(safe_cell(row, columns["balance_amount"]))
-            corrected_balance_clp = safe_decimal(safe_cell(row, columns["corrected_balance_amount"]))
+            sequence_number = clean_code_string(safe_cell(row, columns["sequence_number"]))
+            raw_col_12 = safe_cell(row, columns["foreign_currency_amount"])
+            raw_col_13 = safe_cell(row, columns["balance_amount"])
+            raw_col_14 = safe_cell(row, columns["corrected_balance_amount"])
+
+            foreign_currency = safe_decimal(raw_col_12)
+            balance_clp = safe_decimal(raw_col_13)
+            corrected_balance_clp = safe_decimal(raw_col_14)
+
+            # Handle legacy fixed-width column shift when USD < 10.00 (Col 12 is NaN, Col 13 has USD, Col 14 has CLP)
+            if pd.isna(raw_col_12) and not pd.isna(raw_col_13) and not pd.isna(raw_col_14):
+                foreign_currency = balance_clp
+                balance_clp = Decimal("0.00")
 
             operator_record = CardOperatorTransaction(
                 process=process,
                 card_type=card_model,
                 document_number=document_number,
+                sequence_number=sequence_number,
                 foreign_currency_amount=foreign_currency,
                 balance_amount=balance_clp,
                 corrected_balance_amount=corrected_balance_clp,
@@ -226,12 +259,14 @@ def parse_card_operator_statements(
             if document_number not in card_operator_index[card_code]:
                 card_operator_index[card_code][document_number] = []
             card_operator_index[card_code][document_number].append({
+                "sequence_number": sequence_number,
                 "foreign_currency_usd": foreign_currency,
                 "balance_clp": balance_clp,
                 "corrected_balance_clp": corrected_balance_clp,
                 "instance": operator_record,
             })
 
-    CardOperatorTransaction.objects.bulk_create(operator_instances_to_create)
+    if process is not None:
+        CardOperatorTransaction.objects.bulk_create(operator_instances_to_create)
     return card_operator_index
 

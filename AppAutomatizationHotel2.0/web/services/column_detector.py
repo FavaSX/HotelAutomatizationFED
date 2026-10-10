@@ -46,17 +46,21 @@ BANK_STATEMENT_COLUMN_RULES = {
 
 CARD_OPERATOR_COLUMN_RULES = {
     "document_number": {"keywords": ["documento"], "default_index": 2},
+    "sequence_number": {"keywords": ["parcela", "cuota", "secuencia"], "default_index": 3},
     "foreign_currency_amount": {"keywords": ["otra moneda"], "default_index": 12},
     "balance_amount": {"keywords": ["saldo"], "default_index": 13},
     "corrected_balance_amount": {"keywords": ["saldo corregido"], "default_index": 14},
 }
 
 TRANSBANK_USD_COLUMN_RULES = {
+    "merchant_code": {"keywords": ["codigo comercio", "codigo de comercio"], "default_index": 1},
     "sale_date": {"keywords": ["fecha venta"], "default_index": 2},
     "card_type": {"keywords": ["tipo tarjeta"], "default_index": 3},
     "masked_card_number": {"keywords": ["identificador"], "default_index": 4},
+    "installment_type": {"keywords": ["tipo cuota"], "default_index": 5},
     "gross_amount": {"keywords": ["monto original"], "default_index": 6},
     "authorization_code": {"keywords": ["codigo autorizacion", "autorizacion venta"], "default_index": 7},
+    "installment_number": {"keywords": ["n cuota", "n° cuota"], "default_index": 8},
 }
 
 TRANSBANK_CLP_COLUMN_RULES = {
@@ -136,10 +140,10 @@ def resolve_dataframe_columns(
 # ==============================================================================
 
 def clean_code_string(raw_value: Any) -> str:
-    """Sanitizes authorization and document codes removing trailing '.0' and spaces."""
+    """Sanitizes authorization and document codes removing trailing '.0', spaces, and normalizing to uppercase."""
     if pd.isna(raw_value):
         return ""
-    code_string = str(raw_value).strip()
+    code_string = str(raw_value).strip().upper()
     if code_string.endswith(".0"):
         code_string = code_string[:-2]
     return code_string
@@ -167,6 +171,21 @@ def safe_date(raw_value: Any):
         if pd.isna(parsed_timestamp):
             return None
         return parsed_timestamp.date()
+    except Exception:
+        return None
+
+
+def safe_time(raw_value: Any):
+    """Parses time values safely (HH:MM:SS), returning None if invalid or empty."""
+    if pd.isna(raw_value):
+        return None
+    try:
+        if hasattr(raw_value, "hour") and hasattr(raw_value, "minute"):
+            return raw_value
+        parsed = pd.to_datetime(str(raw_value).strip(), errors="coerce")
+        if pd.isna(parsed):
+            return None
+        return parsed.time()
     except Exception:
         return None
 

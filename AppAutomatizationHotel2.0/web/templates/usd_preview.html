@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+{% load currency_filters %}
+
+{% block content %}
+<!-- Top Header & Action Buttons -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 p-3 bg-white rounded-3 border shadow-sm">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <span class="badge bg-warning text-dark border border-warning px-3 py-1 rounded-pill fw-bold">
+        <i class="bi bi-eye-fill me-1"></i> Previsualización en Memoria (Borrador)
+      </span>
+      <span class="text-muted small">Base de datos intacta — Cero registros creados aún</span>
+    </div>
+    <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">{{ preview.accounting_period }}</h3>
+  </div>
+
+  <div class="d-flex flex-wrap gap-2">
+    <!-- Discard Form -->
+    <form action="{% url 'usd_discard' %}" method="post" class="d-inline" onsubmit="return confirm('¿Seguro que desea descartar esta previsualización?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger rounded-pill px-4">
+        <i class="bi bi-trash3 me-1"></i> Descartar
+      </button>
+    </form>
+
+    <!-- Excel Draft Download -->
+    <a href="{% url 'usd_export_draft' %}" class="btn btn-outline-success rounded-pill px-4">
+      <i class="bi bi-file-earmark-excel-fill me-1"></i> Descargar Borrador Excel
+    </a>
+
+    <!-- Commit Form -->
+    <form action="{% url 'usd_commit' %}" method="post" class="d-inline" onsubmit="return confirm('¿Confirma que desea guardar este cierre en la base de datos?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-gold rounded-pill px-4 shadow-sm">
+        <i class="bi bi-check-circle-fill me-1"></i> Confirmar y Guardar en BD
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- 1. CARTOLA BANCARIA: VALIDACIÓN DE ABONO CALCULADO TRANSBANK -->
+<!-- ====================================================================== -->
+<div class="card card-executive p-4 mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h6 class="fw-bold text-uppercase text-muted small mb-0">
+      <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abono en Cartola Bancaria (Banco Santander)
+    </h6>
+    {% if bank.is_matched %}
+    <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fs-6">
+      <i class="bi bi-check-circle-fill me-1"></i> Abono Cuadrado al Peso en Cartola
+    </span>
+    {% else %}
+    <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 rounded-pill fs-6">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i> Abono Pendiente en Cartola
+    </span>
+    {% endif %}
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="p-3 rounded-3 bg-light border">
+        <small class="text-muted d-block text-uppercase fw-bold">Abono Calculado en Liquidación Transbank</small>
+        <div class="fs-3 fw-bold text-dark mt-1">
+          US$ {{ bank.calculated_deposit|num_usd }} <small class="fs-6 text-muted">USD</small>
+        </div>
+        <small class="text-muted">Proveniente de fila "Abono Calculado (=):" del archivo de liquidación Transbank</small>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="p-3 rounded-3 {% if bank.is_matched %}bg-success-subtle border-success-subtle{% else %}bg-warning-subtle border-warning-subtle{% endif %} border">
+        <small class="text-muted d-block text-uppercase fw-bold">Movimiento Detectado en Cartola Bancaria</small>
+        <div class="fs-3 fw-bold {% if bank.is_matched %}text-success{% else %}text-danger{% endif %} mt-1">
+          US$ {{ bank.bank_deposit_amount|num_usd }} <small class="fs-6">USD</small>
+        </div>
+        <small class="text-muted">Fecha abono: {{ bank.bank_movement_date|default:"No detectado" }}</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- 2. RESUMEN FINANCIERO: TABLAS EN DÓLARES (USD) Y EN PESOS (CLP) -->
+<!-- ====================================================================== -->
+<div class="row g-4 mb-4">
+  <!-- Tabla USD -->
+  <div class="col-lg-6">
+    <div class="card card-executive h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0" style="color: var(--hotel-navy);">
+          <i class="bi bi-currency-dollar text-primary me-1"></i> 2A. Cuadratura por Operador en Dólares (US$)
+        </h6>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-uppercase text-muted">
+            <tr>
+              <th class="ps-3">Operador</th>
+              <th class="text-end">Total TBK (US$)</th>
+              <th class="text-end">Total Operador (US$)</th>
+              <th class="text-end pe-3">Diferencia (US$)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in usd_table %}
+            <tr>
+              <td class="ps-3 fw-semibold">
+                <i class="bi bi-credit-card-2-front text-muted me-1"></i> {{ row.card_name }}
+              </td>
+              <td class="text-end">US$ {{ row.erp_sales|num_usd }}</td>
+              <td class="text-end">US$ {{ row.tbk_sales|num_usd }}</td>
+              <td class="text-end pe-3 fw-bold {% if row.difference == 0 %}text-success{% else %}text-danger{% endif %}">
+                US$ {{ row.difference|num_usd }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td class="ps-3">TOTAL GENERAL</td>
+              <td class="text-end">US$ {{ usd_totals.erp|num_usd }}</td>
+              <td class="text-end">US$ {{ usd_totals.tbk|num_usd }}</td>
+              <td class="text-end pe-3 {% if usd_totals.diff == 0 %}text-success{% else %}text-danger{% endif %}">
+                US$ {{ usd_totals.diff|num_usd }}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabla CLP -->
+  <div class="col-lg-6">
+    <div class="card card-executive h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0" style="color: var(--hotel-navy);">
+          <i class="bi bi-cash-stack text-success me-1"></i> 2B. Cuadratura en Moneda Nacional (Pesos CLP)
+        </h6>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-uppercase text-muted">
+            <tr>
+              <th class="ps-3">Operador</th>
+              <th class="text-end">Total ERP (CLP)</th>
+              <th class="text-end">Total Operador (CLP)</th>
+              <th class="text-end pe-3">Diferencia (CLP)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in clp_table %}
+            <tr>
+              <td class="ps-3 fw-semibold">
+                <i class="bi bi-credit-card-2-front text-muted me-1"></i> {{ row.card_name }}
+              </td>
+              <td class="text-end">${{ row.erp_sales|num_clp }}</td>
+              <td class="text-end">${{ row.tbk_sales|num_clp }}</td>
+              <td class="text-end pe-3 fw-bold {% if row.difference == 0 %}text-success{% else %}text-danger{% endif %}">
+                ${{ row.difference|num_clp }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td class="ps-3">TOTAL GENERAL</td>
+              <td class="text-end">${{ clp_totals.erp|num_clp }}</td>
+              <td class="text-end">${{ clp_totals.tbk|num_clp }}</td>
+              <td class="text-end pe-3 {% if clp_totals.diff == 0 %}text-success{% else %}text-danger{% endif %}">
+                ${{ clp_totals.diff|num_clp }}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- 3. PESTAÑAS DE VOUCHERS Y CRUCE DETALLADO (GUIADO POR ABONO TBK) -->
+<!-- ====================================================================== -->
+<div class="card card-executive mb-4">
+  <div class="card-header bg-white border-bottom pt-3 pb-0 px-4 d-flex flex-wrap justify-content-between align-items-center">
+    <ul class="nav nav-tabs border-bottom-0 gap-2" id="previewTabs" role="tablist">
+      <li class="nav-item">
+        <button class="nav-link active fw-bold text-success" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button">
+          <i class="bi bi-check2-all me-1"></i> Ubicadas Exactas ({{ counts.matched }})
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link fw-bold text-warning-emphasis" data-bs-toggle="tab" data-bs-target="#tabDiscrepancies" type="button">
+          <i class="bi bi-shuffle me-1"></i> Con Diferencia ({{ counts.discrepancies }})
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link fw-bold text-danger" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button">
+          <i class="bi bi-exclamation-octagon me-1"></i> En TBK pero NO en ERP ({{ counts.orphans }})
+        </button>
+      </li>
+    </ul>
+    <span class="badge bg-light text-dark border mb-2">
+      Total Liquidación Transbank: <strong>{{ counts.total }} vouchers</strong>
+    </span>
+  </div>
+
+  <div class="card-body p-0 tab-content">
+    <!-- TAB 1: UBICADAS EXACTAS -->
+    <div class="tab-pane fade show active" id="tabMatched" role="tabpanel">
+      <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-uppercase text-muted sticky-top">
+            <tr>
+              <th class="ps-4">Voucher</th>
+              <th>Doc ERP</th>
+              <th>Huésped</th>
+              <th>Hab.</th>
+              <th>Cajero</th>
+              <th>Tarjeta</th>
+              <th class="text-end">Monto TBK</th>
+              <th class="text-end">Monto Operador</th>
+              <th class="text-end">Dif. USD</th>
+              <th class="text-end">Monto CLP</th>
+              <th class="pe-4">Diagnóstico</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in matched_vouchers %}
+            <tr>
+              <td class="ps-4 fw-bold font-monospace text-success">{{ item.authorization_code }}</td>
+              <td class="small">{{ item.document_number|default:"—" }}</td>
+              <td class="small fw-semibold">{{ item.guest_name }}</td>
+              <td class="small">{{ item.room_number }}</td>
+              <td><span class="badge bg-light text-dark border">{{ item.cashier_username }}</span></td>
+              <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
+              <td class="text-end fw-bold text-success">US$ {{ item.gross_amount_usd|num_usd }}</td>
+              <td class="text-end fw-semibold text-primary">US$ {{ item.operator_amount_usd|num_usd }}</td>
+              <td class="text-end small {% if item.difference_usd == 0 %}text-muted{% else %}text-secondary{% endif %}">
+                US$ {{ item.difference_usd|num_usd }}
+              </td>
+              <td class="text-end">${{ item.erp_amount_clp|num_clp }}</td>
+              <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="11" class="text-center py-4 text-muted">No hay transacciones ubicadas.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 2: DIFERENCIAS DE MONTO -->
+    <div class="tab-pane fade" id="tabDiscrepancies" role="tabpanel">
+      <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-uppercase text-muted sticky-top">
+            <tr>
+              <th class="ps-4">Voucher</th>
+              <th>Doc ERP</th>
+              <th>Huésped / Hab.</th>
+              <th>Cajero</th>
+              <th>Tarjeta</th>
+              <th class="text-end">Monto TBK</th>
+              <th class="text-end">Monto Operador</th>
+              <th class="text-end">Diferencia</th>
+              <th class="pe-4">Diagnóstico</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in discrepancy_vouchers %}
+            <tr>
+              <td class="ps-4 fw-bold font-monospace text-warning-emphasis">{{ item.authorization_code }}</td>
+              <td class="small">{{ item.document_number }}</td>
+              <td class="small">
+                <div class="fw-semibold">{{ item.guest_name }}</div>
+                <span class="text-muted">Hab: {{ item.room_number }}</span>
+              </td>
+              <td><span class="badge bg-light text-dark border">{{ item.cashier_username }}</span></td>
+              <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
+              <td class="text-end">US$ {{ item.gross_amount_usd|num_usd }}</td>
+              <td class="text-end">US$ {{ item.operator_amount_usd|num_usd }}</td>
+              <td class="text-end fw-bold text-danger">US$ {{ item.difference_usd|num_usd }}</td>
+              <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="9" class="text-center py-4 text-muted">Sin diferencias de monto en este proceso.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 3: EN TRANSBANK PERO NO EN ERP -->
+    <div class="tab-pane fade" id="tabOrphans" role="tabpanel">
+      <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-uppercase text-muted sticky-top">
+            <tr>
+              <th class="ps-4">Cód. Autorización</th>
+              <th>Tarjeta</th>
+              <th>Fecha Venta</th>
+              <th class="text-end">Monto TBK</th>
+              <th class="pe-4">Observación</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in orphan_vouchers %}
+            <tr>
+              <td class="ps-4 fw-bold font-monospace text-danger">{{ item.authorization_code }}</td>
+              <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
+              <td>{{ item.sale_date }}</td>
+              <td class="text-end fw-bold text-danger">US$ {{ item.gross_amount_usd|num_usd }}</td>
+              <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center py-4 text-muted">No hay vouchers huérfanos.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom Sticky Bar with Action Buttons -->
+<div class="p-3 bg-white rounded-3 border shadow-sm d-flex flex-wrap justify-content-between align-items-center gap-3">
+  <div class="d-flex align-items-center gap-2 text-muted">
+    <i class="bi bi-info-circle-fill text-primary fs-5"></i>
+    <span>Los datos anteriores fueron calculados en memoria. Si todo está conforme, haga clic en <strong>Confirmar y Guardar</strong> para consolidar en la base de datos.</span>
+  </div>
+  <div class="d-flex gap-2">
+    <form action="{% url 'usd_discard' %}" method="post" class="d-inline" onsubmit="return confirm('¿Seguro que desea descartar esta previsualización?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger rounded-pill px-4">Descartar</button>
+    </form>
+    <form action="{% url 'usd_commit' %}" method="post" class="d-inline" onsubmit="return confirm('¿Confirma que desea guardar este cierre en la base de datos?');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-gold btn-lg rounded-pill px-5 shadow-sm">
+        <i class="bi bi-check-circle-fill me-1"></i> Confirmar y Guardar en BD
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
