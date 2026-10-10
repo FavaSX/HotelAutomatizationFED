@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Hotel Plaza San Francisco | Conciliación en Dólares (USD)</title>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🏨</text></svg>" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary: #996909;
+      --primary-hover: #7a5507;
+      --dark: #0C0C42;
+      --dark-secondary: #151559;
+      --light-bg: #f4f6fb;
+      --hotel-gold: #996909;
+      --hotel-navy: #0C0C42;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--light-bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    h1, h2, h3, h4, h5, .brand-font { font-family: 'Montserrat', sans-serif; }
+    .btn-primary { background-color: var(--primary) !important; border-color: var(--primary) !important; color: #fff !important; }
+    .btn-primary:hover { background-color: var(--primary-hover) !important; border-color: var(--primary-hover) !important; }
+    .text-primary { color: var(--primary) !important; }
+    .bg-navy { background-color: var(--dark) !important; }
+
+    .app-wrapper { display: flex; flex: 1; min-height: 100vh; }
+    .sidebar-panel {
+      width: 265px;
+      background: linear-gradient(180deg, #0C0C42 0%, #08082b 100%);
+      color: #fff;
+      border-right: 3px solid var(--primary);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      min-height: 100vh;
+      position: sticky;
+      top: 0;
+    }
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(255,255,255,0.78);
+      text-decoration: none;
+      padding: 12px 18px;
+      border-radius: 10px;
+      margin-bottom: 6px;
+      font-weight: 500;
+      transition: 0.2s;
+    }
+    .sidebar-link:hover, .sidebar-link.active {
+      background-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(153, 105, 9, 0.35);
+    }
+    .main-content-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .topbar-utility {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 0.75rem 1.75rem;
+    }
+    .dollar-pill {
+      background: rgba(153, 105, 9, 0.12);
+      color: var(--primary);
+      border: 1px solid rgba(153, 105, 9, 0.3);
+      font-weight: 600;
+      padding: 5px 14px;
+      border-radius: 50px;
+      font-size: 0.875rem;
+    }
+    .card-executive {
+      border: 0;
+      border-radius: 14px;
+      box-shadow: 0 4px 18px rgba(12, 12, 66, 0.06);
+      background: #ffffff;
+    }
+    .btn-gold {
+      background-color: var(--primary) !important;
+      border-color: var(--primary) !important;
+      color: #ffffff !important;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .btn-gold:hover {
+      background-color: var(--primary-hover) !important;
+      border-color: var(--primary-hover) !important;
+      color: #ffffff !important;
+      transform: translateY(-1px);
+    }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+
+<body>
+  <div class="app-wrapper">
+    <!-- SIDEBAR LATERAL FINANCIERO -->
+    {% if user.is_authenticated %}
+    <aside class="sidebar-panel p-3 shadow">
+      <a href="{% url 'usd_upload' %}" class="d-flex align-items-center text-white text-decoration-none pb-3 mb-3 border-bottom border-secondary">
+        <i class="bi bi-building-check fs-2 me-2 text-primary"></i>
+        <div>
+          <span class="fw-bold d-block lh-1">PLAZA SAN FRANCISCO</span>
+          <small class="text-white-50" style="font-size: 0.72rem;">Módulo Dólares (USD)</small>
+        </div>
+      </a>
+
+      <div class="mb-auto">
+        <small class="text-uppercase text-white-50 fw-bold px-2 mb-2 d-block" style="font-size: 0.7rem;">Operaciones</small>
+        <a href="{% url 'usd_upload' %}" class="sidebar-link active">
+          <i class="bi bi-currency-dollar fs-5"></i> Conciliación Dólares
+        </a>
+
+        <hr class="border-secondary my-3">
+        <small class="text-uppercase text-white-50 fw-bold px-2 mb-2 d-block" style="font-size: 0.7rem;">Administración</small>
+        <a href="/admin/" target="_blank" class="sidebar-link">
+          <i class="bi bi-database-gear fs-5"></i> Base de Datos (Admin)
+        </a>
+      </div>
+
+      <div class="pt-3 border-top border-secondary">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <small class="text-white-50 d-block" style="font-size:0.72rem;">Auditor conectado</small>
+            <span class="fw-semibold"><i class="bi bi-person-check text-primary me-1"></i>{{ user.first_name|default:user.username }}</span>
+          </div>
+          <a href="{% url 'logout' %}" class="btn btn-sm btn-outline-light rounded-pill" title="Cerrar sesión">
+            <i class="bi bi-box-arrow-right"></i>
+          </a>
+        </div>
+      </div>
+    </aside>
+    {% endif %}
+
+    <!-- ÁREA DE CONTENIDO -->
+    <div class="main-content-area">
+      {% if user.is_authenticated %}
+      <div class="topbar-utility d-flex flex-wrap align-items-center justify-content-between gap-3 shadow-sm">
+        <div class="d-flex align-items-center gap-2">
+          <span class="badge rounded-pill px-3 py-2" style="background: rgba(12,12,66,0.08); color: var(--hotel-navy); font-weight: 600;">
+            <i class="bi bi-shield-check me-1 text-primary"></i> Hotel Plaza San Francisco — Fase 1: Conciliación Dólares (USD)
+          </span>
+        </div>
+
+        <div class="d-flex align-items-center gap-3">
+          <span class="dollar-pill">
+            <i class="bi bi-currency-dollar"></i> Dólar Hoy: <span id="valor-dolar">Cargando...</span>
+          </span>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if messages %}
+      <div class="container-fluid px-4 mt-3">
+        {% for message in messages %}
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show shadow-sm border-0" role="alert">
+          <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <main class="container-fluid px-4 py-4 flex-grow-1">
+        {% block content %}{% endblock %}
+      </main>
+
+      <footer class="bg-white border-top py-3 px-4 text-center text-muted small mt-auto">
+        <strong>Hotel Plaza San Francisco</strong> — Conciliación Financiera en Dólares (USD) v2.0
+      </footer>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      fetch('https://mindicador.cl/api/dolar')
+        .then(r => r.json())
+        .then(data => {
+          if (data.serie && data.serie.length > 0) {
+            document.getElementById('valor-dolar').textContent = '$' + data.serie[0].valor + ' CLP';
+          }
+        })
+        .catch(() => {
+          const el = document.getElementById('valor-dolar');
+          if (el) el.textContent = 'N/D';
+        });
+    });
+  </script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>
+

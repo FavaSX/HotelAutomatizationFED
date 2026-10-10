@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block contenido %}
+<div class="row justify-content-center align-items-center" style="min-height: 75vh;">
+  <div class="col-md-5 col-lg-4">
+    <div class="card border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="p-4 text-center text-white" style="background: linear-gradient(135deg, #0C0C42 0%, #1a1a5e 100%); border-bottom: 3px solid #996909;">
+        <i class="bi bi-building-lock display-4 text-primary"></i>
+        <h4 class="fw-bold mt-2 mb-0">Plaza San Francisco</h4>
+        <small class="text-white-50">Suite de Conciliación Financiera v2.0</small>
+      </div>
+      <div class="card-body p-4">
+        <form method="post" action="{% url 'login' %}">
+          {% csrf_token %}
+          <div class="form-floating mb-3">
+            <input type="text" class="form-control" id="username" name="username" placeholder="Usuario" required autofocus>
+            <label for="username"><i class="bi bi-person me-2"></i>Usuario Auditor</label>
+          </div>
+          <div class="mb-4 position-relative">
+            <div class="form-floating">
+              <input type="password" class="form-control pe-5" id="password" name="password" placeholder="Contraseña" required>
+              <label for="password"><i class="bi bi-key me-2"></i>Contraseña</label>
+            </div>
+            <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y me-2 border-0 bg-transparent" onclick="togglePass()">
+              <i class="bi bi-eye text-muted" id="eyeIcon"></i>
+            </button>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 py-3 rounded-pill fw-bold shadow-sm">
+            <i class="bi bi-box-arrow-in-right me-2"></i>Ingresar al Sistema
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function togglePass() {
+  const input = document.getElementById('password');
+  const icon = document.getElementById('eyeIcon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.classList.replace('bi-eye', 'bi-eye-slash');
+  } else {
+    input.type = 'password';
+    icon.classList.replace('bi-eye-slash', 'bi-eye');
+  }
+}
+</script>
+{% endblock %}
+

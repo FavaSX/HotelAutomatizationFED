@@ -220,6 +220,7 @@ class CardOperatorTransaction(models.Model):
     card_type = models.ForeignKey(CardType, on_delete=models.PROTECT)
 
     document_number = models.CharField(max_length=50)
+    sequence_number = models.CharField(max_length=20, blank=True, default='')
     authorization_code = models.CharField(max_length=50, blank=True, null=True)
     foreign_currency_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     balance_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -231,7 +232,7 @@ class CardOperatorTransaction(models.Model):
         verbose_name_plural = 'Card Operator Transactions'
 
     def __str__(self):
-        return f"{self.card_type.code} Doc {self.document_number} | USD {self.foreign_currency_amount}"
+        return f"{self.card_type.code} Doc {self.document_number}-{self.sequence_number} | USD {self.foreign_currency_amount}"
 
 
 # ==========================================
