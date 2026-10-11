@@ -44,11 +44,14 @@
 <div class="card card-executive p-4 mb-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="fw-bold text-uppercase text-muted small mb-0">
-      <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abono en Cartola Bancaria (Banco Santander)
+      <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abono en Cartola Bancaria
+      {% if bank.bank_name %}
+        ({{ bank.bank_name }}{% if bank.bank_account_number %} · Cta. {{ bank.bank_account_number }}{% endif %})
+      {% endif %}
     </h6>
     {% if bank.is_matched %}
     <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fs-6">
-      <i class="bi bi-check-circle-fill me-1"></i> Abono Cuadrado al Peso en Cartola
+      <i class="bi bi-check-circle-fill me-1"></i> Abono Confirmado en Cartola
     </span>
     {% else %}
     <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 rounded-pill fs-6">
@@ -73,7 +76,11 @@
         <div class="fs-3 fw-bold {% if bank.is_matched %}text-success{% else %}text-danger{% endif %} mt-1">
           US$ {{ bank.bank_deposit_amount|num_usd }} <small class="fs-6">USD</small>
         </div>
-        <small class="text-muted">Fecha abono: {{ bank.bank_movement_date|default:"No detectado" }}</small>
+        <small class="text-muted">
+          Fecha abono: {{ bank.bank_movement_date|default:"No detectado" }}
+          {% if bank.bank_name %} · {{ bank.bank_name }}{% endif %}
+          {% if bank.bank_account_number %} (Cta. {{ bank.bank_account_number }}){% endif %}
+        </small>
       </div>
     </div>
   </div>

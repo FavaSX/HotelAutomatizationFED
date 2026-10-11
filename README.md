@@ -93,19 +93,28 @@ Para evitar que la base de datos se infle si un contador guarda dos veces el mis
 
 ---
 
-### 3. Nuevo Motor de Cálculo en Memoria y Detector Dinámico de Columnas
+### 3. Motor de Cálculo en Memoria, Auto-Detección y Arquitectura Modular
+* **Auto-Detección de Archivos por Huella Interna (`file_detector.py`):** En versiones anteriores el usuario debía subir manualmente cada uno de los 7 archivos en 7 casilleros separados, con el riesgo de equivocarse de casilla entre las 4 operadoras. En la nueva versión se reemplazó ese esquema por una **Zona Única de Carga Masiva en 2 Pasos**:
+  1. **Paso 1 (Selección Masiva):** El contador arrastra o selecciona los 7 archivos juntos en cualquier orden e incluso con nombres distintos. El sistema abre las primeras 45 filas de cada Excel en memoria e identifica su **huella contable interna** (por ejemplo, leyendo `Cliente: TRANSBANK - TARJETA MASTERCARD US$`, `Código Local: 27941117` o los códigos `AME$ / VIS$`).
+  2. **Paso 2 (Tabla de Alineación y Confirmación):** El sistema presenta los 7 roles alineados junto con la evidencia interna encontrada, el conteo de filas, el nivel de certeza (`100% Seguro`) y un selector desplegable en cada fila que permite cambiar o reasignar manualmente cualquier archivo antes de ejecutar la conciliación, haciendo innecesario mantener el antiguo formulario manual de 7 casilleros.
 * **Previsualización Instantánea (`Zero-Write`):** Toda la lectura y cruce matemático (`calculate_usd_preview`) se ejecuta 100% en memoria RAM en fracciones de segundo y se almacena temporalmente en la sesión del usuario, permitiendo auditar y exportar borradores sin ensuciar la base de datos hasta la confirmación explícita (`commit_usd_preview_to_database`) protegida con `transaction.atomic()`.
-* **Detector Híbrido de Columnas (`column_detector.py`):** Se implementó un motor que escanea las primeras filas de cada Excel buscando coincidencias por nombres de encabezado normalizados (sin tildes ni ruido) y utiliza índices posicionales solo como respaldo secundario.
-* **Sanitización Matemática con `Decimal`:** Se reemplazó el uso de flotantes binarios inexactos por aritmética `Decimal` de precisión exacta, incorporando filtros estrictos contra valores `NaN`, `Infinity` y símbolos monetarios corruptos.
+* **Detector Híbrido de Columnas (`column_detector.py`) y Precisión `Decimal`:** Escanea las primeras filas de cada Excel buscando coincidencias por nombres de encabezado normalizados (sin tildes ni ruido), utiliza índices posicionales como respaldo secundario y reemplaza los flotantes inexactos por aritmética `Decimal` libre de errores `NaN`.
+* **Arquitectura Modular por Responsabilidad Única (`web/services/`):** El núcleo financiero se estructuró en módulos independientes y desacoplados:
+  * `usd_reconciliation.py`: Motor matemático de cruce triple en memoria para Dólares.
+  * `reconciliation_persistence.py`: Persistencia transaccional, deduplicación en las 8 tablas y registro automático en `AuditResolutionLog`.
+  * `report_exporter.py`: Generación de reportes Excel multi-hoja estilizados con `openpyxl`.
+  * `file_detector.py`: Clasificación y alineación automática de los 7 archivos por estructura interna.
+  * `excel_parsers.py` y `column_detector.py`: Lectura compartida y sanitización de Cartola, ERP y Operadoras.
 
 ---
 
 ### 4. Rediseño de Interfaz (UI/UX) y Estandarización Contable Chilena
 * **Identidad Visual Corporativa:** Interfaz completamente nueva inspirada en la línea gráfica del **Hotel Plaza San Francisco** (azul marino profundo `#0C0C42` y dorado `#996909`), con barra de navegación unificada, alertas dinámicas y pantalla de bloqueo de carga (*Loading Overlay*) para impedir envíos dobles.
-* **Doble Modalidad de Carga:** El usuario puede alternar en vivo entre la **Vista Clásica** (tarjetas individuales para los 7 archivos) y el **Modo Asistente (Wizard)** dividido en 3 pasos guiados (*1. Sistemas Base*, *2. Banco*, *3. Operadoras*), con validación en el navegador de extensiones y archivos completos.
+* **Flujo Guiado de Carga y Confirmación:** La pantalla de carga guía al contador desde el arrastre masivo de los 7 reportes hasta la tabla interactiva de verificación de alineación, validando en vivo que no falten archivos ni existan asignaciones duplicadas antes de habilitar el procesamiento.
 * **Formato Numérico y Diagnósticos Claros:** Se creó una librería de filtros personalizados (`currency_filters.py`) que formatea todos los montos bajo el estándar chileno (**`.`** para separador de miles y **`,`** para decimales, tanto en USD como en CLP), muestra los nombres completos de las franquicias (*MasterCard, Visa, American Express, Diners Club*) y presenta diagnósticos directos como `Coincide con SALDO $107.984` o `Coincide con SALDO CORREGIDO $47.430`.
 
 ---
 
 ## Próximos Pasos: Fase 2 (Conciliación Nacional en Pesos Chilenos - CLP)
-*(En desarrollo: incorporación del cruce para tarjetas de Crédito, Débito y Prepago en moneda nacional CLP aprovechando la misma arquitectura relacional y de previsualización de la plataforma v2.0).*
+*(En desarrollo: incorporación del cruce para tarjetas de Crédito, Débito y Prepago en moneda nacional CLP aprovechando la misma arquitectura relacional, auto-detección de archivos y previsualización de la plataforma v2.0).*
+

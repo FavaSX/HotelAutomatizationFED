@@ -11,13 +11,14 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 
 from .models import ReconciliationProcess
 from .services import (
     calculate_usd_preview,
     commit_usd_preview_to_database,
     generate_usd_preview_excel_bytes,
+    detect_and_align_usd_files,
 )
 
 
@@ -183,3 +184,22 @@ def clear_test_database_view(request):
             f"Base de datos de pruebas limpiada: se eliminaron {process_count} proceso(s) y todas sus transacciones asociadas."
         )
     return redirect("usd_upload")
+
+
+@login_required(login_url="login")
+def usd_detect_files_view(request):
+    """
+    Experimental Auto-Detection Endpoint:
+    Inspects the internal cell structure of uploaded Excel files and returns
+    the alignment table mapping each file to one of the 7 required USD slots.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido."}, status=405)
+
+    uploaded_files = request.FILES.getlist("bulk_files")
+    if not uploaded_files:
+        return JsonResponse({"error": "No se recibieron archivos para analizar."}, status=400)
+
+    alignment_report = detect_and_align_usd_files(uploaded_files)
+    return JsonResponse(alignment_report)
+

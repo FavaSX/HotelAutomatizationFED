@@ -3,23 +3,18 @@
 
 {% block extra_css %}
 <style>
-  .upload-card {
-    border: 2px dashed #cbd5e1;
-    border-radius: 0.85rem;
-    background: #ffffff;
-    transition: all 0.2s ease;
+  .bulk-dropzone {
+    border: 2.5px dashed var(--hotel-gold);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #fffdf7 0%, #fffbeb 100%);
+    transition: all 0.25s ease;
     cursor: pointer;
-    position: relative;
   }
-  .upload-card:hover {
-    border-color: var(--hotel-gold);
-    background: #fffbeb;
+  .bulk-dropzone:hover,
+  .bulk-dropzone.drag-active {
+    border-color: var(--hotel-navy);
+    background: #fef3c7;
     transform: translateY(-2px);
-  }
-  .upload-card.file-loaded {
-    border-style: solid;
-    border-color: #16a34a;
-    background: #f0fdf4;
   }
   #processingOverlay {
     display: none;
@@ -48,10 +43,10 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
   <div>
     <span class="badge rounded-pill px-3 py-1 mb-1" style="background: rgba(153,105,9,0.14); color: var(--hotel-gold);">
-      <i class="bi bi-shield-check me-1"></i> Flujo Seguro: Previsualización en Memoria ➔ Confirmación en BD
+      <i class="bi bi-shield-check me-1"></i> Flujo Inteligente: Auto-Detección ➔ Previsualización en Memoria ➔ Confirmación en BD
     </span>
-    <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">Conciliación en Dólares (USD) — Carga de Archivos</h3>
-    <p class="text-muted small mb-0">Seleccione los 7 archivos requeridos. El sistema procesará el cruce en memoria para que revise los resultados antes de persistirlos.</p>
+    <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">Conciliación en Dólares (USD) — Carga Inteligente de Archivos</h3>
+    <p class="text-muted small mb-0">Suba los 7 archivos juntos en cualquier orden. El sistema leerá su estructura interna, los alineará automáticamente y le pedirá confirmación antes de procesar.</p>
   </div>
 
   <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
@@ -71,140 +66,333 @@
   </div>
 </div>
 
-<form method="post" enctype="multipart/form-data" onsubmit="showProcessingOverlay()">
+<form method="post" enctype="multipart/form-data" id="usdUploadForm" onsubmit="showProcessingOverlay()">
   {% csrf_token %}
 
+  <!-- Hidden file inputs populated automatically upon alignment confirmation -->
+  <input type="file" name="usd_erp_file" id="input_usd_erp" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_transbank_file" id="input_usd_tbk" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_bank_file" id="input_usd_bank" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_amex_file" id="input_usd_ax" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_diners_file" id="input_usd_di" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_visa_file" id="input_usd_vi" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_mastercard_file" id="input_usd_mc" class="d-none" accept=".xls,.xlsx">
+
   <div class="card card-executive p-4 mb-4">
-    <div class="row g-3 align-items-center mb-3 pb-3 border-bottom">
-      <div class="col-md-7">
+    <!-- Barra Superior: Título + Periodo Contable -->
+    <div class="row g-3 align-items-center mb-4 pb-3 border-bottom">
+      <div class="col-lg-7">
         <h5 class="fw-bold mb-1" style="color: var(--hotel-navy);">
-          <i class="bi bi-file-earmark-spreadsheet text-primary me-1"></i> Archivos del Cierre en Dólares (7 Archivos)
+          <i class="bi bi-magic text-warning me-1"></i> Auto-Detección y Alineación de Archivos (7 Reportes Excel)
         </h5>
-        <p class="text-muted small mb-0">El motor detecta automáticamente el orden y nombres de las columnas en cada archivo.</p>
+        <p class="text-muted small mb-0">
+          El motor inspecciona las primeras filas de cada archivo para clasificarlos por su huella contable interna y le permite verificar o reasignar cualquier entrada antes de continuar.
+        </p>
       </div>
-      <div class="col-md-5">
+      <div class="col-lg-5">
         <label class="form-label small fw-bold text-uppercase text-muted mb-1">Etiqueta del Periodo Contable</label>
         <input type="text" name="accounting_period" class="form-control" placeholder="Ej: Cierre Diciembre 2025 - Dólares" value="Cierre Dólares - Diciembre 2025">
       </div>
     </div>
 
-    <!-- 1. Archivos Base -->
-    <h6 class="fw-bold text-uppercase text-muted small mb-3">1. Archivos Base (ERP, Liquidación y Cartola Bancaria)</h6>
-    <div class="row g-3 mb-4">
-      <div class="col-md-4">
-        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_erp">
-          <div class="d-flex align-items-center gap-3">
-            <div class="rounded-3 p-2 bg-primary-subtle text-primary fs-4"><i class="bi bi-building"></i></div>
-            <div class="overflow-hidden">
-              <div class="fw-bold text-dark small">1. Consolidado ERP Hotel</div>
-              <div class="text-muted" style="font-size: 0.75rem;" id="label_usd_erp">Ej: TERJETAS ERP.xlsx</div>
-            </div>
-          </div>
-          <input type="file" name="usd_erp_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_erp', 'label_usd_erp')">
-        </label>
+    <!-- FASE 1: Zona de Carga Masiva -->
+    <div id="expPhase1Dropzone">
+      <div class="d-flex flex-wrap align-items-center justify-content-between mb-2 gap-2">
+        <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-1 rounded-pill">
+          <i class="bi bi-1-circle-fill me-1 text-warning"></i> Paso 1 de 2: Carga Masiva de Archivos
+        </span>
+        <span class="text-muted small">Arrastre o seleccione los 7 archivos juntos sin importar su orden ni nombre</span>
       </div>
 
-      <div class="col-md-4">
-        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_tbk">
-          <div class="d-flex align-items-center gap-3">
-            <div class="rounded-3 p-2 bg-info-subtle text-info fs-4"><i class="bi bi-receipt-cutoff"></i></div>
-            <div class="overflow-hidden">
-              <div class="fw-bold text-dark small">2. Liquidación Abonos TBK</div>
-              <div class="text-muted" style="font-size: 0.75rem;" id="label_usd_tbk">Ej: ABONO TBK 03122025.xlsx</div>
-            </div>
-          </div>
-          <input type="file" name="usd_transbank_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_tbk', 'label_usd_tbk')">
-        </label>
+      <label class="bulk-dropzone p-5 w-100 text-center d-block mb-2" id="bulkDropzoneBox">
+        <div class="mb-3">
+          <span class="d-inline-flex align-items-center justify-content-center rounded-circle p-3 shadow-sm" style="background: var(--hotel-navy); color: #fff; width: 4rem; height: 4rem;">
+            <i class="bi bi-cloud-arrow-up-fill fs-2"></i>
+          </span>
+        </div>
+        <h5 class="fw-bold mb-1" style="color: var(--hotel-navy);">Arrastre aquí los 7 archivos Excel o haga clic para seleccionarlos</h5>
+        <p class="text-muted small mb-3">
+          El sistema identificará automáticamente cuál corresponde a
+          <strong>ERP Hotel, Transbank, Cartola Bancaria, Visa, MasterCard, American Express y Diners Club</strong>.
+        </p>
+        <span class="btn btn-gold rounded-pill px-4 py-2 fw-semibold shadow-sm">
+          <i class="bi bi-folder2-open me-1"></i> Seleccionar Archivos (.xls / .xlsx)
+        </span>
+        <input type="file" id="bulkFilesInput" class="d-none" accept=".xls,.xlsx" multiple onchange="handleBulkFilesSelected(this.files)">
+      </label>
+    </div>
+
+    <!-- Estado de Escaneo de Huellas -->
+    <div id="expScanningSpinner" class="text-center py-5 d-none">
+      <div class="spinner-border text-warning mb-3" role="status"></div>
+      <h6 class="fw-bold mb-1" style="color: var(--hotel-navy);">Inspeccionando estructura interna de los archivos...</h6>
+      <p class="text-muted small mb-0">Leyendo encabezados, códigos de cliente Transbank y formato de columnas.</p>
+    </div>
+
+    <!-- FASE 2: Tabla de Alineación Detectada y Confirmación -->
+    <div id="expPhase2Alignment" class="d-none">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div>
+          <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 rounded-pill mb-1">
+            <i class="bi bi-2-circle-fill me-1"></i> Paso 2 de 2: Verificación de Alineación y Confirmación
+          </span>
+          <h5 class="fw-bold mb-0" style="color: var(--hotel-navy);">Revise y confirme la alineación de los archivos detectados</h5>
+          <p class="text-muted small mb-0">Verifique que cada rol tenga asignado el archivo correcto. Si necesita cambiar alguno manualmente, utilice el selector desplegable de esa fila.</p>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" onclick="resetExperimentalFiles()">
+          <i class="bi bi-arrow-repeat me-1"></i> Volver a Seleccionar Archivos
+        </button>
       </div>
 
-      <div class="col-md-4">
-        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_bank">
-          <div class="d-flex align-items-center gap-3">
-            <div class="rounded-3 p-2 bg-success-subtle text-success fs-4"><i class="bi bi-bank2"></i></div>
-            <div class="overflow-hidden">
-              <div class="fw-bold text-dark small">3. Cartola Bancaria</div>
-              <div class="text-muted" style="font-size: 0.75rem;" id="label_usd_bank">Ej: cartola (2).xls</div>
-            </div>
+      <!-- Alerta de Estado de la Alineación -->
+      <div id="alignmentSummaryAlert" class="alert rounded-4 mb-3 py-2 px-3 small"></div>
+
+      <!-- Tabla de los 7 Roles Alineados -->
+      <div class="table-responsive border rounded-4 mb-4">
+        <table class="table table-hover align-middle mb-0">
+          <thead style="background: #f8fafc;">
+            <tr class="text-uppercase text-muted" style="font-size: 0.72rem;">
+              <th class="ps-3 py-2" style="width: 24%;">Rol Requerido por el Sistema</th>
+              <th class="py-2" style="width: 30%;">Archivo Asignado (Modificable)</th>
+              <th class="py-2" style="width: 32%;">Evidencia / Huella Interna Detectada</th>
+              <th class="text-center pe-3 py-2" style="width: 14%;">Certeza</th>
+            </tr>
+          </thead>
+          <tbody id="alignmentTableBody" class="small">
+            <!-- Poblado dinámicamente por JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Barra de Confirmación de Fase 2 -->
+      <div class="d-flex flex-wrap justify-content-between align-items-center bg-light border rounded-4 p-3 gap-3">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
+          <div>
+            <div class="fw-bold small" style="color: var(--hotel-navy);">¿La alineación de los 7 archivos es correcta?</div>
+            <div class="text-muted" style="font-size: 0.75rem;">Al confirmar, los archivos se procesarán en este orden y se abrirá la previsualización en memoria.</div>
           </div>
-          <input type="file" name="usd_bank_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_bank', 'label_usd_bank')">
-        </label>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary rounded-pill px-4" onclick="resetExperimentalFiles()">
+            Cambiar Archivos
+          </button>
+          <button type="button" id="btnConfirmAlignment" class="btn btn-gold btn-lg rounded-pill px-5 shadow-sm" onclick="confirmAlignmentAndSubmit()">
+            <i class="bi bi-check2-circle me-2"></i> Confirmar Alineación y Procesar
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- 2. Operadores Internacionales -->
-    <h6 class="fw-bold text-uppercase text-muted small mb-3">2. Reportes de Operadores Internacionales</h6>
-    <div class="row g-3 mb-4">
-      <div class="col-md-3">
-        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_ax">
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-dark">AX</span>
-            <div class="fw-bold text-dark small">4. American Express</div>
-          </div>
-          <div class="text-muted mt-1" style="font-size: 0.75rem;" id="label_usd_ax">Ej: AMEX DOLAR.XLS</div>
-          <input type="file" name="usd_amex_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_ax', 'label_usd_ax')">
-        </label>
-      </div>
-
-      <div class="col-md-3">
-        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_di">
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary">DI</span>
-            <div class="fw-bold text-dark small">5. Diners Club</div>
-          </div>
-          <div class="text-muted mt-1" style="font-size: 0.75rem;" id="label_usd_di">Ej: DINERS DOLAR.XLS</div>
-          <input type="file" name="usd_diners_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_di', 'label_usd_di')">
-        </label>
-      </div>
-
-      <div class="col-md-3">
-        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_vi">
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-primary">VI</span>
-            <div class="fw-bold text-dark small">6. Visa Internacional</div>
-          </div>
-          <div class="text-muted mt-1" style="font-size: 0.75rem;" id="label_usd_vi">Ej: VISA DOLAR.XLS</div>
-          <input type="file" name="usd_visa_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_vi', 'label_usd_vi')">
-        </label>
-      </div>
-
-      <div class="col-md-3">
-        <label class="upload-card p-3 w-100 h-100 d-block" id="card_usd_mc">
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-warning text-dark">MC</span>
-            <div class="fw-bold text-dark small">7. MasterCard Int.</div>
-          </div>
-          <div class="text-muted mt-1" style="font-size: 0.75rem;" id="label_usd_mc">Ej: MASTERCARD DOLAR.XLS</div>
-          <input type="file" name="usd_mastercard_file" class="d-none" accept=".xls,.xlsx" required onchange="markFileLoaded(this, 'card_usd_mc', 'label_usd_mc')">
-        </label>
-      </div>
-    </div>
-
-    <!-- Botón de Envío -->
-    <div class="d-flex justify-content-end">
-      <button type="submit" class="btn btn-gold btn-lg rounded-pill px-5 shadow-sm">
-        <i class="bi bi-search me-2"></i> Procesar y Previsualizar en Memoria
-      </button>
-    </div>
   </div>
 </form>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-  function markFileLoaded(input, cardId, labelId) {
-    const card = document.getElementById(cardId);
-    const label = document.getElementById(labelId);
-    if (input.files && input.files.length > 0) {
-      card.classList.add('file-loaded');
-      label.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i>' + input.files[0].name;
-      label.classList.replace('text-muted', 'text-success');
-      label.classList.add('fw-semibold');
-    }
-  }
+  const ROLE_INPUT_MAP = {
+    erp: 'input_usd_erp',
+    transbank: 'input_usd_tbk',
+    bank: 'input_usd_bank',
+    amex: 'input_usd_ax',
+    diners: 'input_usd_di',
+    visa: 'input_usd_vi',
+    mastercard: 'input_usd_mc'
+  };
+
+  let bulkUploadedFiles = [];
+  let latestDetectionReport = null;
 
   function showProcessingOverlay() {
     document.getElementById('processingOverlay').style.display = 'flex';
   }
+
+  // Drag & Drop support on the dropzone
+  const dropzoneBox = document.getElementById('bulkDropzoneBox');
+  if (dropzoneBox) {
+    ['dragenter', 'dragover'].forEach(evtName => {
+      dropzoneBox.addEventListener(evtName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzoneBox.classList.add('drag-active');
+      });
+    });
+    ['dragleave', 'drop'].forEach(evtName => {
+      dropzoneBox.addEventListener(evtName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzoneBox.classList.remove('drag-active');
+      });
+    });
+    dropzoneBox.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleBulkFilesSelected(e.dataTransfer.files);
+      }
+    });
+  }
+
+  async function handleBulkFilesSelected(fileList) {
+    if (!fileList || fileList.length === 0) return;
+    bulkUploadedFiles = Array.from(fileList);
+
+    document.getElementById('expPhase1Dropzone').classList.add('d-none');
+    document.getElementById('expPhase2Alignment').classList.add('d-none');
+    document.getElementById('expScanningSpinner').classList.remove('d-none');
+
+    const formData = new FormData();
+    bulkUploadedFiles.forEach(file => formData.append('bulk_files', file));
+
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    try {
+      const response = await fetch("{% url 'usd_detect_files' %}", {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.error || 'Error al analizar los archivos.');
+        resetExperimentalFiles();
+        return;
+      }
+      latestDetectionReport = data;
+      renderAlignmentTable(data);
+    } catch (err) {
+      alert('Error de conexión al inspeccionar los archivos: ' + err);
+      resetExperimentalFiles();
+    } finally {
+      document.getElementById('expScanningSpinner').classList.add('d-none');
+    }
+  }
+
+  function renderAlignmentTable(data) {
+    const tbody = document.getElementById('alignmentTableBody');
+    tbody.innerHTML = '';
+
+    data.aligned_roles.forEach(role => {
+      const tr = document.createElement('tr');
+
+      let optionsHtml = '<option value="">— Sin archivo asignado —</option>';
+      data.inspected_files.forEach(f => {
+        const selected = (role.file_index === f.file_index) ? 'selected' : '';
+        optionsHtml += `<option value="${f.file_index}" ${selected}>${f.file_name} (${f.row_count} filas)</option>`;
+      });
+
+      let badgeHtml = '';
+      if (role.confidence === 'HIGH') {
+        badgeHtml = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
+      } else if (role.confidence === 'MEDIUM') {
+        badgeHtml = '<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
+      } else {
+        badgeHtml = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
+      }
+
+      tr.innerHTML = `
+        <td class="ps-3 py-3">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge ${role.badge_class}">${role.badge}</span>
+            <span class="fw-bold text-dark">${role.role_label}</span>
+          </div>
+        </td>
+        <td class="py-3">
+          <select class="form-select form-select-sm role-file-select" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
+            ${optionsHtml}
+          </select>
+        </td>
+        <td class="py-3 text-muted" id="evidence_${role.role_key}">
+          <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
+        </td>
+        <td class="text-center pe-3 py-3" id="confidence_${role.role_key}">
+          ${badgeHtml}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('expPhase2Alignment').classList.remove('d-none');
+    validateCurrentAlignmentSelection();
+  }
+
+  function onManualAlignmentChange() {
+    if (!latestDetectionReport) return;
+    const selects = document.querySelectorAll('.role-file-select');
+    selects.forEach(sel => {
+      const roleKey = sel.getAttribute('data-role-key');
+      const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
+      const evidenceCell = document.getElementById('evidence_' + roleKey);
+      const confidenceCell = document.getElementById('confidence_' + roleKey);
+
+      if (fileIdx !== null && latestDetectionReport.inspected_files[fileIdx]) {
+        const fileInfo = latestDetectionReport.inspected_files[fileIdx];
+        evidenceCell.innerHTML = `<i class="bi bi-cpu me-1 text-primary"></i> ${fileInfo.evidence}`;
+        if (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') {
+          confidenceCell.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
+        } else {
+          confidenceCell.innerHTML = '<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual</span>';
+        }
+      } else {
+        evidenceCell.innerHTML = '<span class="text-danger">Seleccione un archivo para este rol.</span>';
+        confidenceCell.innerHTML = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
+      }
+    });
+
+    validateCurrentAlignmentSelection();
+  }
+
+  function validateCurrentAlignmentSelection() {
+    const selects = Array.from(document.querySelectorAll('.role-file-select'));
+    const chosenIndices = selects.map(s => s.value).filter(v => v !== '');
+    const uniqueIndices = new Set(chosenIndices);
+    const alertBox = document.getElementById('alignmentSummaryAlert');
+    const confirmBtn = document.getElementById('btnConfirmAlignment');
+
+    if (chosenIndices.length === 7 && uniqueIndices.size === 7) {
+      alertBox.className = 'alert alert-success rounded-4 mb-3 py-2 px-3 small d-flex align-items-center justify-content-between';
+      alertBox.innerHTML = `
+        <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡7 de 7 archivos alineados sin conflictos!</strong> Revise la tabla y confirme para iniciar el cruce financiero.</div>
+        <span class="badge bg-success rounded-pill">${bulkUploadedFiles.length} archivo(s) analizado(s)</span>
+      `;
+      confirmBtn.disabled = false;
+    } else if (chosenIndices.length === 7 && uniqueIndices.size < 7) {
+      alertBox.className = 'alert alert-warning rounded-4 mb-3 py-2 px-3 small';
+      alertBox.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Atención:</strong> Ha asignado el mismo archivo en más de un rol. Por favor asigne 7 archivos distintos.';
+      confirmBtn.disabled = true;
+    } else {
+      const missingCount = 7 - chosenIndices.length;
+      alertBox.className = 'alert alert-danger rounded-4 mb-3 py-2 px-3 small';
+      alertBox.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i><strong>Faltan ${missingCount} archivo(s) por alinear</strong> (se subieron ${bulkUploadedFiles.length} archivo(s)). Seleccione los faltantes o vuelva a cargar el lote completo de 7 archivos.`;
+      confirmBtn.disabled = true;
+    }
+  }
+
+  function resetExperimentalFiles() {
+    bulkUploadedFiles = [];
+    latestDetectionReport = null;
+    document.getElementById('bulkFilesInput').value = '';
+    document.getElementById('expPhase2Alignment').classList.add('d-none');
+    document.getElementById('expScanningSpinner').classList.add('d-none');
+    document.getElementById('expPhase1Dropzone').classList.remove('d-none');
+  }
+
+  function confirmAlignmentAndSubmit() {
+    const selects = document.querySelectorAll('.role-file-select');
+    for (const sel of selects) {
+      const roleKey = sel.getAttribute('data-role-key');
+      const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
+      if (fileIdx === null || !bulkUploadedFiles[fileIdx]) {
+        alert('Por favor asegúrese de que los 7 roles tengan un archivo asignado.');
+        return;
+      }
+      const inputId = ROLE_INPUT_MAP[roleKey];
+      const fileInput = document.getElementById(inputId);
+      const dt = new DataTransfer();
+      dt.items.add(bulkUploadedFiles[fileIdx]);
+      fileInput.files = dt.files;
+    }
+
+    showProcessingOverlay();
+    document.getElementById('usdUploadForm').submit();
+  }
 </script>
 {% endblock %}
-
