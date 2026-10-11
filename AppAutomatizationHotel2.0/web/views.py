@@ -8,6 +8,7 @@ Implements the 3-step lifecycle:
 """
 
 from django.shortcuts import render, redirect
+from django.urls import reverse
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -17,7 +18,7 @@ from .models import ReconciliationProcess
 from .services import (
     calculate_usd_preview,
     commit_usd_preview_to_database,
-    generate_usd_preview_excel_bytes,
+    generate_committed_usd_excel_bytes,
     detect_and_align_usd_files,
 )
 
@@ -56,7 +57,6 @@ def usd_upload_view(request):
         diners_file = request.FILES.get("usd_diners_file")
         visa_file = request.FILES.get("usd_visa_file")
         mastercard_file = request.FILES.get("usd_mastercard_file")
-        accounting_period = request.POST.get("accounting_period", "").strip()
 
         required_files = [erp_file, transbank_file, bank_file, amex_file, diners_file, visa_file, mastercard_file]
         if not all(required_files):
@@ -72,7 +72,6 @@ def usd_upload_view(request):
                 diners_file=diners_file,
                 visa_file=visa_file,
                 mastercard_file=mastercard_file,
-                accounting_period=accounting_period or "Cierre Dólares (USD)",
             )
             # Store in session for review
             request.session["usd_reconciliation_preview"] = preview_data
@@ -109,7 +108,6 @@ def usd_preview_view(request):
         "matched_vouchers": preview.get("matched_vouchers", []),
         "discrepancy_vouchers": preview.get("discrepancy_vouchers", []),
         "orphan_vouchers": preview.get("orphan_vouchers", []),
-        "ghost_vouchers": preview.get("ghost_vouchers", []),
         "counts": preview.get("counts", {}),
     }
     return render(request, "usd_preview.html", context)
@@ -130,19 +128,42 @@ def usd_discard_view(request):
 def usd_commit_view(request):
     """
     Step 3B: Confirm and persist the previewed reconciliation into the database.
+    Returns real backend JSON confirmation (including DB process ID and Excel download URL)
+    when called via AJAX from the commit modal.
     """
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     if request.method == "POST":
         preview = request.session.get("usd_reconciliation_preview")
         if not preview:
+            if is_ajax:
+                return JsonResponse({"error": "No hay datos en memoria para guardar."}, status=400)
             messages.error(request, "No hay datos en memoria para guardar.")
             return redirect("usd_upload")
 
         try:
             process = commit_usd_preview_to_database(request.user, preview)
             del request.session["usd_reconciliation_preview"]
+
+            if is_ajax:
+                total_vouchers = process.cross_match_results.count()
+                matched_count = process.cross_match_results.filter(system_result="MATCHED").count()
+                return JsonResponse({
+                    "success": True,
+                    "process_id": process.id,
+                    "accounting_period": process.accounting_period or "Cierre Dólares (USD)",
+                    "execution_date": process.execution_date.strftime("%d/%m/%Y %H:%M:%S") if process.execution_date else "",
+                    "auditor": process.user.username,
+                    "total_vouchers": total_vouchers,
+                    "matched_count": matched_count,
+                    "export_url": reverse("usd_export_committed", args=[process.id]),
+                    "upload_url": reverse("usd_upload"),
+                })
+
             messages.success(request, f"¡Cierre en Dólares #{process.id} guardado formalmente con éxito en la base de datos!")
             return redirect("usd_upload")
         except Exception as error:
+            if is_ajax:
+                return JsonResponse({"error": f"Error al guardar en base de datos: {error}"}, status=500)
             messages.error(request, f"Error al guardar el proceso en base de datos: {error}")
             return redirect("usd_preview")
 
@@ -150,21 +171,22 @@ def usd_commit_view(request):
 
 
 @login_required(login_url="login")
-def usd_export_draft_view(request):
+def usd_export_committed_view(request, process_id: int):
     """
-    Optional Step: Download the in-memory preview as a styled Excel draft before committing.
+    Step 4: Download the official styled Excel report generated directly from the
+    persisted database records of a committed ReconciliationProcess.
     """
-    preview = request.session.get("usd_reconciliation_preview")
-    if not preview:
-        messages.error(request, "No hay ningún borrador en memoria para descargar.")
+    try:
+        excel_stream = generate_committed_usd_excel_bytes(process_id)
+    except ReconciliationProcess.DoesNotExist:
+        messages.error(request, f"El proceso #{process_id} no existe en la base de datos.")
         return redirect("usd_upload")
 
-    excel_stream = generate_usd_preview_excel_bytes(preview)
     response = HttpResponse(
         excel_stream.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    response["Content-Disposition"] = 'attachment; filename="borrador_conciliacion_dolares.xlsx"'
+    response["Content-Disposition"] = f'attachment; filename="reporte_oficial_dolares_proceso_{process_id}.xlsx"'
     return response
 
 

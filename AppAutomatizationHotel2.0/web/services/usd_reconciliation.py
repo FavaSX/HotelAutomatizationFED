@@ -29,7 +29,6 @@ from .excel_parsers import (
     parse_card_operator_statements,
 )
 from .reconciliation_persistence import commit_usd_preview_to_database
-from .report_exporter import generate_usd_preview_excel_bytes
 
 
 def calculate_usd_preview(
@@ -69,6 +68,7 @@ def calculate_usd_preview(
     calculated_transbank_deposit = Decimal("0.00")
     detected_bank_name = ""
     detected_account_number = ""
+    detected_settlement_date = None
 
     for _, row in transbank_dataframe.iloc[:38].iterrows():
         label_col = str(safe_cell(row, 1) or "").strip().lower()
@@ -79,6 +79,8 @@ def calculate_usd_preview(
             detected_bank_name = val_col.title().replace("De ", "de ")
         elif ("numero" in label_col or "número" in label_col) and val_col and not detected_account_number:
             detected_account_number = clean_code_string(val_col)
+        elif "fecha abono" in label_col and not detected_settlement_date:
+            detected_settlement_date = safe_date(safe_cell(row, 2))
 
     for _, row in bank_dataframe.iloc[:15].iterrows():
         non_empty = [str(c).strip() for c in row if pd.notna(c) and str(c).strip()]
@@ -406,8 +408,30 @@ def calculate_usd_preview(
         "diff": float(round(tot_clp_tbk - tot_clp_erp, 0)),
     }
 
+    if not accounting_period:
+        settlement_dt = detected_settlement_date or bank_movement_date
+        valid_sale_dates = sorted({
+            safe_date(tx["sale_date"])
+            for tx in transbank_transactions_data
+            if tx.get("sale_date")
+        } - {None})
+        if settlement_dt and valid_sale_dates:
+            min_str = valid_sale_dates[0].strftime("%d/%m/%Y")
+            max_str = valid_sale_dates[-1].strftime("%d/%m/%Y")
+            range_str = min_str if min_str == max_str else f"{min_str} al {max_str}"
+            accounting_period = f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')} (Ventas {range_str})"
+        elif settlement_dt:
+            accounting_period = f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')}"
+        elif valid_sale_dates:
+            min_str = valid_sale_dates[0].strftime("%d/%m/%Y")
+            max_str = valid_sale_dates[-1].strftime("%d/%m/%Y")
+            range_str = min_str if min_str == max_str else f"{min_str} al {max_str}"
+            accounting_period = f"Cierre Dólares — Ventas {range_str}"
+        else:
+            accounting_period = "Cierre Dólares (USD)"
+
     return {
-        "accounting_period": accounting_period or "Cierre Dólares (USD)",
+        "accounting_period": accounting_period,
         "file_names": {
             "erp": getattr(erp_file, "name", "TERJETAS ERP.xlsx"),
             "transbank": getattr(transbank_file, "name", "ABONO TBK.xlsx"),

@@ -2,7 +2,7 @@
 {% load currency_filters %}
 
 {% block content %}
-<!-- Top Header & Action Buttons -->
+<!-- Top Header -->
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 p-3 bg-white rounded-3 border shadow-sm">
   <div>
     <div class="d-flex align-items-center gap-2 mb-1">
@@ -12,29 +12,6 @@
       <span class="text-muted small">Base de datos intacta — Cero registros creados aún</span>
     </div>
     <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">{{ preview.accounting_period }}</h3>
-  </div>
-
-  <div class="d-flex flex-wrap gap-2">
-    <!-- Discard Form -->
-    <form action="{% url 'usd_discard' %}" method="post" class="d-inline" onsubmit="return confirm('¿Seguro que desea descartar esta previsualización?');">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-outline-danger rounded-pill px-4">
-        <i class="bi bi-trash3 me-1"></i> Descartar
-      </button>
-    </form>
-
-    <!-- Excel Draft Download -->
-    <a href="{% url 'usd_export_draft' %}" class="btn btn-outline-success rounded-pill px-4">
-      <i class="bi bi-file-earmark-excel-fill me-1"></i> Descargar Borrador Excel
-    </a>
-
-    <!-- Commit Form -->
-    <form action="{% url 'usd_commit' %}" method="post" class="d-inline" onsubmit="return confirm('¿Confirma que desea guardar este cierre en la base de datos?');">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-gold rounded-pill px-4 shadow-sm">
-        <i class="bi bi-check-circle-fill me-1"></i> Confirmar y Guardar en BD
-      </button>
-    </form>
   </div>
 </div>
 
@@ -243,9 +220,7 @@
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
               <td class="text-end fw-bold text-success">US$ {{ item.gross_amount_usd|num_usd }}</td>
               <td class="text-end fw-semibold text-primary">US$ {{ item.operator_amount_usd|num_usd }}</td>
-              <td class="text-end small {% if item.difference_usd == 0 %}text-muted{% else %}text-secondary{% endif %}">
-                US$ {{ item.difference_usd|num_usd }}
-              </td>
+              <td class="text-end small text-muted">US$ {{ item.difference_usd|num_usd }}</td>
               <td class="text-end">${{ item.erp_amount_clp|num_clp }}</td>
               <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
             </tr>
@@ -331,23 +306,243 @@
 </div>
 
 <!-- Bottom Sticky Bar with Action Buttons -->
-<div class="p-3 bg-white rounded-3 border shadow-sm d-flex flex-wrap justify-content-between align-items-center gap-3">
-  <div class="d-flex align-items-center gap-2 text-muted">
+<div class="p-3 rounded-4 border shadow-lg d-flex flex-wrap justify-content-between align-items-center gap-3"
+     style="position: sticky; bottom: 1rem; z-index: 1020; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(8px); border-color: rgba(15, 23, 42, 0.12) !important;">
+  <div class="d-flex align-items-center gap-2 text-muted small">
     <i class="bi bi-info-circle-fill text-primary fs-5"></i>
-    <span>Los datos anteriores fueron calculados en memoria. Si todo está conforme, haga clic en <strong>Confirmar y Guardar</strong> para consolidar en la base de datos.</span>
+    <span>Los datos anteriores fueron calculados en memoria. Si todo está conforme, haga clic en <strong>Confirmar y Guardar en BD</strong> para consolidar el cierre.</span>
   </div>
   <div class="d-flex gap-2">
-    <form action="{% url 'usd_discard' %}" method="post" class="d-inline" onsubmit="return confirm('¿Seguro que desea descartar esta previsualización?');">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-outline-danger rounded-pill px-4">Descartar</button>
-    </form>
-    <form action="{% url 'usd_commit' %}" method="post" class="d-inline" onsubmit="return confirm('¿Confirma que desea guardar este cierre en la base de datos?');">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-gold btn-lg rounded-pill px-5 shadow-sm">
-        <i class="bi bi-check-circle-fill me-1"></i> Confirmar y Guardar en BD
-      </button>
-    </form>
+    <button type="button" id="btnDiscardPreview" class="btn btn-outline-danger rounded-pill px-4 fw-semibold" data-bs-toggle="modal" data-bs-target="#discardPreviewModal">
+      <i class="bi bi-trash3 me-1"></i> Descartar
+    </button>
+    <button type="button" id="btnCommitToDb" class="btn btn-gold rounded-pill px-5 py-2 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#commitPreviewModal">
+      <i class="bi bi-check-circle-fill me-1"></i> Confirmar y Guardar en BD
+    </button>
   </div>
 </div>
+
+<!-- ====================================================================== -->
+<!-- MODAL EJECUTIVO: DESCARTAR PREVISUALIZACIÓN                            -->
+<!-- ====================================================================== -->
+<div class="modal fade" id="discardPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <div class="modal-header border-0 pb-0 pt-4 px-4">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
+            <i class="bi bi-trash3-fill fs-4"></i>
+          </div>
+          <div>
+            <h5 class="modal-title fw-bold mb-0" style="color: var(--hotel-navy);">¿Descartar borrador en memoria?</h5>
+            <small class="text-muted">{{ preview.accounting_period }}</small>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        <p class="text-muted small mb-0">
+          Se limpiará la previsualización actual de la sesión sin guardar ningún registro en la base de datos y volverá a la pantalla de carga de archivos.
+        </p>
+      </div>
+      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">
+          Cancelar
+        </button>
+        <form action="{% url 'usd_discard' %}" method="post" class="d-inline">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger rounded-pill px-4 fw-semibold shadow-sm">
+            <i class="bi bi-trash3 me-1"></i> Sí, Descartar Borrador
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================================================== -->
+<!-- MODAL EJECUTIVO 2 PASOS:                                               -->
+<!--   PASO 1: CONFIRMAR GUARDADO EN BD                                     -->
+<!--   PASO 2: ÉXITO CONFIRMADO POR BACKEND + DESCARGA EXCEL OFICIAL        -->
+<!-- ====================================================================== -->
+<div class="modal fade" id="commitPreviewModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+
+      <!-- PASO 1: CONFIRMACIÓN ANTES DE GUARDAR -->
+      <div id="commitStepConfirm">
+        <div class="modal-header border-0 text-white px-4 py-3" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; background: rgba(201, 151, 26, 0.2); color: #fbbf24;">
+              <i class="bi bi-database-fill-check fs-4"></i>
+            </div>
+            <div>
+              <h5 class="modal-title fw-bold mb-0">Confirmar y Consolidar en Base de Datos</h5>
+              <small class="text-white-50">{{ preview.accounting_period }}</small>
+            </div>
+          </div>
+          <button type="button" id="btnCloseConfirmModal" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+
+        <div class="modal-body p-4">
+          <div class="p-3 rounded-3 bg-light border mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+              <span class="small text-muted fw-semibold">Abono Calculado Transbank:</span>
+              <span class="fw-bold text-dark">US$ {{ bank.calculated_deposit|num_usd }}</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+              <span class="small text-muted fw-semibold">Estado en Cartola ({{ bank.bank_name|default:"Banco" }}):</span>
+              {% if bank.is_matched %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">Confirmado</span>
+              {% else %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill">Pendiente</span>
+              {% endif %}
+            </div>
+            <div class="d-flex justify-content-between align-items-center small">
+              <span class="text-muted fw-semibold">Vouchers Procesados ({{ counts.total }}):</span>
+              <div class="d-flex gap-1">
+                <span class="badge bg-success-subtle text-success">{{ counts.matched }} Exactos</span>
+                <span class="badge bg-warning-subtle text-dark">{{ counts.discrepancies }} Dif.</span>
+                <span class="badge bg-danger-subtle text-danger">{{ counts.orphans }} Huérfanos</span>
+              </div>
+            </div>
+          </div>
+          <div class="d-flex align-items-start gap-2 text-muted small">
+            <i class="bi bi-shield-lock-fill text-warning mt-1"></i>
+            <span>El motor transaccional verificará las 8 tablas con protección anti-duplicados antes de persistir el cierre contable.</span>
+          </div>
+        </div>
+
+        <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
+          <button type="button" id="btnCancelCommitModal" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">
+            Seguir Revisando
+          </button>
+          <button type="button" id="btnExecuteCommit" class="btn btn-gold rounded-pill px-4 fw-bold shadow-sm" onclick="executeCommitToDatabase()">
+            <i class="bi bi-check-circle-fill me-1"></i> Sí, Guardar Cierre en BD
+          </button>
+        </div>
+      </div>
+
+      <!-- PASO 2: ÉXITO CONFIRMADO POR EL BACKEND + DESCARGA DE EXCEL -->
+      <div id="commitStepSuccess" class="d-none">
+        <div class="modal-header border-0 text-white px-4 py-3" style="background: linear-gradient(135deg, #0C0C42 0%, #1e293b 100%); border-bottom: 3px solid var(--hotel-gold) !important;">
+          <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center shadow-sm" style="width: 46px; height: 46px;">
+              <i class="bi bi-check-lg fs-3"></i>
+            </div>
+            <div>
+              <h5 class="modal-title fw-bold mb-0">¡Cierre Guardado en Base de Datos!</h5>
+              <small class="text-white-50">Confirmación transaccional recibida del servidor</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-body p-4">
+          <div class="alert alert-success border-success-subtle rounded-3 py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+            <i class="bi bi-database-fill-check fs-5 text-success"></i>
+            <div>
+              Consolidación exitosa en las 8 tablas contables con verificación anti-duplicados completada.
+            </div>
+          </div>
+
+          <div class="p-3 rounded-3 bg-light border mb-4 small">
+            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+              <span class="text-muted fw-semibold">ID de Proceso en BD:</span>
+              <span class="badge bg-dark rounded-pill px-3 py-1 fs-6" id="modalProcessId">#—</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+              <span class="text-muted fw-semibold">Periodo Contable:</span>
+              <span class="fw-bold text-dark" id="modalPeriod">—</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+              <span class="text-muted fw-semibold">Fecha y Hora de Registro:</span>
+              <span class="text-dark font-monospace" id="modalExecDate">—</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <span class="text-muted fw-semibold">Vouchers Persistidos:</span>
+              <span class="fw-bold text-success" id="modalVoucherStats">—</span>
+            </div>
+          </div>
+
+          <div class="d-grid">
+            <a href="#" id="modalExcelDownloadBtn" class="btn btn-success btn-lg rounded-pill fw-bold shadow-sm py-2">
+              <i class="bi bi-file-earmark-excel-fill me-2"></i> Descargar Reporte Excel Oficial (.xlsx)
+            </a>
+          </div>
+        </div>
+
+        <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end">
+          <a href="{% url 'usd_upload' %}" id="modalFinishBtn" class="btn btn-gold rounded-pill px-4 fw-bold shadow-sm">
+            <i class="bi bi-arrow-left-circle me-1"></i> Finalizar y Volver al Inicio
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let isCommitting = false;
+
+  async function executeCommitToDatabase() {
+    if (isCommitting) return;
+    isCommitting = true;
+
+    const btnExecute = document.getElementById('btnExecuteCommit');
+    const btnCancel = document.getElementById('btnCancelCommitModal');
+    const btnClose = document.getElementById('btnCloseConfirmModal');
+    const originalHtml = btnExecute.innerHTML;
+
+    btnExecute.disabled = true;
+    if (btnCancel) btnCancel.disabled = true;
+    if (btnClose) btnClose.disabled = true;
+    btnExecute.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando en Base de Datos...';
+
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    try {
+      const response = await fetch("{% url 'usd_commit' %}", {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        alert(data.error || 'No se pudo guardar el proceso en la base de datos.');
+        btnExecute.disabled = false;
+        if (btnCancel) btnCancel.disabled = false;
+        if (btnClose) btnClose.disabled = false;
+        btnExecute.innerHTML = originalHtml;
+        isCommitting = false;
+        return;
+      }
+
+      // Poblar Paso 2 con la confirmación real del backend
+      document.getElementById('modalProcessId').textContent = '#' + data.process_id;
+      document.getElementById('modalPeriod').textContent = data.accounting_period;
+      document.getElementById('modalExecDate').textContent = data.execution_date + ' (' + data.auditor + ')';
+      document.getElementById('modalVoucherStats').textContent = `${data.total_vouchers} registrados (${data.matched_count} exactos)`;
+      document.getElementById('modalExcelDownloadBtn').href = data.export_url;
+      document.getElementById('modalFinishBtn').href = data.upload_url;
+
+      // Cambiar del Paso 1 (Confirmar) al Paso 2 (Éxito + Descargar Excel)
+      document.getElementById('commitStepConfirm').classList.add('d-none');
+      document.getElementById('commitStepSuccess').classList.remove('d-none');
+    } catch (err) {
+      alert('Error de conexión al guardar en la base de datos: ' + err);
+      btnExecute.disabled = false;
+      if (btnCancel) btnCancel.disabled = false;
+      if (btnClose) btnClose.disabled = false;
+      btnExecute.innerHTML = originalHtml;
+      isCommitting = false;
+    }
+  }
+</script>
 {% endblock %}
 
