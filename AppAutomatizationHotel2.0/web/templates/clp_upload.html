@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block page_title %}Hotel Plaza San Francisco | Conciliación en Pesos (CLP){% endblock %}
+
+{% block extra_css %}
+<style>
+  .clp-upload-card {
+    border: 2.5px dashed var(--hotel-gold);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #fffdf7 0%, #fffbeb 100%);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    padding: 1.25rem;
+    text-align: center;
+  }
+  .clp-upload-card:hover {
+    border-color: var(--hotel-navy);
+    background: #fef3c7;
+    transform: translateY(-2px);
+  }
+  .clp-upload-card.loaded {
+    border-color: #16A34A;
+    border-style: solid;
+    background: #f0fdf4;
+  }
+  #clpProcessingOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(12, 12, 66, 0.85);
+    backdrop-filter: blur(6px);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: #ffffff;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="clpProcessingOverlay">
+  <div class="spinner-border text-warning mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+  <h4 class="fw-bold mb-1">Procesando Conciliación en Pesos...</h4>
+  <p class="text-white-50 mb-0">Cruzando Bordero ERP vs. Transbank (Crédito/Débito/Prepago) vs. Cartola. Guardando en base de datos.</p>
+</div>
+
+<div class="mb-4">
+  <span class="badge rounded-pill px-3 py-1 mb-1" style="background: rgba(153,105,9,0.14); color: var(--hotel-gold);">
+    <i class="bi bi-shield-check me-1"></i> Fase 2: Cruce Directo con Persistencia Atómica
+  </span>
+  <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">Conciliación en Pesos (CLP) — Carga de Archivos</h3>
+  <p class="text-muted small mb-0">Sube los 5 archivos tal cual se descargan. El motor detecta anulaciones, errores de tipeo y Redcompra automáticamente.</p>
+</div>
+
+<form action="{% url 'clp_upload' %}" method="post" enctype="multipart/form-data" id="clpForm" onsubmit="document.getElementById('clpProcessingOverlay').style.display='flex';">
+  {% csrf_token %}
+
+  <div class="card card-executive p-4 mb-4">
+    <h6 class="text-uppercase mb-3" style="color: var(--hotel-gold); letter-spacing: 0.04em;">1. Transbank (Abonos por día)</h6>
+    <div class="row g-3 mb-4">
+      <div class="col-md-4">
+        <label class="clp-upload-card w-100 d-block mb-0" for="clp_credito">
+          <i class="bi bi-credit-card display-6 text-primary"></i>
+          <h6 class="mt-2 mb-0">TBK Crédito</h6>
+          <small class="text-muted">Seleccionar archivo</small>
+        </label>
+        <input type="file" class="d-none" id="clp_credito" name="clp_credito" accept=".xls,.xlsx" required>
+      </div>
+      <div class="col-md-4">
+        <label class="clp-upload-card w-100 d-block mb-0" for="clp_debito">
+          <i class="bi bi-credit-card-2-front display-6 text-primary"></i>
+          <h6 class="mt-2 mb-0">TBK Débito</h6>
+          <small class="text-muted">Seleccionar archivo</small>
+        </label>
+        <input type="file" class="d-none" id="clp_debito" name="clp_debito" accept=".xls,.xlsx" required>
+      </div>
+      <div class="col-md-4">
+        <label class="clp-upload-card w-100 d-block mb-0" for="clp_prepago">
+          <i class="bi bi-wallet2 display-6 text-primary"></i>
+          <h6 class="mt-2 mb-0">TBK Prepago</h6>
+          <small class="text-muted">Seleccionar archivo</small>
+        </label>
+        <input type="file" class="d-none" id="clp_prepago" name="clp_prepago" accept=".xls,.xlsx" required>
+      </div>
+    </div>
+
+    <h6 class="text-uppercase mb-3" style="color: var(--hotel-gold); letter-spacing: 0.04em;">2. Hotel y Banco</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="clp-upload-card w-100 d-block mb-0" for="clp_bordero">
+          <i class="bi bi-laptop display-6 text-primary"></i>
+          <h6 class="mt-2 mb-0">Borderó (ERP)</h6>
+          <small class="text-muted">Seleccionar archivo</small>
+        </label>
+        <input type="file" class="d-none" id="clp_bordero" name="clp_bordero" accept=".xls,.xlsx" required>
+      </div>
+      <div class="col-md-6">
+        <label class="clp-upload-card w-100 d-block mb-0" for="clp_cartola">
+          <i class="bi bi-bank display-6 text-primary"></i>
+          <h6 class="mt-2 mb-0">Cartola Banco (CLP)</h6>
+          <small class="text-muted">Seleccionar archivo</small>
+        </label>
+        <input type="file" class="d-none" id="clp_cartola" name="clp_cartola" accept=".xls,.xlsx" required>
+      </div>
+    </div>
+
+    <div class="mt-4 text-center">
+      <button type="submit" class="btn btn-gold py-3 px-5 rounded-pill fs-5 shadow">
+        <i class="bi bi-gear-fill me-2"></i> Procesar y Guardar Conciliación en Pesos
+      </button>
+      <p class="text-muted small mt-2 mb-0">A diferencia de Dólares, Pesos se guarda directamente en base de datos (sin previsualización).</p>
+    </div>
+  </div>
+</form>
+
+{% if recent_clp_processes %}
+<div class="card card-executive p-4">
+  <h6 class="fw-bold mb-3" style="color: var(--hotel-navy);"><i class="bi bi-clock-history me-1"></i> Últimos Cierres en Pesos</h6>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr class="text-muted small text-uppercase">
+          <th>#</th><th>Periodo</th><th>Fecha</th><th>Auditor</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in recent_clp_processes %}
+        <tr>
+          <td>#{{ p.id }}</td>
+          <td>{{ p.accounting_period }}</td>
+          <td>{{ p.execution_date|date:"d/m/Y H:i" }}</td>
+          <td>{{ p.user.username }}</td>
+          <td class="text-end">
+            <a href="{% url 'clp_result' p.id %}" class="btn btn-outline-secondary btn-sm rounded-pill">Ver Resultados</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+  document.querySelectorAll('.clp-upload-card input[type=file]').forEach(function() {});
+  document.querySelectorAll('input[type=file]').forEach(function(input) {
+    input.addEventListener('change', function() {
+      const label = document.querySelector('label[for="' + input.id + '"]');
+      if (!label) return;
+      const small = label.querySelector('small');
+      if (input.files && input.files.length > 0) {
+        small.textContent = input.files[0].name;
+        label.classList.add('loaded');
+      } else {
+        small.textContent = 'Seleccionar archivo';
+        label.classList.remove('loaded');
+      }
+    });
+  });
+</script>
+{% endblock %}

@@ -1,6 +1,6 @@
 """
 URL configuration for BankReconciliation project.
-Focused on US Dollars (Phase 1) reconciliation with Preview & Commit.
+Covers US Dollars (Phase 1, Preview & Commit) and Chilean Pesos (Phase 2) reconciliation.
 """
 
 from django.contrib import admin
@@ -18,4 +18,7 @@ urlpatterns = [
     path('reconciliation/usd/export/<int:process_id>/', views.usd_export_committed_view, name='usd_export_committed'),
     path('reconciliation/usd/detect-files/', views.usd_detect_files_view, name='usd_detect_files'),
     path('reconciliation/clear-test-db/', views.clear_test_database_view, name='clear_test_db'),
+    path('reconciliation/clp/', views.clp_upload_view, name='clp_upload'),
+    path('reconciliation/clp/result/<int:process_id>/', views.clp_result_view, name='clp_result'),
+    path('reconciliation/clp/export/<int:process_id>/', views.clp_export_view, name='clp_export'),
 ]

@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block page_title %}Hotel Plaza San Francisco | Resultados Conciliación Pesos (CLP){% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <span class="badge rounded-pill px-3 py-1 mb-1" style="background: rgba(153,105,9,0.14); color: var(--hotel-gold);">
+      <i class="bi bi-check-circle me-1"></i> Proceso #{{ process.id }} guardado en Base de Datos
+    </span>
+    <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">Resultados: Conciliación en Pesos (CLP)</h3>
+    <p class="text-muted small mb-0">
+      Periodo: {{ process.accounting_period }} · Auditor: {{ process.user.username }} · {{ process.execution_date|date:"d/m/Y H:i" }}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{% url 'clp_export' process.id %}" class="btn btn-outline-success rounded-pill px-3">
+      <i class="bi bi-file-earmark-excel me-1"></i> Descargar Excel
+    </a>
+    <a href="{% url 'clp_upload' %}" class="btn btn-gold rounded-pill px-3">
+      <i class="bi bi-arrow-repeat me-1"></i> Nueva Conciliación
+    </a>
+  </div>
+</div>
+
+<!-- Bank Deposit Validation -->
+<div class="card card-executive p-4 mb-4">
+  <h6 class="fw-bold mb-3" style="color: var(--hotel-navy);"><i class="bi bi-bank me-1"></i> Abonos de Transbank en la Cartola</h6>
+  <div class="table-responsive">
+    <table class="table table-bordered align-middle">
+      <thead class="table-dark text-center">
+        <tr><th>Modalidad</th><th>Abono Calculado TBK</th><th>Abono en Cartola</th><th>Fecha</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        {% for bv in bank_validations %}
+        <tr>
+          <td>{{ bv.payment_modality }}</td>
+          <td class="text-end">${{ bv.transbank_calculated_deposit|floatformat:0 }}</td>
+          <td class="text-end">${{ bv.bank_statement_deposit|floatformat:0 }}</td>
+          <td class="text-center">{{ bv.deposit_date|date:"d/m/Y"|default:"—" }}</td>
+          <td class="text-center">
+            {% if bv.is_matched %}
+              <span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> Confirmado</span>
+            {% else %}
+              <span class="text-danger fw-bold"><i class="bi bi-x-circle-fill"></i> No Encontrado</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Brand Summary -->
+<div class="card card-executive p-4 mb-4">
+  <h6 class="fw-bold mb-3" style="color: var(--hotel-navy);"><i class="bi bi-credit-card me-1"></i> Cuadratura por Marca de Tarjeta</h6>
+  <div class="table-responsive">
+    <table class="table table-bordered align-middle">
+      <thead class="table-dark text-center">
+        <tr><th>Operador</th><th>Total Bordero ERP</th><th>Total Transbank</th><th>Comisiones</th><th>Diferencia</th></tr>
+      </thead>
+      <tbody>
+        {% for s in summaries %}
+        <tr>
+          <td>{{ s.card_type.name }}</td>
+          <td class="text-end">${{ s.erp_sales_total|floatformat:0 }}</td>
+          <td class="text-end">${{ s.transbank_sales_total|floatformat:0 }}</td>
+          <td class="text-end">${{ s.total_commissions|floatformat:0 }}</td>
+          <td class="text-end {% if s.difference != 0 %}text-danger fw-bold{% endif %}">${{ s.difference|floatformat:0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Counts -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded text-center" style="background: #f0fdf4; border: 1px solid #bbf7d0;">
+      <div class="fs-3 fw-bold text-success">{{ counts.matched }}</div>
+      <div class="small text-muted">Conciliadas</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded text-center bg-light border">
+      <div class="fs-3 fw-bold" style="color: var(--hotel-navy);">{{ counts.amount_mismatch }}</div>
+      <div class="small text-muted">Diferencia de Monto</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded text-center bg-light border">
+      <div class="fs-3 fw-bold" style="color: var(--hotel-navy);">{{ counts.not_found }}</div>
+      <div class="small text-muted">No en Bordero</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded text-center bg-light border">
+      <div class="fs-3 fw-bold" style="color: var(--hotel-navy);">{{ counts.ghost }}</div>
+      <div class="small text-muted">Bordero sin Voucher</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded text-center bg-light border">
+      <div class="fs-3 fw-bold" style="color: var(--hotel-navy);">{{ counts.card_mismatch }}</div>
+      <div class="small text-muted">Tipo Tarjeta Incorrecto</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded text-center" style="background: #fffbeb; border: 1px solid #fde68a;">
+      <div class="fs-3 fw-bold" style="color: var(--hotel-gold);">{{ counts.typo_suspected }}</div>
+      <div class="small text-muted">Posible Error de Tipeo</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="p-3 rounded text-center bg-light border">
+      <div class="fs-3 fw-bold text-muted">{{ counts.void }}</div>
+      <div class="small text-muted">Anulaciones / N. Crédito</div>
+    </div>
+  </div>
+</div>
+
+<!-- Discrepancies -->
+<div class="card card-executive p-4">
+  <h6 class="fw-bold mb-3" style="color: var(--hotel-navy);"><i class="bi bi-exclamation-triangle me-1"></i> Discrepancias y Excepciones</h6>
+  <div class="table-responsive">
+    <table class="table table-bordered table-hover align-middle">
+      <thead class="table-dark text-center">
+        <tr><th>Tipo</th><th>Autorización</th><th>Documento</th><th>Huésped</th><th>Tarjeta</th><th>Monto TBK</th><th>Monto Bordero</th><th>Diagnóstico</th></tr>
+      </thead>
+      <tbody>
+        {% for d in discrepancies %}
+        <tr>
+          <td><span class="badge bg-secondary">{{ d.label }}</span></td>
+          <td>{{ d.authorization_code|default:"—" }}</td>
+          <td>{{ d.document_number|default:"—" }}</td>
+          <td>{{ d.guest_name|default:"—" }}</td>
+          <td>{{ d.card_type.name|default:"—" }}</td>
+          <td class="text-end">${{ d.transbank_amount|floatformat:0 }}</td>
+          <td class="text-end">${{ d.erp_amount_clp|floatformat:0 }}</td>
+          <td><small>{{ d.system_status_detail }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

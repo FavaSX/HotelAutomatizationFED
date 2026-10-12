@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Hotel Plaza San Francisco | Conciliación en Dólares (USD)</title>
+  <title>{% block page_title %}Hotel Plaza San Francisco | Conciliación en Dólares (USD){% endblock %}</title>
   <meta content="width=device-width, initial-scale=1.0" name="viewport">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🏨</text></svg>" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -107,14 +107,17 @@
         <i class="bi bi-building-check fs-2 me-2 text-primary"></i>
         <div>
           <span class="fw-bold d-block lh-1">PLAZA SAN FRANCISCO</span>
-          <small class="text-white-50" style="font-size: 0.72rem;">Módulo Dólares (USD)</small>
+          <small class="text-white-50" style="font-size: 0.72rem;">Suite de Conciliación Financiera</small>
         </div>
       </a>
 
       <div class="mb-auto">
         <small class="text-uppercase text-white-50 fw-bold px-2 mb-2 d-block" style="font-size: 0.7rem;">Operaciones</small>
-        <a href="{% url 'usd_upload' %}" class="sidebar-link active">
+        <a href="{% url 'usd_upload' %}" class="sidebar-link {% if '/reconciliation/clp' not in request.path %}active{% endif %}">
           <i class="bi bi-currency-dollar fs-5"></i> Conciliación Dólares
+        </a>
+        <a href="{% url 'clp_upload' %}" class="sidebar-link {% if '/reconciliation/clp' in request.path %}active{% endif %}">
+          <i class="bi bi-cash-coin fs-5"></i> Conciliación Pesos (CLP)
         </a>
 
         <hr class="border-secondary my-3">
@@ -141,9 +144,15 @@
       {% if user.is_authenticated %}
       <div class="topbar-utility d-flex flex-wrap align-items-center justify-content-between gap-3 shadow-sm">
         <div class="d-flex align-items-center gap-2">
+          {% if '/reconciliation/clp' in request.path %}
+          <span class="badge rounded-pill px-3 py-2" style="background: rgba(12,12,66,0.08); color: var(--hotel-navy); font-weight: 600;">
+            <i class="bi bi-shield-check me-1 text-primary"></i> Hotel Plaza San Francisco — Fase 2: Conciliación Pesos (CLP)
+          </span>
+          {% else %}
           <span class="badge rounded-pill px-3 py-2" style="background: rgba(12,12,66,0.08); color: var(--hotel-navy); font-weight: 600;">
             <i class="bi bi-shield-check me-1 text-primary"></i> Hotel Plaza San Francisco — Fase 1: Conciliación Dólares (USD)
           </span>
+          {% endif %}
         </div>
 
         <span class="dollar-pill">
@@ -168,7 +177,7 @@
       </main>
 
       <footer class="bg-white border-top py-3 px-4 text-center text-muted small mt-auto">
-        <strong>Hotel Plaza San Francisco</strong> — Conciliación Financiera en Dólares (USD) v2.0
+        <strong>Hotel Plaza San Francisco</strong> — Sistema de Conciliación Financiera ERP v2.0
       </footer>
     </div>
   </div>

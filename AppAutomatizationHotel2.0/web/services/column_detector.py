@@ -65,6 +65,7 @@ TRANSBANK_USD_COLUMN_RULES = {
 
 TRANSBANK_CLP_COLUMN_RULES = {
     "sale_date": {"keywords": ["fecha de venta"], "default_index": 1},
+    "movement_type": {"keywords": ["tipo de movimiento", "tipo movimiento"], "default_index": 2},
     "merchant_code": {"keywords": ["codigo de comercio"], "default_index": 3},
     "merchant_location_name": {"keywords": ["nombre local"], "default_index": 4},
     "payment_modality": {"keywords": ["medio de pago"], "default_index": 5},

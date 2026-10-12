@@ -19,7 +19,9 @@ from .services import (
     calculate_usd_preview,
     commit_usd_preview_to_database,
     generate_committed_usd_excel_bytes,
+    generate_committed_clp_excel_bytes,
     detect_and_align_usd_files,
+    execute_clp_reconciliation,
 )
 
 
@@ -224,4 +226,117 @@ def usd_detect_files_view(request):
 
     alignment_report = detect_and_align_usd_files(uploaded_files)
     return JsonResponse(alignment_report)
+
+
+@login_required(login_url="login")
+def clp_upload_view(request):
+    """
+    Phase 2: Upload the 5 CLP files (Transbank Crédito/Débito/Prepago, Bordero ERP,
+    Cartola Bancaria) and run the cross-match directly against the database.
+    """
+    if request.method == "POST":
+        credit_file = request.FILES.get("clp_credito")
+        debit_file = request.FILES.get("clp_debito")
+        prepaid_file = request.FILES.get("clp_prepago")
+        bordero_file = request.FILES.get("clp_bordero")
+        bank_file = request.FILES.get("clp_cartola")
+
+        required_files = [credit_file, debit_file, prepaid_file, bordero_file, bank_file]
+        if not all(required_files):
+            messages.error(request, "Por favor seleccione los 5 archivos requeridos para la conciliación en Pesos (CLP).")
+            return redirect("clp_upload")
+
+        try:
+            process, summary = execute_clp_reconciliation(
+                user=request.user,
+                erp_bordero_file=bordero_file,
+                transbank_credit_file=credit_file,
+                transbank_debit_file=debit_file,
+                transbank_prepaid_file=prepaid_file,
+                bank_statement_file=bank_file,
+            )
+            messages.success(request, f"¡Cierre en Pesos #{process.id} procesado y guardado con éxito en la base de datos!")
+            return redirect("clp_result", process_id=process.id)
+        except Exception as error:
+            messages.error(request, f"Error al procesar los archivos: {error}")
+            return redirect("clp_upload")
+
+    context = {
+        "recent_clp_processes": ReconciliationProcess.objects.filter(process_currency="CLP")[:5],
+    }
+    return render(request, "clp_upload.html", context)
+
+
+@login_required(login_url="login")
+def clp_result_view(request, process_id: int):
+    """
+    Phase 2: Displays the persisted results of a committed CLP reconciliation process.
+    """
+    try:
+        process = ReconciliationProcess.objects.get(id=process_id, process_currency="CLP")
+    except ReconciliationProcess.DoesNotExist:
+        messages.error(request, f"El proceso CLP #{process_id} no existe en la base de datos.")
+        return redirect("clp_upload")
+
+    cross_matches = process.cross_match_results.select_related("card_type", "management_status")
+    counts = {
+        "matched": cross_matches.filter(system_result="MATCHED").count(),
+        "amount_mismatch": cross_matches.filter(system_result="AMOUNT_MISMATCH").count(),
+        "card_mismatch": cross_matches.filter(system_result="CARD_TYPE_MISMATCH").count(),
+        "typo_suspected": cross_matches.filter(system_result="TYPO_SUSPECTED").count(),
+        "not_found": cross_matches.filter(system_result="NOT_FOUND_IN_ERP").count(),
+        "ghost": cross_matches.filter(system_result="GHOST_IN_ERP").count(),
+        "void": cross_matches.filter(system_result="VOID_OR_CREDIT_NOTE").count(),
+    }
+
+    result_labels = {
+        "AMOUNT_MISMATCH": "Diferencia de Monto",
+        "CARD_TYPE_MISMATCH": "Tipo de Tarjeta Incorrecto",
+        "NOT_FOUND_IN_ERP": "No Registrada en Bordero",
+        "GHOST_IN_ERP": "Cobro en Bordero sin Voucher",
+        "TYPO_SUSPECTED": "Posible Error de Tipeo",
+        "VOID_OR_CREDIT_NOTE": "Anulación / Nota de Crédito",
+    }
+    discrepancies = [
+        {
+            "label": result_labels.get(d.system_result, d.system_result),
+            "authorization_code": d.authorization_code,
+            "document_number": d.document_number,
+            "guest_name": d.guest_name,
+            "card_type": d.card_type,
+            "transbank_amount": d.transbank_amount,
+            "erp_amount_clp": d.erp_amount_clp,
+            "system_status_detail": d.system_status_detail,
+        }
+        for d in cross_matches.exclude(system_result="MATCHED").order_by("-id")[:300]
+    ]
+
+    context = {
+        "process": process,
+        "bank_validations": process.bank_validations.all(),
+        "summaries": process.summaries.filter(currency_table="CLP").select_related("card_type"),
+        "counts": counts,
+        "discrepancies": discrepancies,
+    }
+    return render(request, "clp_result.html", context)
+
+
+@login_required(login_url="login")
+def clp_export_view(request, process_id: int):
+    """
+    Phase 2: Download the official styled Excel report generated from the
+    persisted database records of a committed CLP ReconciliationProcess.
+    """
+    try:
+        excel_stream = generate_committed_clp_excel_bytes(process_id)
+    except ReconciliationProcess.DoesNotExist:
+        messages.error(request, f"El proceso CLP #{process_id} no existe en la base de datos.")
+        return redirect("clp_upload")
+
+    response = HttpResponse(
+        excel_stream.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="reporte_oficial_pesos_proceso_{process_id}.xlsx"'
+    return response
 

@@ -24,6 +24,7 @@ from .column_detector import (
     TRANSBANK_CLP_COLUMN_RULES,
     resolve_dataframe_columns,
     clean_code_string,
+    normalize_text,
     safe_decimal,
     safe_date,
     safe_cell,
@@ -33,6 +34,24 @@ from .excel_parsers import (
     parse_and_validate_bank_deposits,
     parse_erp_transactions,
 )
+
+# Movement-type keywords that identify a voided sale / credit note row in the
+# Transbank CLP report, which must be excluded from the cross-match entirely
+# (ported from the `diego` branch's conciliacion_pesos.py).
+_VOID_MOVEMENT_KEYWORDS = ("anulac", "nota de credito", "reverso", "devoluc")
+
+
+def _normalized_auth_key(code: str) -> str:
+    """Strips leading zeros so ERP-padded codes (e.g. '005330I') match Transbank's
+    shorter form ('5330I'). Ported from `diego`'s `_clave()`."""
+    stripped = (code or "").lstrip("0")
+    return stripped or (code or "")
+
+
+def _typo_tolerant_auth_key(code: str) -> str:
+    """Same as `_normalized_auth_key` but also treats a typed letter 'O' as digit '0',
+    a common data-entry mistake. Ported from `diego`'s `_clave_tipeo()`."""
+    return _normalized_auth_key((code or "").replace("O", "0"))
 
 
 def execute_clp_reconciliation(
@@ -106,6 +125,16 @@ def execute_clp_reconciliation(
             currency_mode="CLP",
         )
 
+        # 2B. Build O(1) fallback lookup indices (leading-zero-stripped and typo-tolerant)
+        # instead of scanning every ERP key per unmatched voucher (was an O(n*m) hot loop).
+        erp_by_stripped_key: Dict[str, Any] = {}
+        erp_by_typo_key: Dict[str, Any] = {}
+        for auth_key, records in erp_by_auth_code.items():
+            if not auth_key:
+                continue
+            erp_by_stripped_key.setdefault(_normalized_auth_key(auth_key), []).extend(records)
+            erp_by_typo_key.setdefault(_typo_tolerant_auth_key(auth_key), []).extend(records)
+
         # 3. Cross-Match the 3 Transbank CLP Files with BIN Card Brand Detection
         transbank_instances_to_create = []
         cross_match_results_to_create = []
@@ -127,6 +156,26 @@ def execute_clp_reconciliation(
                 auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
                 gross_amount = safe_decimal(safe_cell(row, columns["gross_amount"]))
                 if not auth_code or gross_amount <= 0:
+                    continue
+
+                movement_type_text = normalize_text(safe_cell(row, columns["movement_type"]))
+                if movement_type_text and any(k in movement_type_text for k in _VOID_MOVEMENT_KEYWORDS):
+                    cross_match_results_to_create.append(CrossMatchResult(
+                        process=process,
+                        card_type=card_types["RCO"],
+                        authorization_code=auth_code,
+                        document_number=clean_code_string(safe_cell(row, columns["receipt_number"])),
+                        sale_date=safe_date(safe_cell(row, columns["sale_date"])),
+                        merchant_location_name=str(safe_cell(row, columns["merchant_location_name"]) or "").strip(),
+                        transbank_amount=gross_amount,
+                        difference_clp=Decimal("0.00"),
+                        system_result="VOID_OR_CREDIT_NOTE",
+                        system_status_detail=(
+                            f"Movimiento '{safe_cell(row, columns['movement_type'])}' ({modality_code}) "
+                            f"excluido del cruce: es una anulación o nota de crédito, no una venta"
+                        ),
+                        management_status=pending_status,
+                    ))
                     continue
 
                 masked_card = str(safe_cell(row, columns["masked_card_number"]) or "").strip()
@@ -165,13 +214,21 @@ def execute_clp_reconciliation(
                 summary_by_brand[detected_brand_code]["commissions"] += (commission + commission_vat)
                 summary_by_brand[detected_brand_code]["net_total"] += net_deposit
 
+                is_typo_match = False
                 matching_erp_list = [r for r in erp_by_auth_code.get(auth_code, []) if not r["instance"].reconciled]
                 if not matching_erp_list:
-                    for erp_key, records in erp_by_auth_code.items():
-                        if auth_code in erp_key:
-                            matching_erp_list = [r for r in records if not r["instance"].reconciled]
-                            if matching_erp_list:
-                                break
+                    matching_erp_list = [
+                        r for r in erp_by_stripped_key.get(_normalized_auth_key(auth_code), [])
+                        if not r["instance"].reconciled
+                    ]
+                if not matching_erp_list:
+                    typo_candidates = [
+                        r for r in erp_by_typo_key.get(_typo_tolerant_auth_key(auth_code), [])
+                        if not r["instance"].reconciled
+                    ]
+                    if typo_candidates:
+                        matching_erp_list = typo_candidates
+                        is_typo_match = True
 
                 if matching_erp_list:
                     matched_erp = matching_erp_list[0]
@@ -188,7 +245,14 @@ def execute_clp_reconciliation(
                         (modality_code == "CLP_CREDIT" and matched_erp["card_code"] != detected_brand_code)
                     )
 
-                    if abs(diff_clp) <= clp_tolerance and not card_type_mismatch:
+                    if is_typo_match:
+                        system_result = "TYPO_SUSPECTED"
+                        status_detail = (
+                            f"Posible error de tipeo en recepción: Transbank registra código '{auth_code}', "
+                            f"Bordero registra documento '{erp_item.document_number}'. Verificar antes de conciliar."
+                        )
+                        mgmt_status = pending_status
+                    elif abs(diff_clp) <= clp_tolerance and not card_type_mismatch:
                         system_result = "MATCHED"
                         status_detail = f"Cruce exacto en CLP ({card_model.name} - {modality_code})"
                         mgmt_status = accepted_rounding_status
@@ -290,5 +354,8 @@ def execute_clp_reconciliation(
             "ghost_count": len([r for r in cross_match_results_to_create if r.system_result == "GHOST_IN_ERP"]),
             "card_mismatch_count": len([r for r in cross_match_results_to_create if r.system_result == "CARD_TYPE_MISMATCH"]),
             "matched_count": len([r for r in cross_match_results_to_create if r.system_result == "MATCHED"]),
+            "amount_mismatch_count": len([r for r in cross_match_results_to_create if r.system_result == "AMOUNT_MISMATCH"]),
+            "typo_suspected_count": len([r for r in cross_match_results_to_create if r.system_result == "TYPO_SUSPECTED"]),
+            "void_count": len([r for r in cross_match_results_to_create if r.system_result == "VOID_OR_CREDIT_NOTE"]),
         }
 
