@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% load l10n %}
+
+{% block page_title %}Hotel Plaza San Francisco | Configuración{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h1 class="h3 fw-bold mb-1" style="color: var(--ink);">Configuración</h1>
+  <p class="text-muted mb-0">Datos de tu cuenta y, si eres administrador, los parámetros del motor de conciliación.</p>
+</div>
+
+<div class="card card-executive mb-4">
+  <div class="d-flex align-items-center gap-3 p-4" style="border-bottom: 1px solid var(--border);">
+    <div class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style="width: 64px; height: 64px; background: var(--bs-secondary-bg); font-size: 22px; font-weight: 600; color: var(--ink);">
+      {{ user.first_name|default:user.username|slice:":2"|upper }}
+    </div>
+    <div>
+      <div class="fw-bold fs-5" style="color: var(--ink);">{{ user.get_full_name|default:user.username }}</div>
+      <div class="text-muted small">{{ role_label }} · Hotel Plaza San Francisco</div>
+    </div>
+  </div>
+
+  <div class="row g-3 p-4">
+    <div class="col-md-6">
+      <label class="small text-muted d-block mb-1">Usuario</label>
+      <div class="p-2 px-3 rounded-3" style="background: var(--bs-secondary-bg); border: 1px solid var(--border);">{{ user.username }}</div>
+    </div>
+    <div class="col-md-6">
+      <label class="small text-muted d-block mb-1">Correo electrónico</label>
+      <div class="p-2 px-3 rounded-3" style="background: var(--bs-secondary-bg); border: 1px solid var(--border);">{{ user.email|default:"—" }}</div>
+    </div>
+    <div class="col-md-6">
+      <label class="small text-muted d-block mb-1">Rol</label>
+      <div class="p-2 px-3 rounded-3" style="background: var(--bs-secondary-bg); border: 1px solid var(--border);">{{ role_label }}</div>
+    </div>
+    <div class="col-md-6">
+      <label class="small text-muted d-block mb-1">Miembro desde</label>
+      <div class="p-2 px-3 rounded-3" style="background: var(--bs-secondary-bg); border: 1px solid var(--border);">{{ user.date_joined|date:"d/m/Y" }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Password change -->
+<div class="card card-executive mb-4">
+  <div class="p-4" style="border-bottom: 1px solid var(--border);">
+    <h2 class="h6 fw-bold mb-0" style="color: var(--ink);"><i class="bi bi-key-fill me-1"></i> Cambiar Contraseña</h2>
+  </div>
+  <form method="post" class="p-4">
+    {% csrf_token %}
+    <input type="hidden" name="form_name" value="password">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="small text-muted d-block mb-1" for="{{ password_form.old_password.id_for_label }}">Contraseña actual</label>
+        {{ password_form.old_password }}
+        {% if password_form.old_password.errors %}<div class="small text-danger mt-1">{{ password_form.old_password.errors|join:" " }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="small text-muted d-block mb-1" for="{{ password_form.new_password1.id_for_label }}">Nueva contraseña</label>
+        {{ password_form.new_password1 }}
+        {% if password_form.new_password1.errors %}<div class="small text-danger mt-1">{{ password_form.new_password1.errors|join:" " }}</div>{% endif %}
+      </div>
+      <div class="col-md-4">
+        <label class="small text-muted d-block mb-1" for="{{ password_form.new_password2.id_for_label }}">Confirmar contraseña</label>
+        {{ password_form.new_password2 }}
+        {% if password_form.new_password2.errors %}<div class="small text-danger mt-1">{{ password_form.new_password2.errors|join:" " }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="mt-3">
+      <button type="submit" class="btn btn-brand rounded-pill px-4">
+        <i class="bi bi-check-circle-fill me-1"></i> Actualizar Contraseña
+      </button>
+    </div>
+  </form>
+</div>
+
+{% if user.is_staff %}
+<!-- System tolerances -->
+<div class="card card-executive mb-4">
+  <div class="p-4" style="border-bottom: 1px solid var(--border);">
+    <h2 class="h6 fw-bold mb-0" style="color: var(--ink);"><i class="bi bi-sliders me-1"></i> Tolerancias del Sistema</h2>
+    <p class="small text-muted mb-0 mt-1">Margen de redondeo aceptado al comparar montos entre el ERP y los operadores de tarjeta.</p>
+  </div>
+  <form method="post" class="p-4">
+    {% csrf_token %}
+    <input type="hidden" name="form_name" value="tolerances">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="small text-muted d-block mb-1" for="usd_rounding_tolerance">Tolerancia USD</label>
+        <div class="input-group">
+          <span class="input-group-text">US$</span>
+          <input type="number" step="0.01" min="0" class="form-control" id="usd_rounding_tolerance" name="usd_rounding_tolerance"
+                 value="{{ tolerance_config.usd_rounding_tolerance|default:'0.50'|unlocalize }}">
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="small text-muted d-block mb-1" for="clp_rounding_tolerance">Tolerancia CLP</label>
+        <div class="input-group">
+          <span class="input-group-text">$</span>
+          <input type="number" step="0.01" min="0" class="form-control" id="clp_rounding_tolerance" name="clp_rounding_tolerance"
+                 value="{{ tolerance_config.clp_rounding_tolerance|default:'1000.00'|unlocalize }}">
+        </div>
+      </div>
+    </div>
+    {% if tolerance_config.updated_at %}
+    <p class="small text-muted mt-2 mb-0">
+      Última actualización: {{ tolerance_config.updated_at|date:"d/m/Y H:i" }}
+      {% if tolerance_config.updated_by %} por {{ tolerance_config.updated_by.username }}{% endif %}
+    </p>
+    {% endif %}
+    <div class="mt-3">
+      <button type="submit" class="btn btn-brand rounded-pill px-4">
+        <i class="bi bi-check-circle-fill me-1"></i> Guardar Tolerancias
+      </button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="text-end">
+  <a href="{% url 'logout' %}" class="btn btn-outline-danger rounded-pill px-4">
+    <i class="bi bi-box-arrow-right me-1"></i> Cerrar Sesión
+  </a>
+</div>
+{% endblock %}

@@ -7,14 +7,18 @@ Implements the 3-step lifecycle:
   4. In-Memory Excel Draft Export (usd_export_draft_view)
 """
 
+from decimal import Decimal, InvalidOperation
+
 from django.shortcuts import render, redirect
 from django.urls import reverse
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 
-from .models import ReconciliationProcess
+from .models import ReconciliationProcess, CrossMatchResult, AuditResolutionLog, SystemConfiguration
 from .services import (
     calculate_usd_preview,
     commit_usd_preview_to_database,
@@ -27,7 +31,7 @@ from .services import (
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect("usd_upload")
+        return redirect("dashboard")
 
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
@@ -35,7 +39,7 @@ def login_view(request):
         user = authenticate(request, username=username, password=password)
         if user is not None:
             login(request, user)
-            return redirect("usd_upload")
+            return redirect("dashboard")
         messages.error(request, "Credenciales incorrectas. Verifique su usuario y contraseña.")
 
     return render(request, "login.html")
@@ -158,7 +162,7 @@ def usd_commit_view(request):
                     "total_vouchers": total_vouchers,
                     "matched_count": matched_count,
                     "export_url": reverse("usd_export_committed", args=[process.id]),
-                    "upload_url": reverse("usd_upload"),
+                    "upload_url": reverse("dashboard"),
                 })
 
             messages.success(request, f"¡Cierre en Dólares #{process.id} guardado formalmente con éxito en la base de datos!")
@@ -339,4 +343,142 @@ def clp_export_view(request, process_id: int):
     )
     response["Content-Disposition"] = f'attachment; filename="reporte_oficial_pesos_proceso_{process_id}.xlsx"'
     return response
+
+
+@login_required(login_url="login")
+def dashboard_view(request):
+    """
+    Home: aggregate KPIs and recent activity across both USD and CLP reconciliation processes.
+    """
+    all_matches = CrossMatchResult.objects.all()
+    total_matches = all_matches.count()
+    matched_count = all_matches.filter(system_result="MATCHED").count()
+    match_rate = (matched_count / total_matches * 100) if total_matches else 0
+    pending_count = all_matches.filter(management_status__code="PENDING").count()
+
+    last_process = ReconciliationProcess.objects.order_by("-execution_date").first()
+
+    recent_logs = list(
+        AuditResolutionLog.objects.select_related("user", "new_status")
+        .order_by("-created_at")[:4]
+    )
+    recent_processes = list(
+        ReconciliationProcess.objects.select_related("user").order_by("-execution_date")[:4]
+    )
+
+    activity = []
+    for log in recent_logs:
+        activity.append({
+            "text": f"Excepción #{log.cross_match_result_id} actualizada a "
+                    f"{log.new_status.display_name if log.new_status else '—'} por {log.user.username}",
+            "when": log.created_at,
+        })
+    for proc in recent_processes:
+        activity.append({
+            "text": f"Cierre {proc.process_currency} #{proc.id} ejecutado por "
+                    f"{proc.user.username} ({proc.accounting_period or ''})",
+            "when": proc.execution_date,
+        })
+    activity.sort(key=lambda a: a["when"], reverse=True)
+
+    context = {
+        "match_rate": round(match_rate, 1),
+        "matched_count": matched_count,
+        "total_matches": total_matches,
+        "pending_count": pending_count,
+        "last_process": last_process,
+        "activity": activity[:6],
+        "process_count": ReconciliationProcess.objects.count(),
+    }
+    return render(request, "dashboard.html", context)
+
+
+@login_required(login_url="login")
+def history_view(request):
+    """
+    Lists every reconciliation process (USD + CLP) with its match rate and pending exceptions.
+    """
+    processes_qs = ReconciliationProcess.objects.select_related("user").order_by("-execution_date")
+    paginator = Paginator(processes_qs, 15)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    rows = []
+    for proc in page_obj.object_list:
+        matches = proc.cross_match_results
+        total = matches.count()
+        matched = matches.filter(system_result="MATCHED").count()
+        rows.append({
+            "process": proc,
+            "total": total,
+            "matched": matched,
+            "match_rate": round((matched / total * 100), 1) if total else 0,
+            "pending": matches.exclude(system_result="MATCHED").filter(management_status__code="PENDING").count(),
+        })
+
+    return render(request, "historial.html", {"page_obj": page_obj, "rows": rows})
+
+
+@login_required(login_url="login")
+def settings_view(request):
+    """
+    Account settings: profile display, password change, and (staff only) system tolerances.
+    """
+    def _bootstrap_styled(form):
+        for field in form.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+        return form
+
+    password_form = _bootstrap_styled(PasswordChangeForm(user=request.user))
+    tolerance_config = SystemConfiguration.objects.first()
+
+    if request.method == "POST":
+        form_name = request.POST.get("form_name")
+
+        if form_name == "password":
+            password_form = _bootstrap_styled(PasswordChangeForm(user=request.user, data=request.POST))
+            if password_form.is_valid():
+                user = password_form.save()
+                update_session_auth_hash(request, user)
+                messages.success(request, "Contraseña actualizada con éxito.")
+                return redirect("settings")
+            messages.error(request, "No se pudo actualizar la contraseña. Revise los datos ingresados.")
+
+        elif form_name == "tolerances":
+            if not request.user.is_staff:
+                messages.error(request, "No tiene permisos para modificar la configuración del sistema.")
+                return redirect("settings")
+            try:
+                usd_tolerance = Decimal(request.POST.get("usd_rounding_tolerance", "0.50"))
+                clp_tolerance = Decimal(request.POST.get("clp_rounding_tolerance", "1000.00"))
+            except InvalidOperation:
+                messages.error(request, "Las tolerancias deben ser valores numéricos válidos.")
+                return redirect("settings")
+
+            if tolerance_config is None:
+                tolerance_config = SystemConfiguration(
+                    usd_rounding_tolerance=usd_tolerance,
+                    clp_rounding_tolerance=clp_tolerance,
+                    updated_by=request.user,
+                )
+            else:
+                tolerance_config.usd_rounding_tolerance = usd_tolerance
+                tolerance_config.clp_rounding_tolerance = clp_tolerance
+                tolerance_config.updated_by = request.user
+            tolerance_config.save()
+            messages.success(request, "Tolerancias del sistema actualizadas con éxito.")
+            return redirect("settings")
+
+    if request.user.is_superuser:
+        role_label = "Superusuario"
+    elif request.user.is_staff:
+        role_label = "Administrador"
+    else:
+        role_label = "Auditor"
+
+    context = {
+        "password_form": password_form,
+        "tolerance_config": tolerance_config,
+        "role_label": role_label,
+    }
+    return render(request, "configuracion.html", context)
 

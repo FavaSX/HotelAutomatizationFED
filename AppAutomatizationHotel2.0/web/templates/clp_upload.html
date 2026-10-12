@@ -5,23 +5,23 @@
 {% block extra_css %}
 <style>
   .clp-upload-card {
-    border: 2.5px dashed var(--hotel-gold);
+    border: 2.5px dashed var(--brand);
     border-radius: 1rem;
-    background: linear-gradient(180deg, #fffdf7 0%, #fffbeb 100%);
+    background: var(--bs-secondary-bg);
     transition: all 0.2s ease;
     cursor: pointer;
     padding: 1.25rem;
     text-align: center;
   }
   .clp-upload-card:hover {
-    border-color: var(--hotel-navy);
-    background: #fef3c7;
+    border-color: var(--ink);
+    background: var(--brand-dim);
     transform: translateY(-2px);
   }
   .clp-upload-card.loaded {
-    border-color: #16A34A;
+    border-color: var(--success);
     border-style: solid;
-    background: #f0fdf4;
+    background: var(--bs-success-bg-subtle);
   }
   #clpProcessingOverlay {
     display: none;
@@ -46,10 +46,10 @@
 </div>
 
 <div class="mb-4">
-  <span class="badge rounded-pill px-3 py-1 mb-1" style="background: rgba(153,105,9,0.14); color: var(--hotel-gold);">
+  <span class="badge rounded-pill px-3 py-1 mb-1" style="background: var(--brand-dim); color: var(--brand);">
     <i class="bi bi-shield-check me-1"></i> Fase 2: Cruce Directo con Persistencia Atómica
   </span>
-  <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">Conciliación en Pesos (CLP) — Carga de Archivos</h3>
+  <h3 class="fw-bold mb-0" style="color: var(--ink);">Conciliación en Pesos (CLP) — Carga de Archivos</h3>
   <p class="text-muted small mb-0">Sube los 5 archivos tal cual se descargan. El motor detecta anulaciones, errores de tipeo y Redcompra automáticamente.</p>
 </div>
 
@@ -57,7 +57,7 @@
   {% csrf_token %}
 
   <div class="card card-executive p-4 mb-4">
-    <h6 class="text-uppercase mb-3" style="color: var(--hotel-gold); letter-spacing: 0.04em;">1. Transbank (Abonos por día)</h6>
+    <h6 class="text-uppercase mb-3" style="color: var(--brand); letter-spacing: 0.04em;">1. Transbank (Abonos por día)</h6>
     <div class="row g-3 mb-4">
       <div class="col-md-4">
         <label class="clp-upload-card w-100 d-block mb-0" for="clp_credito">
@@ -85,7 +85,7 @@
       </div>
     </div>
 
-    <h6 class="text-uppercase mb-3" style="color: var(--hotel-gold); letter-spacing: 0.04em;">2. Hotel y Banco</h6>
+    <h6 class="text-uppercase mb-3" style="color: var(--brand); letter-spacing: 0.04em;">2. Hotel y Banco</h6>
     <div class="row g-3">
       <div class="col-md-6">
         <label class="clp-upload-card w-100 d-block mb-0" for="clp_bordero">
@@ -106,7 +106,7 @@
     </div>
 
     <div class="mt-4 text-center">
-      <button type="submit" class="btn btn-gold py-3 px-5 rounded-pill fs-5 shadow">
+      <button type="submit" class="btn btn-brand py-3 px-5 rounded-pill fs-5 shadow">
         <i class="bi bi-gear-fill me-2"></i> Procesar y Guardar Conciliación en Pesos
       </button>
       <p class="text-muted small mt-2 mb-0">A diferencia de Dólares, Pesos se guarda directamente en base de datos (sin previsualización).</p>
@@ -116,7 +116,7 @@
 
 {% if recent_clp_processes %}
 <div class="card card-executive p-4">
-  <h6 class="fw-bold mb-3" style="color: var(--hotel-navy);"><i class="bi bi-clock-history me-1"></i> Últimos Cierres en Pesos</h6>
+  <h6 class="fw-bold mb-3" style="color: var(--ink);"><i class="bi bi-clock-history me-1"></i> Últimos Cierres en Pesos</h6>
   <div class="table-responsive">
     <table class="table table-sm align-middle">
       <thead>

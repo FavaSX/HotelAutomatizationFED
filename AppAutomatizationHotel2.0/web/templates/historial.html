@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block page_title %}Hotel Plaza San Francisco | Historial{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h1 class="h3 fw-bold mb-1" style="color: var(--ink);">Historial de Conciliaciones</h1>
+  <p class="text-muted mb-0">Todos los cierres ejecutados, en Dólares y en Pesos.</p>
+</div>
+
+<div class="card card-executive">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4">#</th>
+          <th>Moneda</th>
+          <th>Período</th>
+          <th>Fecha de ejecución</th>
+          <th>Auditor</th>
+          <th class="text-end">% Conciliado</th>
+          <th class="text-end">Excepciones pendientes</th>
+          <th class="pe-4"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="ps-4 fw-semibold">#{{ row.process.id }}</td>
+          <td>
+            {% if row.process.process_currency == 'USD' %}
+            <span class="badge" style="background: var(--brand-dim); color: var(--brand);">USD</span>
+            {% else %}
+            <span class="badge" style="background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis);">CLP</span>
+            {% endif %}
+          </td>
+          <td>{{ row.process.accounting_period|default:"—" }}</td>
+          <td class="small">{{ row.process.execution_date|date:"d/m/Y H:i" }}</td>
+          <td class="small">{{ row.process.user.username }}</td>
+          <td class="text-end fw-semibold">{{ row.match_rate }}%</td>
+          <td class="text-end">
+            {% if row.pending > 0 %}
+            <span class="badge bg-warning-subtle text-warning-emphasis">{{ row.pending }}</span>
+            {% else %}
+            <span class="text-muted small">0</span>
+            {% endif %}
+          </td>
+          <td class="pe-4 text-end">
+            {% if row.process.process_currency == 'CLP' %}
+            <a href="{% url 'clp_result' row.process.id %}" class="btn btn-outline-secondary btn-sm rounded-pill">Ver Resultados</a>
+            {% else %}
+            <a href="{% url 'usd_export_committed' row.process.id %}" class="btn btn-outline-secondary btn-sm rounded-pill">Descargar Excel</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" class="text-center py-5 text-muted">Aún no se ha ejecutado ningún cierre de conciliación.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div class="d-flex justify-content-between align-items-center px-4 py-3 small text-muted" style="border-top: 1px solid var(--border);">
+    <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} — {{ page_obj.paginator.count }} proceso(s) en total</span>
+    <div class="d-flex gap-2">
+      {% if page_obj.has_previous %}
+      <a href="?page={{ page_obj.previous_page_number }}" class="btn btn-outline-secondary btn-sm rounded-pill">Anterior</a>
+      {% endif %}
+      {% if page_obj.has_next %}
+      <a href="?page={{ page_obj.next_page_number }}" class="btn btn-outline-secondary btn-sm rounded-pill">Siguiente</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

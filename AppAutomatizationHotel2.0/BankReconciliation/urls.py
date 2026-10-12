@@ -9,9 +9,12 @@ from web import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', views.usd_upload_view, name='usd_upload'),
+    path('', views.dashboard_view, name='dashboard'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
+    path('historial/', views.history_view, name='history'),
+    path('configuracion/', views.settings_view, name='settings'),
+    path('reconciliation/usd/', views.usd_upload_view, name='usd_upload'),
     path('reconciliation/usd/preview/', views.usd_preview_view, name='usd_preview'),
     path('reconciliation/usd/commit/', views.usd_commit_view, name='usd_commit'),
     path('reconciliation/usd/discard/', views.usd_discard_view, name='usd_discard'),
