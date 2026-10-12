@@ -21,92 +21,98 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
   <style>
-    /* ===================== Brand tokens (light = default) ===================== */
+    /* ===================== Brand tokens, sampled from plazasanfrancisco.cl =====================
+       Navy #0C0C42 and gold #996909 are the hotel's actual brand colors (confirmed via the live
+       site's heading/footer and "Reservar Ahora" button). Success/warning/danger are semantic
+       status colors, deliberately NOT reusing the brand gold so "pending/error" states stay
+       visually distinct from ordinary brand/primary-action styling. */
     :root {
-      --brand: #EB1120;
-      --brand-dim: #FBE2E4;
-      --ink: #201F3A;
-      --ink-muted: #6B6A85;
-      --border: #DEDCE9;
+      --brand: #996909;
+      --brand-dim: #F3E9D2;
+      --ink: #0C0C42;
+      --ink-muted: #797989;
+      --border: #E3E3E3;
       --success: #1F9D66;
-      --warning: #B9790E;
+      --warning: #C2410C;
+      --danger: #DC2626;
 
-      --bs-primary: #EB1120;
-      --bs-primary-rgb: 235, 17, 32;
-      --bs-danger: #EB1120;
-      --bs-danger-rgb: 235, 17, 32;
+      --bs-primary: #996909;
+      --bs-primary-rgb: 153, 105, 9;
+      --bs-danger: #DC2626;
+      --bs-danger-rgb: 220, 38, 38;
       --bs-success: #1F9D66;
       --bs-success-rgb: 31, 157, 102;
-      --bs-warning: #B9790E;
-      --bs-warning-rgb: 185, 121, 14;
-      --bs-light: #ECEBF3;
-      --bs-light-rgb: 236, 235, 243;
-      --bs-dark: #201F3A;
-      --bs-dark-rgb: 32, 31, 58;
+      --bs-warning: #C2410C;
+      --bs-warning-rgb: 194, 65, 12;
+      --bs-light: #F0F0F0;
+      --bs-light-rgb: 240, 240, 240;
+      --bs-dark: #0C0C42;
+      --bs-dark-rgb: 12, 12, 66;
 
-      --bs-body-bg: #F4F3F9;
-      --bs-body-color: #201F3A;
-      --bs-border-color: #DEDCE9;
-      --bs-secondary-bg: #ECEBF3;
-      --bs-tertiary-bg: #F4F3F9;
-      --bs-emphasis-color: #201F3A;
+      --bs-body-bg: #F4F4F6;
+      --bs-body-color: #0C0C42;
+      --bs-border-color: #E3E3E3;
+      --bs-secondary-bg: #EFEFF2;
+      --bs-tertiary-bg: #F4F4F6;
+      --bs-emphasis-color: #0C0C42;
       --bs-card-bg: #FFFFFF;
       --bs-modal-bg: #FFFFFF;
 
       --bs-success-bg-subtle: #E3F7ED;
       --bs-success-border-subtle: #B9E9D1;
       --bs-success-text-emphasis: #15663F;
-      --bs-warning-bg-subtle: #FBF0DC;
-      --bs-warning-border-subtle: #F0D79D;
-      --bs-warning-text-emphasis: #7A4F09;
-      --bs-danger-bg-subtle: #FCE4E6;
-      --bs-danger-border-subtle: #F6B7BC;
-      --bs-danger-text-emphasis: #9C0D18;
-      --bs-primary-bg-subtle: #FCE4E6;
-      --bs-primary-border-subtle: #F6B7BC;
-      --bs-primary-text-emphasis: #9C0D18;
+      --bs-warning-bg-subtle: #FBE7DA;
+      --bs-warning-border-subtle: #F0B88F;
+      --bs-warning-text-emphasis: #7A2A05;
+      --bs-danger-bg-subtle: #FCE4E4;
+      --bs-danger-border-subtle: #F6B3B3;
+      --bs-danger-text-emphasis: #8F1D1D;
+      --bs-primary-bg-subtle: #F3E9D2;
+      --bs-primary-border-subtle: #E2CA96;
+      --bs-primary-text-emphasis: #6B4A06;
     }
 
     /* ===================== Dark theme overrides ===================== */
     [data-bs-theme="dark"] {
-      --brand: #EB1120;
-      --brand-dim: #5A1620;
+      --brand: #C9971F;
+      --brand-dim: #4A3A12;
       --ink: #F3F2F8;
-      --ink-muted: #A6A4C0;
-      --border: #46455F;
+      --ink-muted: #A8A6BE;
+      --border: #35356F;
       --success: #3FBF87;
-      --warning: #E3A63E;
+      --warning: #FB923C;
+      --danger: #F87171;
 
       --bs-success: #3FBF87;
       --bs-success-rgb: 63, 191, 135;
-      --bs-warning: #E3A63E;
-      --bs-warning-rgb: 227, 166, 62;
-      --bs-light: #3F3E59;
-      --bs-light-rgb: 63, 62, 89;
+      --bs-warning: #FB923C;
+      --bs-warning-rgb: 251, 146, 60;
+      --bs-light: #23235E;
+      --bs-light-rgb: 35, 35, 94;
       --bs-dark: #F3F2F8;
       --bs-dark-rgb: 243, 242, 248;
 
-      --bs-body-bg: #201F3A;
+      --bs-body-bg: #0C0C42;
       --bs-body-color: #F3F2F8;
-      --bs-border-color: #46455F;
-      --bs-secondary-bg: #3F3E59;
-      --bs-tertiary-bg: #2B2A45;
+      --bs-border-color: #35356F;
+      --bs-secondary-bg: #23235E;
+      --bs-tertiary-bg: #16163D;
       --bs-emphasis-color: #F3F2F8;
-      --bs-card-bg: #36354E;
-      --bs-modal-bg: #36354E;
+      --bs-card-bg: #1A1A4D;
+      --bs-modal-bg: #1A1A4D;
 
       --bs-success-bg-subtle: #163B2C;
       --bs-success-border-subtle: #1F5C41;
       --bs-success-text-emphasis: #6FE3B2;
-      --bs-warning-bg-subtle: #3D2E10;
-      --bs-warning-border-subtle: #5C4518;
-      --bs-warning-text-emphasis: #F0C778;
-      --bs-danger-bg-subtle: #3D1217;
-      --bs-danger-border-subtle: #5C1B22;
-      --bs-danger-text-emphasis: #F57E86;
-      --bs-primary-bg-subtle: #3D1217;
-      --bs-primary-border-subtle: #5C1B22;
-      --bs-primary-text-emphasis: #F57E86;
+      --bs-warning-bg-subtle: #4A2A10;
+      --bs-warning-border-subtle: #6B3F18;
+      --bs-warning-text-emphasis: #FDBA74;
+      --bs-danger-bg-subtle: #4A1616;
+      --bs-danger-border-subtle: #6B2020;
+      --bs-danger-text-emphasis: #FCA5A5;
+      --bs-primary-bg-subtle: #4A3A12;
+      --bs-primary-border-subtle: #6B5419;
+      --bs-primary-text-emphasis: #E8C978;
     }
 
     body {
@@ -189,11 +195,17 @@
     /* Bootstrap 5.3 bakes solid .btn-* colors in as literal component variables at build
        time (unlike utilities, which read the root --bs-* tokens), so they must be
        re-pointed at our brand tokens explicitly. */
-    .btn-primary, .btn-danger {
+    .btn-primary {
       --bs-btn-bg: var(--brand); --bs-btn-border-color: var(--brand);
       --bs-btn-hover-bg: var(--brand); --bs-btn-hover-border-color: var(--brand);
       --bs-btn-active-bg: var(--brand); --bs-btn-active-border-color: var(--brand);
       --bs-btn-disabled-bg: var(--brand); --bs-btn-disabled-border-color: var(--brand);
+    }
+    .btn-danger {
+      --bs-btn-bg: var(--danger); --bs-btn-border-color: var(--danger);
+      --bs-btn-hover-bg: var(--danger); --bs-btn-hover-border-color: var(--danger);
+      --bs-btn-active-bg: var(--danger); --bs-btn-active-border-color: var(--danger);
+      --bs-btn-disabled-bg: var(--danger); --bs-btn-disabled-border-color: var(--danger);
     }
     .btn-primary:hover, .btn-danger:hover { filter: brightness(0.92); }
     .btn-success {
@@ -202,10 +214,15 @@
       --bs-btn-active-bg: var(--success); --bs-btn-active-border-color: var(--success);
     }
     .btn-success:hover { filter: brightness(0.92); }
-    .btn-outline-primary, .btn-outline-danger {
+    .btn-outline-primary {
       --bs-btn-color: var(--brand); --bs-btn-border-color: var(--brand);
       --bs-btn-hover-bg: var(--brand); --bs-btn-hover-border-color: var(--brand);
       --bs-btn-active-bg: var(--brand); --bs-btn-active-border-color: var(--brand);
+    }
+    .btn-outline-danger {
+      --bs-btn-color: var(--danger); --bs-btn-border-color: var(--danger);
+      --bs-btn-hover-bg: var(--danger); --bs-btn-hover-border-color: var(--danger);
+      --bs-btn-active-bg: var(--danger); --bs-btn-active-border-color: var(--danger);
     }
     .btn-outline-success {
       --bs-btn-color: var(--success); --bs-btn-border-color: var(--success);
@@ -236,7 +253,7 @@
     /* .bg-dark badges (card brand chips) must stay a dark chip with white text even in
        dark mode, where --bs-dark is intentionally flipped to a light value for .text-dark
        legibility elsewhere. */
-    [data-bs-theme="dark"] .badge.bg-dark { background-color: #3F3E59 !important; }
+    [data-bs-theme="dark"] .badge.bg-dark { background-color: #23235E !important; }
   </style>
   {% block extra_css %}{% endblock %}
 </head>
