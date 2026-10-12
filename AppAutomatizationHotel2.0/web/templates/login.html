@@ -9,7 +9,7 @@
         <small class="text-white-50">Suite de Conciliación Financiera v2.0</small>
       </div>
       <div class="card-body p-4">
-        <form method="post" action="{% url 'login' %}">
+        <form method="post" action="{% url 'login' %}" id="loginForm">
           {% csrf_token %}
           <div class="form-floating mb-3">
             <input type="text" class="form-control" id="username" name="username" placeholder="Usuario" required autofocus>
@@ -33,6 +33,9 @@
   </div>
 </div>
 <script>
+document.getElementById('loginForm').addEventListener('submit', () => {
+  try { sessionStorage.setItem('justLoggedIn', '1'); } catch (e) {}
+});
 function togglePass() {
   const input = document.getElementById('password');
   const icon = document.getElementById('eyeIcon');
