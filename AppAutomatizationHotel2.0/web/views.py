@@ -20,6 +20,7 @@ from .services import (
     commit_usd_preview_to_database,
     generate_committed_usd_excel_bytes,
     detect_and_align_usd_files,
+    enrich_preview_with_suggestions,
 )
 
 
@@ -97,6 +98,10 @@ def usd_preview_view(request):
     if not preview:
         messages.warning(request, "No hay ningún proceso preliminar en memoria. Por favor cargue los archivos.")
         return redirect("usd_upload")
+
+    # Enrich in-memory session with Level 2 secondary suggestions (including existing sessions)
+    enrich_preview_with_suggestions(preview)
+    request.session["usd_reconciliation_preview"] = preview
 
     context = {
         "preview": preview,

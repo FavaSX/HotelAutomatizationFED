@@ -6,14 +6,12 @@ Database persistence lives in `reconciliation_persistence.py` and Excel generati
 """
 
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 import pandas as pd
-from django.contrib.auth.models import User
 
 from ..models import (
     CardType,
     SystemConfiguration,
-    ReconciliationProcess,
 )
 from .column_detector import (
     TRANSBANK_USD_COLUMN_RULES,
@@ -28,7 +26,6 @@ from .excel_parsers import (
     parse_erp_transactions,
     parse_card_operator_statements,
 )
-from .reconciliation_persistence import commit_usd_preview_to_database
 
 
 def calculate_usd_preview(
@@ -95,7 +92,6 @@ def calculate_usd_preview(
                         break
 
     bank_validations = parse_and_validate_bank_deposits(
-        process=None,
         bank_dataframe=bank_dataframe,
         expected_deposits=[("USD_GENERAL", calculated_transbank_deposit)],
         tolerance=usd_tolerance,
@@ -106,8 +102,8 @@ def calculate_usd_preview(
     bank_movements_data = bank_validations[0].get("movements_data", []) if bank_validations else []
 
     # 2. Parse Card Operator Statements & ERP Transactions in Memory
-    card_operator_index = parse_card_operator_statements(None, operator_dataframes, card_types)
-    erp_instances, erp_by_auth_code = parse_erp_transactions(None, erp_dataframe, card_types, currency_mode="USD")
+    card_operator_index = parse_card_operator_statements(operator_dataframes, card_types)
+    erp_instances, erp_by_auth_code = parse_erp_transactions(erp_dataframe, card_types)
 
     # Index ERP instances so CrossMatchResult can link to the exact ErpTransaction on commit
     for idx, erp_item in enumerate(erp_instances):
@@ -415,22 +411,22 @@ def calculate_usd_preview(
             for tx in transbank_transactions_data
             if tx.get("sale_date")
         } - {None})
-        if settlement_dt and valid_sale_dates:
+        range_str = ""
+        if valid_sale_dates:
             min_str = valid_sale_dates[0].strftime("%d/%m/%Y")
             max_str = valid_sale_dates[-1].strftime("%d/%m/%Y")
             range_str = min_str if min_str == max_str else f"{min_str} al {max_str}"
+
+        if settlement_dt and range_str:
             accounting_period = f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')} (Ventas {range_str})"
         elif settlement_dt:
             accounting_period = f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')}"
-        elif valid_sale_dates:
-            min_str = valid_sale_dates[0].strftime("%d/%m/%Y")
-            max_str = valid_sale_dates[-1].strftime("%d/%m/%Y")
-            range_str = min_str if min_str == max_str else f"{min_str} al {max_str}"
+        elif range_str:
             accounting_period = f"Cierre Dólares — Ventas {range_str}"
         else:
             accounting_period = "Cierre Dólares (USD)"
 
-    return {
+    preview_payload = {
         "accounting_period": accounting_period,
         "file_names": {
             "erp": getattr(erp_file, "name", "TERJETAS ERP.xlsx"),
@@ -468,33 +464,6 @@ def calculate_usd_preview(
             "total": len(matched_vouchers) + len(discrepancy_vouchers) + len(orphan_vouchers),
         },
     }
-
-
-def execute_usd_reconciliation(
-    user: User,
-    erp_file,
-    transbank_file,
-    bank_statement_file,
-    amex_file,
-    diners_file,
-    visa_file,
-    mastercard_file,
-    accounting_period: str = "",
-    daily_dollar_rate: Optional[Decimal] = None
-) -> Tuple[ReconciliationProcess, Dict[str, Any]]:
-    """
-    Backwards-compatible convenience function: calculates in memory and immediately commits to database.
-    """
-    preview = calculate_usd_preview(
-        erp_file=erp_file,
-        transbank_file=transbank_file,
-        bank_statement_file=bank_statement_file,
-        amex_file=amex_file,
-        diners_file=diners_file,
-        visa_file=visa_file,
-        mastercard_file=mastercard_file,
-        accounting_period=accounting_period,
-    )
-    process = commit_usd_preview_to_database(user, preview)
-    return process, preview
+    from .suggestion_engine import enrich_preview_with_suggestions
+    return enrich_preview_with_suggestions(preview_payload)
 

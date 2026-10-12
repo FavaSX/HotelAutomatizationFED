@@ -1,5 +1,5 @@
 """
-Hybrid Column Detector, Data Sanitizers, and BIN Card Brand Identifier.
+Hybrid Column Detector and Data Sanitizers.
 
 Solves both column renaming and column reordering in Excel files:
 1. Scans header rows for semantic keywords (handles column reordering).
@@ -7,10 +7,9 @@ Solves both column renaming and column reordering in Excel files:
 """
 
 import math
-import re
 import unicodedata
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict
 import pandas as pd
 
 
@@ -61,23 +60,6 @@ TRANSBANK_USD_COLUMN_RULES = {
     "gross_amount": {"keywords": ["monto original"], "default_index": 6},
     "authorization_code": {"keywords": ["codigo autorizacion", "autorizacion venta"], "default_index": 7},
     "installment_number": {"keywords": ["n cuota", "n° cuota"], "default_index": 8},
-}
-
-TRANSBANK_CLP_COLUMN_RULES = {
-    "sale_date": {"keywords": ["fecha de venta"], "default_index": 1},
-    "merchant_code": {"keywords": ["codigo de comercio"], "default_index": 3},
-    "merchant_location_name": {"keywords": ["nombre local"], "default_index": 4},
-    "payment_modality": {"keywords": ["medio de pago"], "default_index": 5},
-    "gross_amount": {"keywords": ["monto original de venta"], "default_index": 6},
-    "installment_type": {"keywords": ["tipo de venta", "cuota"], "default_index": 8},
-    "installment_number": {"keywords": ["n° de cuota", "n de cuota"], "default_index": 9},
-    "transbank_commission": {"keywords": ["comision transbank (-)"], "default_index": 11},
-    "commission_vat_tax": {"keywords": ["iva comision transbank"], "default_index": 12},
-    "net_deposit_amount": {"keywords": ["total abono (=)"], "default_index": 13},
-    "masked_card_number": {"keywords": ["n° de tarjeta", "n de tarjeta", "identificador"], "default_index": 24},
-    "authorization_code": {"keywords": ["codigo de autorizacion de venta"], "default_index": 25},
-    "transaction_identifier": {"keywords": ["id transaccion", "tid"], "default_index": 30},
-    "receipt_number": {"keywords": ["n° de boleta", "n de boleta"], "default_index": 31},
 }
 
 
@@ -136,7 +118,7 @@ def resolve_dataframe_columns(
 
 
 # ==============================================================================
-# 3. DATA SANITIZERS & BIN CARD BRAND DETECTOR
+# 3. DATA SANITIZERS
 # ==============================================================================
 
 def clean_code_string(raw_value: Any) -> str:
@@ -195,30 +177,4 @@ def safe_cell(row: pd.Series, column_index: int) -> Any:
     if 0 <= column_index < len(row):
         return row.iloc[column_index]
     return None
-
-
-def identify_card_brand_from_bin(masked_card_number: str, transaction_identifier: str = "") -> str:
-    """
-    Identifies the card brand using the international ISO/IEC 7812 BIN standard
-    from the masked card number (Column 24) and the TID (Column 30).
-    Returns: 'VI' (Visa), 'MC' (MasterCard), 'AX' (Amex), 'DI' (Diners), or 'RCO' (Redcompra).
-    """
-    digits_only = re.sub(r"\D", "", str(masked_card_number))
-
-    if digits_only.startswith("4"):
-        return "VI"
-    if digits_only.startswith(("51", "52", "53", "54", "55", "22", "23", "24", "25", "26", "27")):
-        return "MC"
-    if digits_only.startswith(("34", "37")):
-        return "AX"
-    if digits_only.startswith(("30", "36", "38")):
-        return "DI"
-
-    tid_string = str(transaction_identifier).strip().upper()
-    if tid_string.startswith("M"):
-        return "MC"
-    if tid_string.isdigit() and len(tid_string) >= 14:
-        return "VI"
-
-    return "RCO"
 

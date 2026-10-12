@@ -192,3 +192,93 @@ async function executeCommitToDatabase() {
   }
 }
 
+function escapeHtmlStr(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function openSuggestionModal(btnElem) {
+  const cell = btnElem.closest('td');
+  const scriptEl = cell ? cell.querySelector('.suggestion-json') : null;
+  if (!scriptEl) return;
+
+  let sug = null;
+  try {
+    sug = JSON.parse(scriptEl.textContent);
+  } catch (e) {
+    console.error('Error parsing suggestion JSON:', e);
+    return;
+  }
+  if (!sug) return;
+
+  const voucherCode = btnElem.getAttribute('data-voucher') || '—';
+  const sectionLabel = btnElem.getAttribute('data-section') || 'Revisión Asistida';
+
+  const voucherBadge = document.getElementById('sugModalVoucherBadge');
+  if (voucherBadge) voucherBadge.textContent = 'Voucher ' + voucherCode;
+
+  const sectionBadge = document.getElementById('sugModalSectionBadge');
+  if (sectionBadge) sectionBadge.textContent = sectionLabel;
+
+  const confBadge = document.getElementById('sugModalConfidenceBadge');
+  if (confBadge) {
+    const isAlta = sug.confidence === 'ALTA';
+    confBadge.textContent = 'Confianza ' + (sug.confidence || 'MEDIA');
+    confBadge.className = 'suggestion-confidence ' + (isAlta ? 'suggestion-confidence-alta' : 'suggestion-confidence-media');
+  }
+
+  const headlineEl = document.getElementById('sugModalHeadline');
+  if (headlineEl) headlineEl.textContent = sug.headline || 'Sugerencia de Cruce Secundario';
+
+  const summaryEl = document.getElementById('sugModalCandidateSummary');
+  if (summaryEl) summaryEl.textContent = sug.candidate_summary || '';
+
+  const reasonsContainer = document.getElementById('sugModalReasonsContainer');
+  if (reasonsContainer) {
+    const reasons = Array.isArray(sug.reasons) ? sug.reasons : [];
+    reasonsContainer.innerHTML = reasons.map(r => (
+      `<span class="reason-chip reason-${escapeHtmlStr(r.tone || 'cyan')}">` +
+      `<i class="bi ${escapeHtmlStr(r.icon || 'bi-check2-circle')}"></i> ` +
+      `${escapeHtmlStr(r.label)}` +
+      `</span>`
+    )).join('');
+  }
+
+  const files = sug.files_involved || {};
+  const thTbk = document.getElementById('sugThTbkFile');
+  if (thTbk) thTbk.textContent = files.tbk || 'ABONO TBK.xlsx';
+  const thErp = document.getElementById('sugThErpFile');
+  if (thErp) thErp.textContent = files.erp || 'TARJETAS ERP.xlsx';
+  const thOp = document.getElementById('sugThOpFile');
+  if (thOp) thOp.textContent = files.op || 'Operadora DOLAR.XLS';
+
+  const tbody = document.getElementById('sugModalComparisonTbody');
+  if (tbody) {
+    const rows = Array.isArray(sug.comparison_rows) ? sug.comparison_rows : [];
+    tbody.innerHTML = rows.map(row => (
+      `<tr>` +
+      `<td class="ps-3 fw-semibold"><i class="bi ${escapeHtmlStr(row.icon || 'bi-dot')} text-primary me-2"></i>${escapeHtmlStr(row.field)}</td>` +
+      `<td class="font-monospace small">${escapeHtmlStr(row.tbk_value)}</td>` +
+      `<td class="font-monospace small fw-semibold">${escapeHtmlStr(row.erp_value)}</td>` +
+      `<td class="font-monospace small">${escapeHtmlStr(row.op_value)}</td>` +
+      `<td class="pe-3"><span class="reason-chip reason-${escapeHtmlStr(row.status_tone || 'cyan')}">${escapeHtmlStr(row.status_label)}</span></td>` +
+      `</tr>`
+    )).join('');
+  }
+
+  const manualNoteEl = document.getElementById('sugModalManualNote');
+  if (manualNoteEl) {
+    manualNoteEl.textContent = sug.manual_check_note || 'Verifique manualmente los documentos originales antes de tomar una decisión contable.';
+  }
+
+  const modalEl = document.getElementById('suggestionDetailModal');
+  if (modalEl && window.bootstrap) {
+    window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  }
+}
+
+

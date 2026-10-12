@@ -1,6 +1,6 @@
 """
-Shared Excel Parsers for Hotel Plaza San Francisco Reconciliation.
-Extracts, cleans, and indexes records from ERP/Bordero, Bank Statement, and Card Operator files.
+Shared Excel Parsers for Hotel Plaza San Francisco USD Reconciliation.
+Extracts, cleans, and indexes records in memory from ERP/Bordero, Bank Statement, and Card Operator files.
 """
 
 from decimal import Decimal
@@ -9,9 +9,7 @@ import pandas as pd
 
 from ..models import (
     CardType,
-    ReconciliationProcess,
     BankStatementMovement,
-    BankDepositValidation,
     ErpTransaction,
     CardOperatorTransaction,
 )
@@ -29,17 +27,16 @@ from .column_detector import (
 
 
 def parse_and_validate_bank_deposits(
-    process: ReconciliationProcess,
     bank_dataframe: pd.DataFrame,
     expected_deposits: List[Tuple[str, Decimal]],
     tolerance: Decimal = Decimal("0.50")
 ) -> List[Dict[str, Any]]:
     """
-    Parses the Bank Statement (cartola.xls or cartola.xlsx) using hybrid column detection,
-    persists movements, and validates one or multiple expected Transbank deposits.
+    Parses the Bank Statement (cartola.xls or cartola.xlsx) in memory using hybrid column detection
+    and validates one or multiple expected Transbank deposits.
     """
     columns = resolve_dataframe_columns(bank_dataframe, BANK_STATEMENT_COLUMN_RULES)
-    bank_movements_to_create: List[BankStatementMovement] = []
+    bank_movements: List[BankStatementMovement] = []
 
     for _, row in bank_dataframe.iterrows():
         deposit_amount = safe_decimal(safe_cell(row, columns["deposit_amount"]))
@@ -53,7 +50,6 @@ def parse_and_validate_bank_deposits(
         is_tbk = "TRANSBANK" in description.upper() or "TBK" in description.upper() or "DIVISAS" in description.upper()
 
         movement = BankStatementMovement(
-            process=process,
             movement_date=safe_date(date_cell),
             description=description,
             branch_or_channel=str(safe_cell(row, columns["branch_or_channel"]) or "").strip(),
@@ -63,36 +59,20 @@ def parse_and_validate_bank_deposits(
             balance_amount=safe_decimal(safe_cell(row, columns["balance_amount"])),
             is_transbank_deposit=is_tbk,
         )
-        bank_movements_to_create.append(movement)
-
-    if process is not None:
-        BankStatementMovement.objects.bulk_create(bank_movements_to_create)
+        bank_movements.append(movement)
 
     validations_summary = []
     for modality_code, expected_amount in expected_deposits:
-        matched_movement = None
-        for movement in bank_movements_to_create:
-            if movement.deposit_amount > 0 and abs(movement.deposit_amount - expected_amount) <= tolerance:
-                matched_movement = movement
-                break
-
-        is_matched = matched_movement is not None
-        if process is not None:
-            BankDepositValidation.objects.create(
-                process=process,
-                bank_movement=matched_movement,
-                payment_modality=modality_code,
-                transbank_calculated_deposit=expected_amount,
-                bank_statement_deposit=matched_movement.deposit_amount if matched_movement else Decimal("0.00"),
-                deposit_date=matched_movement.movement_date if matched_movement else None,
-                is_matched=is_matched,
-            )
+        matched_movement = next(
+            (m for m in bank_movements if m.deposit_amount > 0 and abs(m.deposit_amount - expected_amount) <= tolerance),
+            None,
+        )
         validations_summary.append({
             "modality": modality_code,
             "transbank_deposit": float(expected_amount),
             "bank_deposit": float(matched_movement.deposit_amount) if matched_movement else 0.0,
             "movement_date": matched_movement.movement_date if matched_movement else None,
-            "is_matched": is_matched,
+            "is_matched": matched_movement is not None,
             "movements_data": [
                 {
                     "movement_date": m.movement_date.strftime("%d/%m/%Y") if m.movement_date else None,
@@ -105,7 +85,7 @@ def parse_and_validate_bank_deposits(
                     "is_transbank_deposit": m.is_transbank_deposit,
                     "is_matched_target": (m is matched_movement),
                 }
-                for m in bank_movements_to_create
+                for m in bank_movements
             ],
         })
 
@@ -113,69 +93,43 @@ def parse_and_validate_bank_deposits(
 
 
 def parse_erp_transactions(
-    process: ReconciliationProcess,
     erp_dataframe: pd.DataFrame,
     card_types: Dict[str, CardType],
-    currency_mode: str = "USD"
 ) -> Tuple[List[ErpTransaction], Dict[str, List[Dict[str, Any]]]]:
     """
-    Parses the Hotel ERP / Bordero Excel file using hybrid column detection,
-    filters by currency mode ('USD' or 'CLP'), saves records in bulk, and
-    returns an O(1) hash map indexed by authorization_code.
+    Parses the Hotel ERP / Bordero Excel file in memory using hybrid column detection,
+    filters USD foreign card payments, and returns an O(1) hash map indexed by authorization_code.
     """
     columns = resolve_dataframe_columns(erp_dataframe, ERP_COLUMN_RULES)
     erp_by_auth_code: Dict[str, List[Dict[str, Any]]] = {}
-    erp_instances_to_create: List[ErpTransaction] = []
-
-    valid_clp_codes = {"AME$", "MC$", "V$", "DI$", "RCO"}
+    erp_instances: List[ErpTransaction] = []
 
     for _, row in erp_dataframe.iterrows():
         payment_code = str(safe_cell(row, columns["payment_code"]) or "").strip().upper()
         description = str(safe_cell(row, columns["payment_description"]) or "").strip()
 
-        if currency_mode == "USD":
-            if "US$" not in description:
-                continue
-            raw_amount = safe_decimal(safe_cell(row, columns["amount"]))
-            if raw_amount >= 0:
-                continue
-            amount_value = abs(raw_amount)
-            card_code = (
-                "MC" if "MASTER" in description.upper() else
-                "VI" if "VISA" in description.upper() else
-                "AX" if "AMEX" in description.upper() else
-                "DI"
-            )
-            document_number = clean_code_string(safe_cell(row, columns["account_code"]))
-        else:
-            if payment_code not in valid_clp_codes:
-                continue
-            raw_amount = safe_decimal(safe_cell(row, columns["amount"]))
-            if raw_amount >= 0:
-                continue
-            amount_value = abs(raw_amount)
-            card_code = (
-                "AX" if payment_code == "AME$" else
-                "MC" if payment_code == "MC$" else
-                "VI" if payment_code == "V$" else
-                "DI" if payment_code == "DI$" else
-                "RCO"
-            )
-            document_number = (
-                clean_code_string(safe_cell(row, columns["invoice_number"]))
-                or clean_code_string(safe_cell(row, columns["account_code"]))
-            )
-
+        if "US$" not in description:
+            continue
+        raw_amount = safe_decimal(safe_cell(row, columns["amount"]))
+        if raw_amount >= 0:
+            continue
+        amount_value = abs(raw_amount)
+        upper_desc = description.upper()
+        card_code = (
+            "MC" if "MASTER" in upper_desc else
+            "VI" if "VISA" in upper_desc else
+            "AX" if "AMEX" in upper_desc else
+            "DI"
+        )
+        document_number = clean_code_string(safe_cell(row, columns["account_code"]))
         auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
-        card_model = card_types[card_code]
 
         erp_instance = ErpTransaction(
-            process=process,
-            card_type=card_model,
+            card_type=card_types[card_code],
             room_number=clean_code_string(safe_cell(row, columns["room_number"])),
             room_type=str(safe_cell(row, columns["room_type"]) or "").strip(),
             reservation_number=clean_code_string(safe_cell(row, columns["reservation_number"])),
-            account_code=clean_code_string(safe_cell(row, columns["account_code"])),
+            account_code=document_number,
             payment_code=payment_code,
             invoice_number=clean_code_string(safe_cell(row, columns["invoice_number"])),
             document_number=document_number,
@@ -185,15 +139,13 @@ def parse_erp_transactions(
             cashier_username=str(safe_cell(row, columns["cashier_username"]) or "").strip(),
             guest_name=str(safe_cell(row, columns["guest_name"]) or "").strip(),
             amount=amount_value,
-            source_currency=currency_mode,
+            source_currency="USD",
             reconciled=False,
         )
-        erp_instances_to_create.append(erp_instance)
+        erp_instances.append(erp_instance)
 
         if auth_code:
-            if auth_code not in erp_by_auth_code:
-                erp_by_auth_code[auth_code] = []
-            erp_by_auth_code[auth_code].append({
+            erp_by_auth_code.setdefault(auth_code, []).append({
                 "instance": erp_instance,
                 "document_number": document_number,
                 "invoice_number": erp_instance.invoice_number,
@@ -202,25 +154,20 @@ def parse_erp_transactions(
                 "card_code": card_code,
             })
 
-    if process is not None:
-        ErpTransaction.objects.bulk_create(erp_instances_to_create)
-    return erp_instances_to_create, erp_by_auth_code
+    return erp_instances, erp_by_auth_code
 
 
 def parse_card_operator_statements(
-    process: ReconciliationProcess,
     operator_dataframes: Dict[str, pd.DataFrame],
     card_types: Dict[str, CardType]
 ) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
     """
-    Parses the 4 Card Operator statements (Amex, Diners, Visa, MasterCard)
-    using hybrid column detection, saves records in bulk, and returns an O(1)
-    lookup dictionary indexed by [card_code][document_number].
+    Parses the 4 Card Operator statements (Amex, Diners, Visa, MasterCard) in memory
+    using hybrid column detection and returns an O(1) lookup dictionary indexed by [card_code][document_number].
     """
     card_operator_index: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
         code: {} for code in operator_dataframes.keys()
     }
-    operator_instances_to_create: List[CardOperatorTransaction] = []
 
     for card_code, card_df in operator_dataframes.items():
         columns = resolve_dataframe_columns(card_df, CARD_OPERATOR_COLUMN_RULES)
@@ -246,7 +193,6 @@ def parse_card_operator_statements(
                 balance_clp = Decimal("0.00")
 
             operator_record = CardOperatorTransaction(
-                process=process,
                 card_type=card_model,
                 document_number=document_number,
                 sequence_number=sequence_number,
@@ -254,11 +200,8 @@ def parse_card_operator_statements(
                 balance_amount=balance_clp,
                 corrected_balance_amount=corrected_balance_clp,
             )
-            operator_instances_to_create.append(operator_record)
 
-            if document_number not in card_operator_index[card_code]:
-                card_operator_index[card_code][document_number] = []
-            card_operator_index[card_code][document_number].append({
+            card_operator_index[card_code].setdefault(document_number, []).append({
                 "sequence_number": sequence_number,
                 "foreign_currency_usd": foreign_currency,
                 "balance_clp": balance_clp,
@@ -266,7 +209,5 @@ def parse_card_operator_statements(
                 "instance": operator_record,
             })
 
-    if process is not None:
-        CardOperatorTransaction.objects.bulk_create(operator_instances_to_create)
     return card_operator_index
 
