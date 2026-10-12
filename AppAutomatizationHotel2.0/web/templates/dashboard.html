@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load l10n %}
 
 {% block page_title %}Hotel Plaza San Francisco | Inicio{% endblock %}
 
@@ -12,14 +13,17 @@
   <div class="col-md-4">
     <div class="card-hero-gold p-4 h-100">
       <div class="text-muted small text-uppercase fw-semibold">Conciliado automáticamente</div>
-      <div class="stat-value accent mt-2">{{ match_rate }}%</div>
-      <div class="small text-muted mt-1"><strong>{{ matched_count }}</strong> de {{ total_matches }} registros cruzados</div>
+      <div class="stat-value accent mt-2" data-countup-to="{{ match_rate|unlocalize }}" data-countup-decimals="1" data-countup-suffix="%">0%</div>
+      <div class="small text-muted mt-1">
+        <strong data-countup-to="{{ matched_count|unlocalize }}">0</strong> de
+        <span data-countup-to="{{ total_matches|unlocalize }}">0</span> registros cruzados
+      </div>
     </div>
   </div>
   <div class="col-md-4">
     <div class="card card-executive p-4 h-100">
       <div class="text-muted small text-uppercase fw-semibold">Excepciones pendientes</div>
-      <div class="stat-value mt-2" style="color: var(--warning);">{{ pending_count }}</div>
+      <div class="stat-value mt-2" style="color: var(--warning);" data-countup-to="{{ pending_count|unlocalize }}">0</div>
       <div class="small text-muted mt-1">requieren revisión manual</div>
     </div>
   </div>
@@ -71,4 +75,27 @@
     {% endfor %}
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const duration = 900;
+    document.querySelectorAll('[data-countup-to]').forEach((el) => {
+      const target = parseFloat(el.getAttribute('data-countup-to')) || 0;
+      const decimals = parseInt(el.getAttribute('data-countup-decimals') || '0', 10);
+      const suffix = el.getAttribute('data-countup-suffix') || '';
+      const format = (n) => n.toLocaleString('es-CL', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
+      const start = performance.now();
+
+      function tick(now) {
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = format(target * eased);
+        if (progress < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+  });
+</script>
 {% endblock %}
