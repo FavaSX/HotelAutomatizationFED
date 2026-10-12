@@ -337,16 +337,34 @@ footer.app-footer {
 
 /* ===================== 4. Cards ===================== */
 .card-executive {
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   background-image: linear-gradient(180deg, rgba(255, 255, 255, .02) 0%, rgba(0, 0, 0, .08) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 10px 30px rgba(0, 0, 0, .18);
+  transition: border-color .2s ease, box-shadow .2s ease;
 }
 [data-bs-theme="light"] .card-executive,
 :root:not([data-bs-theme="dark"]) .card-executive {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), 0 10px 24px rgba(12, 12, 66, .06);
 }
+.card-executive::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at top left, rgba(212, 175, 79, .18) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.card-executive:hover {
+  border-color: var(--brand-border);
+  box-shadow: var(--gold-glow), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.card-executive:hover::before { opacity: 1; }
+.card-executive > * { position: relative; z-index: 1; }
 
 /* Hero cards — at most one gold + one navy per view */
 .card-hero-gold {
