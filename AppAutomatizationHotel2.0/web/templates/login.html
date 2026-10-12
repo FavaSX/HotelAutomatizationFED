@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row justify-content-center align-items-center" style="min-height: 75vh;">
+<div class="row justify-content-center align-items-center login-row">
   <div class="col-md-5 col-lg-4">
     <div class="card-executive border-0 rounded-4 overflow-hidden">
-      <div class="p-4 text-center text-white" style="background: var(--navy-gradient); border-bottom: 3px solid var(--gold-2); box-shadow: var(--navy-glow);">
+      <div class="p-4 text-center text-white login-header-navy">
         <i class="bi bi-building-lock display-4 text-primary"></i>
         <h4 class="fw-bold mt-2 mb-0">Plaza San Francisco</h4>
         <small class="text-white-50">Suite de Conciliación Financiera v2.0</small>
@@ -32,21 +32,4 @@
     </div>
   </div>
 </div>
-<script>
-document.getElementById('loginForm').addEventListener('submit', () => {
-  try { sessionStorage.setItem('justLoggedIn', '1'); } catch (e) {}
-});
-function togglePass() {
-  const input = document.getElementById('password');
-  const icon = document.getElementById('eyeIcon');
-  if (input.type === 'password') {
-    input.type = 'text';
-    icon.classList.replace('bi-eye', 'bi-eye-slash');
-  } else {
-    input.type = 'password';
-    icon.classList.replace('bi-eye-slash', 'bi-eye');
-  }
-}
-</script>
 {% endblock %}
-

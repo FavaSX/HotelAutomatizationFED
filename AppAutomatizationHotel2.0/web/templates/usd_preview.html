@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load currency_filters l10n %}
+{% load static currency_filters l10n %}
 
 {% block content %}
 <!-- Top Header -->
@@ -191,7 +191,7 @@
 
   <!-- Barra de Búsqueda Instantánea y Filtro por Tarjeta (Alineados a la Izquierda) -->
   <div class="bg-light border-bottom px-4 py-3 d-flex flex-wrap justify-content-start align-items-center gap-3">
-    <div class="position-relative flex-grow-1" style="max-width: 400px;">
+    <div class="position-relative flex-grow-1 voucher-search-wrapper">
       <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
       <input type="text" id="voucherSearchInput" class="form-control form-control-sm rounded-pill ps-5 pe-5 py-2 border-secondary-subtle shadow-none"
              placeholder="Buscar por voucher, doc ERP, huésped, hab., cajero..."
@@ -227,7 +227,7 @@
   <div class="card-body p-0 tab-content">
     <!-- TAB 1: UBICADAS EXACTAS -->
     <div class="tab-pane fade show active" id="tabMatched" role="tabpanel">
-      <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+      <div class="table-responsive voucher-table-scroll">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
@@ -237,16 +237,16 @@
               <th>Hab.</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
-              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyMatched', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
                 Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyMatched', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
                 Monto Operador <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyMatched', 'diff', this)" title="Ordenar por Diferencia USD (Mayor a Menor / Menor a Mayor)">
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'diff', this)" title="Ordenar por Diferencia USD (Mayor a Menor / Menor a Mayor)">
                 Dif. USD <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyMatched', 'clp', this)" title="Ordenar por Monto CLP (Mayor a Menor / Menor a Mayor)">
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'clp', this)" title="Ordenar por Monto CLP (Mayor a Menor / Menor a Mayor)">
                 Monto CLP <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
               <th class="pe-4">Diagnóstico</th>
@@ -287,7 +287,7 @@
 
     <!-- TAB 2: DIFERENCIAS DE MONTO -->
     <div class="tab-pane fade" id="tabDiscrepancies" role="tabpanel">
-      <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+      <div class="table-responsive voucher-table-scroll">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
@@ -296,13 +296,13 @@
               <th>Huésped / Hab.</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
-              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyDiscrepancies', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
                 Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyDiscrepancies', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
                 Monto Operador <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia (Mayor a Menor / Menor a Mayor)">
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia (Mayor a Menor / Menor a Mayor)">
                 Diferencia <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
               <th class="pe-4">Diagnóstico</th>
@@ -343,14 +343,14 @@
 
     <!-- TAB 3: EN TRANSBANK PERO NO EN ERP -->
     <div class="tab-pane fade" id="tabOrphans" role="tabpanel">
-      <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+      <div class="table-responsive voucher-table-scroll">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
               <th class="ps-4">Cód. Autorización</th>
               <th>Tarjeta</th>
               <th>Fecha Venta</th>
-              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyOrphans', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyOrphans', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
                 Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
               <th class="pe-4">Observación</th>
@@ -383,8 +383,7 @@
 </div>
 
 <!-- Bottom Sticky Bar with Action Buttons -->
-<div class="p-3 rounded-4 border shadow-lg d-flex flex-wrap justify-content-between align-items-center gap-3"
-     style="position: sticky; bottom: 1rem; z-index: 1020; background: var(--surface); backdrop-filter: blur(8px); border-color: var(--border-strong) !important;">
+<div class="p-3 rounded-4 border shadow-lg d-flex flex-wrap justify-content-between align-items-center gap-3 sticky-action-bar">
   <div class="d-flex align-items-center gap-2 text-muted small">
     <i class="bi bi-info-circle-fill text-primary fs-5"></i>
     <span>Los datos anteriores fueron calculados en memoria. Si todo está conforme, haga clic en <strong>Confirmar y Guardar en BD</strong> para consolidar el cierre.</span>
@@ -407,7 +406,7 @@
     <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
       <div class="modal-header border-0 pb-0 pt-4 px-4">
         <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
+          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center modal-icon-danger">
             <i class="bi bi-trash3-fill fs-4"></i>
           </div>
           <div>
@@ -448,9 +447,9 @@
 
       <!-- PASO 1: CONFIRMACIÓN ANTES DE GUARDAR -->
       <div id="commitStepConfirm">
-        <div class="modal-header border-0 text-white px-4 py-3" style="background: var(--navy-gradient); box-shadow: var(--navy-glow);">
+        <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy">
           <div class="d-flex align-items-center gap-3">
-            <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; background: rgba(212, 175, 79, .18); color: var(--gold-1);">
+            <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold">
               <i class="bi bi-database-fill-check fs-4"></i>
             </div>
             <div>
@@ -494,7 +493,7 @@
           <button type="button" id="btnCancelCommitModal" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">
             Seguir Revisando
           </button>
-          <button type="button" id="btnExecuteCommit" class="btn btn-brand rounded-pill px-4 fw-bold shadow-sm" onclick="executeCommitToDatabase()">
+          <button type="button" id="btnExecuteCommit" class="btn btn-brand rounded-pill px-4 fw-bold shadow-sm" data-commit-url="{% url 'usd_commit' %}" onclick="executeCommitToDatabase()">
             <i class="bi bi-check-circle-fill me-1"></i> Sí, Guardar Cierre en BD
           </button>
         </div>
@@ -502,9 +501,9 @@
 
       <!-- PASO 2: ÉXITO CONFIRMADO POR EL BACKEND + DESCARGA DE EXCEL -->
       <div id="commitStepSuccess" class="d-none">
-        <div class="modal-header border-0 text-white px-4 py-3" style="background: var(--navy-gradient); border-bottom: 3px solid var(--gold-2) !important;">
+        <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
           <div class="d-flex align-items-center gap-3">
-            <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center shadow-sm" style="width: 46px; height: 46px;">
+            <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center shadow-sm modal-icon-success">
               <i class="bi bi-check-lg fs-3"></i>
             </div>
             <div>
@@ -561,193 +560,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-  let isCommitting = false;
-  let activeCardBrandFilter = 'ALL';
-  const currentSortState = {};
-
-  function sortVoucherTable(tbodyId, dataKey, thElem) {
-    const tbody = document.getElementById(tbodyId);
-    if (!tbody) return;
-
-    const stateKey = `${tbodyId}_${dataKey}`;
-    // Primer clic: Mayor a Menor ('desc'); segundo clic: Menor a Mayor ('asc')
-    const nextDir = (currentSortState[stateKey] === 'desc') ? 'asc' : 'desc';
-    currentSortState[stateKey] = nextDir;
-
-    // Resetear íconos de esa tabla y marcar la columna activa
-    const table = tbody.closest('table');
-    if (table) {
-      table.querySelectorAll('thead .sort-icon').forEach(icon => {
-        icon.className = 'bi bi-arrow-down-up ms-1 sort-icon opacity-50';
-      });
-    }
-    const activeIcon = thElem.querySelector('.sort-icon');
-    if (activeIcon) {
-      activeIcon.className = nextDir === 'desc'
-        ? 'bi bi-caret-down-fill ms-1 sort-icon text-primary'
-        : 'bi bi-caret-up-fill ms-1 sort-icon text-primary';
-    }
-
-    const rows = Array.from(tbody.querySelectorAll('tr.voucher-row'));
-    const parseNum = (el) => {
-      let raw = String(el.getAttribute('data-' + dataKey) || '0').trim();
-      if (raw.includes(',')) {
-        raw = raw.replace(/\./g, '').replace(',', '.');
-      }
-      return parseFloat(raw) || 0;
-    };
-
-    rows.sort((a, b) => {
-      const valA = parseNum(a);
-      const valB = parseNum(b);
-      return nextDir === 'desc' ? (valB - valA) : (valA - valB);
-    });
-
-    const noMatchRow = tbody.querySelector('tr[id^="noMatchRow"]');
-    rows.forEach(row => {
-      if (noMatchRow) {
-        tbody.insertBefore(row, noMatchRow);
-      } else {
-        tbody.appendChild(row);
-      }
-    });
-  }
-
-  function setCardBrandFilter(brandKey, btnElem) {
-    activeCardBrandFilter = brandKey;
-    document.querySelectorAll('#cardBrandFilterGroup .card-filter-btn').forEach(btn => {
-      btn.classList.remove('btn-dark', 'active');
-      btn.classList.add('btn-outline-secondary');
-    });
-    btnElem.classList.remove('btn-outline-secondary');
-    btnElem.classList.add('btn-dark', 'active');
-    applyVoucherFilters();
-  }
-
-  function clearVoucherSearch() {
-    const input = document.getElementById('voucherSearchInput');
-    if (input) {
-      input.value = '';
-      input.focus();
-    }
-    applyVoucherFilters();
-  }
-
-  function filterSingleTab(tbodyId, noMatchRowId, countBadgeId) {
-    const tbody = document.getElementById(tbodyId);
-    if (!tbody) return 0;
-
-    const query = (document.getElementById('voucherSearchInput')?.value || '').trim().toLowerCase();
-    const rows = tbody.querySelectorAll('tr.voucher-row');
-    let visibleCount = 0;
-
-    rows.forEach(row => {
-      const cardAttr = (row.getAttribute('data-card') || '').toUpperCase();
-      const rowText = row.textContent.toLowerCase();
-
-      const matchesCard = (activeCardBrandFilter === 'ALL') || cardAttr.includes(activeCardBrandFilter);
-      const matchesQuery = (!query) || rowText.includes(query);
-
-      if (matchesCard && matchesQuery) {
-        row.classList.remove('d-none');
-        visibleCount++;
-      } else {
-        row.classList.add('d-none');
-      }
-    });
-
-    const noMatchRow = document.getElementById(noMatchRowId);
-    if (noMatchRow) {
-      if (rows.length > 0 && visibleCount === 0) {
-        noMatchRow.classList.remove('d-none');
-      } else {
-        noMatchRow.classList.add('d-none');
-      }
-    }
-
-    const badge = document.getElementById(countBadgeId);
-    if (badge) {
-      badge.textContent = visibleCount;
-    }
-
-    return visibleCount;
-  }
-
-  function applyVoucherFilters() {
-    const query = (document.getElementById('voucherSearchInput')?.value || '').trim();
-    const clearBtn = document.getElementById('btnClearVoucherSearch');
-    if (clearBtn) {
-      clearBtn.classList.toggle('d-none', query.length === 0);
-    }
-
-    const vMatched = filterSingleTab('tbodyMatched', 'noMatchRowMatched', 'countBadgeMatched');
-    const vDisc = filterSingleTab('tbodyDiscrepancies', 'noMatchRowDiscrepancies', 'countBadgeDiscrepancies');
-    const vOrphans = filterSingleTab('tbodyOrphans', 'noMatchRowOrphans', 'countBadgeOrphans');
-
-    const totalVisible = vMatched + vDisc + vOrphans;
-    const totalBadge = document.getElementById('visibleTotalBadge');
-    if (totalBadge) {
-      totalBadge.textContent = totalVisible;
-    }
-  }
-
-  async function executeCommitToDatabase() {
-    if (isCommitting) return;
-    isCommitting = true;
-
-    const btnExecute = document.getElementById('btnExecuteCommit');
-    const btnCancel = document.getElementById('btnCancelCommitModal');
-    const btnClose = document.getElementById('btnCloseConfirmModal');
-    const originalHtml = btnExecute.innerHTML;
-
-    btnExecute.disabled = true;
-    if (btnCancel) btnCancel.disabled = true;
-    if (btnClose) btnClose.disabled = true;
-    btnExecute.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Guardando en Base de Datos...';
-
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-    try {
-      const response = await fetch("{% url 'usd_commit' %}", {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': csrfToken,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        alert(data.error || 'No se pudo guardar el proceso en la base de datos.');
-        btnExecute.disabled = false;
-        if (btnCancel) btnCancel.disabled = false;
-        if (btnClose) btnClose.disabled = false;
-        btnExecute.innerHTML = originalHtml;
-        isCommitting = false;
-        return;
-      }
-
-      // Poblar Paso 2 con la confirmación real del backend
-      document.getElementById('modalProcessId').textContent = '#' + data.process_id;
-      document.getElementById('modalPeriod').textContent = data.accounting_period;
-      document.getElementById('modalExecDate').textContent = data.execution_date + ' (' + data.auditor + ')';
-      document.getElementById('modalVoucherStats').textContent = `${data.total_vouchers} registrados (${data.matched_count} exactos)`;
-      document.getElementById('modalExcelDownloadBtn').href = data.export_url;
-      document.getElementById('modalFinishBtn').href = data.upload_url;
-
-      // Cambiar del Paso 1 (Confirmar) al Paso 2 (Éxito + Descargar Excel)
-      document.getElementById('commitStepConfirm').classList.add('d-none');
-      document.getElementById('commitStepSuccess').classList.remove('d-none');
-    } catch (err) {
-      alert('Error de conexión al guardar en la base de datos: ' + err);
-      btnExecute.disabled = false;
-      if (btnCancel) btnCancel.disabled = false;
-      if (btnClose) btnClose.disabled = false;
-      btnExecute.innerHTML = originalHtml;
-      isCommitting = false;
-    }
-  }
-</script>
+<script src="{% static 'js/usd_preview.js' %}?v=3"></script>
 {% endblock %}
-

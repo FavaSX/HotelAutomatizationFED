@@ -1,26 +1,10 @@
 {% extends "base.html" %}
-
-{% block extra_css %}
-<style>
-  #processingOverlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(10, 10, 11, 0.88);
-    backdrop-filter: blur(6px);
-    z-index: 9999;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    color: #ffffff;
-  }
-</style>
-{% endblock %}
+{% load static %}
 
 {% block content %}
 <!-- Processing Overlay -->
 <div id="processingOverlay">
-  <div class="spinner-border text-warning mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+  <div class="spinner-border text-warning mb-3 processing-spinner" role="status"></div>
   <h4 class="fw-bold mb-1">Analizando Conciliación en Dólares...</h4>
   <p class="text-white-50 mb-0">Cruzando ERP vs. Transbank vs. Operadores en memoria. No se guardará nada hasta su confirmación.</p>
 </div>
@@ -28,7 +12,7 @@
 <!-- Header -->
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
   <div>
-    <span class="badge rounded-pill px-3 py-1 mb-1" style="background: var(--brand-subtle); color: var(--brand-text);">
+    <span class="badge rounded-pill px-3 py-1 mb-1 badge-brand-pill">
       <i class="bi bi-shield-check me-1"></i> Flujo Inteligente: Auto-Detección ➔ Previsualización en Memoria ➔ Confirmación en BD
     </span>
     <h3 class="fw-bold mb-0">Conciliación en Dólares (USD) — Carga y Auto-Detección</h3>
@@ -38,7 +22,7 @@
   <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
   <div class="d-flex align-items-center gap-2 card-executive px-3 py-2">
     <div class="me-1">
-      <div class="text-uppercase text-muted fw-bold" style="font-size: 0.65rem;">Estado BD (Pruebas)</div>
+      <div class="text-uppercase text-muted fw-bold db-status-label">Estado BD (Pruebas)</div>
       <div class="fw-bold small">
         <i class="bi bi-database me-1 text-primary"></i> {{ saved_processes_count|default:0 }} proceso(s) guardado(s)
       </div>
@@ -55,7 +39,7 @@
     <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
       <div class="modal-header border-0 pb-0 pt-4 px-4">
         <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
+          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center modal-icon-danger">
             <i class="bi bi-database-dash fs-4"></i>
           </div>
           <div>
@@ -83,7 +67,7 @@
   </div>
 </div>
 
-<form method="post" enctype="multipart/form-data" id="usdUploadForm">
+<form method="post" enctype="multipart/form-data" id="usdUploadForm" data-detect-url="{% url 'usd_detect_files' %}">
   {% csrf_token %}
 
   <!-- Hidden file inputs populated automatically upon alignment confirmation -->
@@ -106,7 +90,7 @@
 
       <label class="dropzone p-5 w-100 text-center d-block mb-2" id="bulkDropzoneBox">
         <div class="mb-3">
-          <span class="d-inline-flex align-items-center justify-content-center rounded-circle" style="background: var(--gold-gradient); box-shadow: var(--gold-glow); color: #0A0A0B; width: 4rem; height: 4rem;">
+          <span class="d-inline-flex align-items-center justify-content-center rounded-circle dropzone-icon-circle">
             <i class="bi bi-cloud-arrow-up-fill fs-2"></i>
           </span>
         </div>
@@ -147,17 +131,15 @@
       <!-- Tabla de los 7 Roles Alineados -->
       <div class="table-responsive border rounded-4 mb-4">
         <table class="table table-hover align-middle mb-0">
-          <thead style="background: var(--bs-secondary-bg);">
-            <tr class="text-uppercase text-muted" style="font-size: 0.72rem;">
-              <th class="ps-3 py-2" style="width: 23%;">Rol Requerido por el Sistema</th>
-              <th class="py-2" style="width: 34%;">Archivo Asignado (Elegir o Subir Individual)</th>
-              <th class="py-2" style="width: 29%;">Evidencia / Huella Interna Detectada</th>
-              <th class="text-center pe-3 py-2" style="width: 14%;">Certeza</th>
+          <thead class="alignment-thead">
+            <tr class="text-uppercase text-muted">
+              <th class="ps-3 py-2">Rol Requerido por el Sistema</th>
+              <th class="py-2">Archivo Asignado (Elegir o Subir Individual)</th>
+              <th class="py-2">Evidencia / Huella Interna Detectada</th>
+              <th class="text-center pe-3 py-2">Certeza</th>
             </tr>
           </thead>
-          <tbody id="alignmentTableBody" class="small">
-            <!-- Poblado dinámicamente por JS -->
-          </tbody>
+          <tbody id="alignmentTableBody" class="small"></tbody>
         </table>
       </div>
 
@@ -167,7 +149,7 @@
           <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
           <div>
             <div class="fw-bold small">¿La alineación de los 7 archivos es correcta?</div>
-            <div class="text-muted" style="font-size: 0.75rem;">Al confirmar, los archivos se procesarán en este orden y se abrirá la previsualización en memoria.</div>
+            <div class="text-muted small">Al confirmar, los archivos se procesarán en este orden y se abrirá la previsualización en memoria.</div>
           </div>
         </div>
         <div class="d-flex gap-2">
@@ -186,270 +168,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
-  const ROLE_INPUT_MAP = {
-    erp: 'input_usd_erp',
-    transbank: 'input_usd_tbk',
-    bank: 'input_usd_bank',
-    amex: 'input_usd_ax',
-    diners: 'input_usd_di',
-    visa: 'input_usd_vi',
-    mastercard: 'input_usd_mc'
-  };
-
-  let bulkUploadedFiles = [];
-  let latestDetectionReport = null;
-
-  function showProcessingOverlay() {
-    document.getElementById('processingOverlay').style.display = 'flex';
-  }
-
-  // Drag & Drop support on the dropzone
-  const dropzoneBox = document.getElementById('bulkDropzoneBox');
-  if (dropzoneBox) {
-    ['dragenter', 'dragover'].forEach(evtName => {
-      dropzoneBox.addEventListener(evtName, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzoneBox.classList.add('drag-active');
-      });
-    });
-    ['dragleave', 'drop'].forEach(evtName => {
-      dropzoneBox.addEventListener(evtName, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzoneBox.classList.remove('drag-active');
-      });
-    });
-    dropzoneBox.addEventListener('drop', (e) => {
-      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        handleBulkFilesSelected(e.dataTransfer.files);
-      }
-    });
-  }
-
-  async function handleBulkFilesSelected(fileList) {
-    if (!fileList || fileList.length === 0) return;
-    bulkUploadedFiles = Array.from(fileList);
-
-    document.getElementById('expPhase1Dropzone').classList.add('d-none');
-    document.getElementById('expPhase2Alignment').classList.add('d-none');
-    document.getElementById('expScanningSpinner').classList.remove('d-none');
-
-    const formData = new FormData();
-    bulkUploadedFiles.forEach(file => formData.append('bulk_files', file));
-
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-    try {
-      const response = await fetch("{% url 'usd_detect_files' %}", {
-        method: 'POST',
-        headers: { 'X-CSRFToken': csrfToken },
-        body: formData
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        alert(data.error || 'Error al analizar los archivos.');
-        resetExperimentalFiles();
-        return;
-      }
-      latestDetectionReport = data;
-      renderAlignmentTable(data);
-    } catch (err) {
-      alert('Error de conexión al inspeccionar los archivos: ' + err);
-      resetExperimentalFiles();
-    } finally {
-      document.getElementById('expScanningSpinner').classList.add('d-none');
-    }
-  }
-
-  function renderAlignmentTable(data) {
-    const tbody = document.getElementById('alignmentTableBody');
-    tbody.innerHTML = '';
-
-    data.aligned_roles.forEach(role => {
-      const tr = document.createElement('tr');
-
-      let optionsHtml = '<option value="">— Sin archivo asignado —</option>';
-      data.inspected_files.forEach(f => {
-        const selected = (role.file_index === f.file_index) ? 'selected' : '';
-        optionsHtml += `<option value="${f.file_index}" ${selected}>${f.file_name} (${f.row_count} filas)</option>`;
-      });
-
-      let badgeHtml = '';
-      if (role.confidence === 'HIGH') {
-        badgeHtml = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
-      } else if (role.confidence === 'MEDIUM') {
-        badgeHtml = '<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
-      } else {
-        badgeHtml = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
-      }
-
-      tr.innerHTML = `
-        <td class="ps-3 py-3">
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge ${role.badge_class}">${role.badge}</span>
-            <span class="fw-bold text-dark">${role.role_label}</span>
-          </div>
-        </td>
-        <td class="py-3">
-          <div class="d-flex align-items-center gap-2">
-            <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
-              ${optionsHtml}
-            </select>
-            <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir un archivo nuevo directamente para este rol">
-              <i class="bi bi-upload me-1"></i>Subir
-              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
-            </label>
-          </div>
-        </td>
-        <td class="py-3 text-muted" id="evidence_${role.role_key}">
-          <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
-        </td>
-        <td class="text-center pe-3 py-3" id="confidence_${role.role_key}">
-          ${badgeHtml}
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-
-    document.getElementById('expPhase2Alignment').classList.remove('d-none');
-    validateCurrentAlignmentSelection();
-  }
-
-  async function uploadSingleFileForRole(roleKey, inputElem) {
-    if (!inputElem.files || inputElem.files.length === 0) return;
-    const singleFile = inputElem.files[0];
-    inputElem.value = '';
-
-    const evidenceCell = document.getElementById('evidence_' + roleKey);
-    if (evidenceCell) {
-      evidenceCell.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1"></span>Analizando archivo subido...</span>';
-    }
-
-    const formData = new FormData();
-    formData.append('bulk_files', singleFile);
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-    try {
-      const response = await fetch("{% url 'usd_detect_files' %}", {
-        method: 'POST',
-        headers: { 'X-CSRFToken': csrfToken },
-        body: formData
-      });
-      const data = await response.json();
-      if (!response.ok || !data.inspected_files || data.inspected_files.length === 0) {
-        alert(data.error || 'No se pudo analizar el archivo.');
-        onManualAlignmentChange();
-        return;
-      }
-
-      const newFileIndex = bulkUploadedFiles.length;
-      bulkUploadedFiles.push(singleFile);
-
-      const inspected = data.inspected_files[0];
-      inspected.file_index = newFileIndex;
-      latestDetectionReport.inspected_files.push(inspected);
-
-      // Append the new file option to all 7 dropdowns and select it in the target row
-      document.querySelectorAll('.role-file-select').forEach(sel => {
-        const opt = document.createElement('option');
-        opt.value = newFileIndex;
-        opt.textContent = `${inspected.file_name} (${inspected.row_count} filas)`;
-        sel.appendChild(opt);
-      });
-
-      const targetSelect = document.getElementById('select_' + roleKey);
-      if (targetSelect) {
-        targetSelect.value = String(newFileIndex);
-      }
-
-      onManualAlignmentChange();
-    } catch (err) {
-      alert('Error al subir el archivo individual: ' + err);
-      onManualAlignmentChange();
-    }
-  }
-
-  function onManualAlignmentChange() {
-    if (!latestDetectionReport) return;
-    const selects = document.querySelectorAll('.role-file-select');
-    selects.forEach(sel => {
-      const roleKey = sel.getAttribute('data-role-key');
-      const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
-      const evidenceCell = document.getElementById('evidence_' + roleKey);
-      const confidenceCell = document.getElementById('confidence_' + roleKey);
-
-      if (fileIdx !== null && latestDetectionReport.inspected_files[fileIdx]) {
-        const fileInfo = latestDetectionReport.inspected_files[fileIdx];
-        evidenceCell.innerHTML = `<i class="bi bi-cpu me-1 text-primary"></i> ${fileInfo.evidence}`;
-        if (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') {
-          confidenceCell.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
-        } else {
-          confidenceCell.innerHTML = '<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual</span>';
-        }
-      } else {
-        evidenceCell.innerHTML = '<span class="text-danger">Seleccione un archivo para este rol.</span>';
-        confidenceCell.innerHTML = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
-      }
-    });
-
-    validateCurrentAlignmentSelection();
-  }
-
-  function validateCurrentAlignmentSelection() {
-    const selects = Array.from(document.querySelectorAll('.role-file-select'));
-    const chosenIndices = selects.map(s => s.value).filter(v => v !== '');
-    const uniqueIndices = new Set(chosenIndices);
-    const alertBox = document.getElementById('alignmentSummaryAlert');
-    const confirmBtn = document.getElementById('btnConfirmAlignment');
-
-    if (chosenIndices.length === 7 && uniqueIndices.size === 7) {
-      alertBox.className = 'alert alert-success rounded-4 mb-3 py-2 px-3 small d-flex align-items-center justify-content-between';
-      alertBox.innerHTML = `
-        <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡7 de 7 archivos alineados sin conflictos!</strong> Revise la tabla y confirme para iniciar el cruce financiero.</div>
-        <span class="badge bg-success rounded-pill">${bulkUploadedFiles.length} archivo(s) analizado(s)</span>
-      `;
-      confirmBtn.disabled = false;
-    } else if (chosenIndices.length === 7 && uniqueIndices.size < 7) {
-      alertBox.className = 'alert alert-warning rounded-4 mb-3 py-2 px-3 small';
-      alertBox.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Atención:</strong> Ha asignado el mismo archivo en más de un rol. Por favor asigne 7 archivos distintos.';
-      confirmBtn.disabled = true;
-    } else {
-      const missingCount = 7 - chosenIndices.length;
-      alertBox.className = 'alert alert-danger rounded-4 mb-3 py-2 px-3 small';
-      alertBox.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i><strong>Faltan ${missingCount} archivo(s) por alinear</strong> (se subieron ${bulkUploadedFiles.length} archivo(s)). Seleccione los faltantes o vuelva a cargar el lote completo de 7 archivos.`;
-      confirmBtn.disabled = true;
-    }
-  }
-
-  function resetExperimentalFiles() {
-    bulkUploadedFiles = [];
-    latestDetectionReport = null;
-    document.getElementById('bulkFilesInput').value = '';
-    document.getElementById('expPhase2Alignment').classList.add('d-none');
-    document.getElementById('expScanningSpinner').classList.add('d-none');
-    document.getElementById('expPhase1Dropzone').classList.remove('d-none');
-  }
-
-  function confirmAlignmentAndSubmit() {
-    const selects = document.querySelectorAll('.role-file-select');
-    for (const sel of selects) {
-      const roleKey = sel.getAttribute('data-role-key');
-      const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
-      if (fileIdx === null || !bulkUploadedFiles[fileIdx]) {
-        alert('Por favor asegúrese de que los 7 roles tengan un archivo asignado.');
-        return;
-      }
-      const inputId = ROLE_INPUT_MAP[roleKey];
-      const fileInput = document.getElementById(inputId);
-      const dt = new DataTransfer();
-      dt.items.add(bulkUploadedFiles[fileIdx]);
-      fileInput.files = dt.files;
-    }
-
-    showProcessingOverlay();
-    document.getElementById('usdUploadForm').submit();
-  }
-</script>
+<script src="{% static 'js/usd_upload.js' %}?v=3"></script>
 {% endblock %}

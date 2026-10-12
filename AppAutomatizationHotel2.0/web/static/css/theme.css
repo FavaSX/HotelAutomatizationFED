@@ -1,8 +1,6 @@
 /* ============================================================================
-   Hotel Plaza San Francisco — "Dark Luxury Tech" design system
-   Dark mode is primary. Gold = most important element on screen (primary
-   action, active nav item, hero KPI). Navy = brand identity / second-level
-   accent. Everything else stays neutral — color is reserved for what matters.
+   Hotel Plaza San Francisco — "Dark Luxury Tech" Design System
+   Consolidated stylesheet for Base Layout, Login, USD Upload & USD Preview.
    ========================================================================== */
 
 /* ===================== 1. Tokens ===================== */
@@ -32,8 +30,8 @@
   --gold-3: #8A6614;
   --gold-gradient: linear-gradient(135deg, #F2D58A 0%, #D4AF4F 45%, #8A6614 100%);
   --gold-glow: 0 0 24px rgba(212, 175, 79, .20);
-  --brand: #D4AF4F;       /* flat gold — icons, focus rings, small accents */
-  --brand-text: #8A6614;  /* gold tuned for AA contrast as readable text on light */
+  --brand: #D4AF4F;
+  --brand-text: #8A6614;
   --brand-subtle: #FBF3DC;
   --brand-border: #EBD38F;
 
@@ -184,12 +182,11 @@ body {
   background-color: var(--bg-base);
   position: relative;
 }
-h1, h2, h3, h4, h5, .brand-word, .stat-value, .font-display {
+h1, h2, h3, h4, h5, .brand-word {
   font-family: 'Space Grotesk', sans-serif;
 }
 
-/* Soft ambient color blobs, fixed behind the whole app — this is what the
-   glass chrome (sidebar/topbar/modals) actually refracts via backdrop-filter. */
+/* Soft ambient color blobs, fixed behind the whole app */
 body::before {
   content: "";
   position: fixed;
@@ -205,30 +202,6 @@ body::before {
   background:
     radial-gradient(640px circle at 10% 15%, rgba(212, 175, 79, .14), transparent 60%),
     radial-gradient(560px circle at 90% 80%, rgba(79, 91, 213, .10), transparent 60%);
-}
-
-/* A soft, contained navy glow behind the header — not tinting the whole page */
-.topbar-utility { position: relative; isolation: isolate; overflow: hidden; }
-.topbar-utility::before {
-  content: "";
-  position: absolute;
-  inset: -60% -10% auto -10%;
-  height: 220%;
-  background: radial-gradient(ellipse at top left, rgba(12, 12, 66, .30) 0%, transparent 60%);
-  z-index: -1;
-  pointer-events: none;
-}
-[data-bs-theme="light"] .topbar-utility::before,
-:root:not([data-bs-theme="dark"]) .topbar-utility::before {
-  background: radial-gradient(ellipse at top left, rgba(12, 12, 66, .06) 0%, transparent 60%);
-}
-
-/* Gold gradient text, used sparingly on one key word in a title */
-.text-gold-gradient {
-  background: var(--gold-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 
 /* ===================== 3. Layout shell ===================== */
@@ -269,6 +242,8 @@ body::before {
   margin-bottom: .9rem;
   border-bottom: 1px solid var(--border);
 }
+.sidebar-brand-title { font-size: 15px; }
+.sidebar-brand-subtitle { font-size: 0.72rem; color: var(--text-muted); }
 .sidebar-brand-mark {
   width: 36px; height: 36px; border-radius: var(--radius-icon);
   flex-shrink: 0;
@@ -280,6 +255,7 @@ body::before {
   font-weight: 700;
   font-size: 14px;
 }
+.sidebar-brand-mark-sm { width: 30px; height: 30px; font-size: 12px; }
 
 .sidebar-link {
   display: flex;
@@ -313,14 +289,36 @@ body::before {
   margin-bottom: .5rem;
   display: block;
 }
+.sidebar-divider { border-color: var(--border); }
+.sidebar-footer { border-top: 1px solid var(--border); }
+.sidebar-auditor-label { font-size: 0.72rem; color: var(--text-muted); }
+.sidebar-auditor-name { color: var(--text); }
+.sidebar-auditor-icon { color: var(--brand); }
 
 .topbar-utility {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--glass-border);
   padding: 0.75rem 1.75rem;
 }
+.topbar-utility::before {
+  content: "";
+  position: absolute;
+  inset: -60% -10% auto -10%;
+  height: 220%;
+  background: radial-gradient(ellipse at top left, rgba(12, 12, 66, .30) 0%, transparent 60%);
+  z-index: -1;
+  pointer-events: none;
+}
+[data-bs-theme="light"] .topbar-utility::before,
+:root:not([data-bs-theme="dark"]) .topbar-utility::before {
+  background: radial-gradient(ellipse at top left, rgba(12, 12, 66, .06) 0%, transparent 60%);
+}
+
 .topbar-mobile {
   display: none;
   align-items: center;
@@ -334,6 +332,7 @@ body::before {
   top: 0;
   z-index: 1030;
 }
+.topbar-mobile-brand { color: var(--text); font-size: 14px; }
 .topbar-mobile button {
   background: var(--glass-bg-strong);
   backdrop-filter: var(--glass-blur);
@@ -344,6 +343,7 @@ body::before {
   width: 38px;
   height: 38px;
 }
+
 .sidebar-scrim {
   display: none;
   position: fixed;
@@ -377,6 +377,10 @@ body::before {
   box-shadow: inset 0 1px 0 var(--glass-highlight);
   font-weight: 600;
 }
+.badge-brand-pill {
+  background: var(--brand-subtle);
+  color: var(--brand-text);
+}
 
 .btn-theme-toggle {
   border: 1px solid var(--glass-border);
@@ -395,20 +399,12 @@ body::before {
 }
 .btn-theme-toggle:hover { background: var(--glass-bg); border-color: var(--brand-border); transform: scale(1.06); }
 
-/* Glass modals — translucent over the blurred page + Bootstrap's own backdrop */
-.modal-content {
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border) !important;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, .3), inset 0 1px 0 var(--glass-highlight);
-}
-
 footer.app-footer {
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
 
-/* ===================== 4. Cards ===================== */
+/* ===================== 4. Cards & Modals ===================== */
 .card-executive {
   position: relative;
   overflow: hidden;
@@ -439,59 +435,36 @@ footer.app-footer {
 .card-executive:hover::before { opacity: 1; }
 .card-executive > * { position: relative; z-index: 1; }
 
-/* Hero cards — at most one gold + one navy per view */
-.card-hero-gold {
-  position: relative;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  overflow: hidden;
-  transition: border-color .2s ease, box-shadow .2s ease;
+.modal-content {
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .3), inset 0 1px 0 var(--glass-highlight);
 }
-.card-hero-gold::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at top left, rgba(212, 175, 79, .18) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity .25s ease;
-  pointer-events: none;
-}
-.card-hero-gold:hover {
-  border-color: var(--brand-border);
-  box-shadow: var(--gold-glow);
-}
-.card-hero-gold:hover::before { opacity: 1; }
-.card-hero-gold > * { position: relative; z-index: 1; }
-
-.card-hero-navy {
-  position: relative;
-  border: 1px solid rgba(79, 91, 213, .25);
-  border-radius: var(--radius);
+.modal-header-navy {
   background: var(--navy-gradient);
-  color: #fff;
   box-shadow: var(--navy-glow);
 }
-.card-hero-navy .text-muted { color: rgba(255, 255, 255, .65) !important; }
-
-/* ===================== 5. Icon squares ===================== */
-.icon-square {
-  width: 44px; height: 44px; border-radius: var(--radius-icon);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
+.modal-header-navy-gold {
+  background: var(--navy-gradient);
+  border-bottom: 3px solid var(--gold-2) !important;
 }
-.icon-square-primary { background: var(--gold-gradient); color: #0A0A0B; }
-.icon-square-gold { background: rgba(212, 175, 79, .10); color: var(--brand); }
-.icon-square-navy { background: rgba(79, 91, 213, .10); color: var(--navy-text); }
-.icon-square-neutral { background: var(--surface-2); color: var(--text-muted); }
-/* existing class name, used across the upload/dashboard templates — alias to the gold variant */
-.quick-icon {
-  width: 42px; height: 42px; border-radius: var(--radius-icon);
-  background: rgba(212, 175, 79, .10); color: var(--brand);
-  display: flex; align-items: center; justify-content: center;
+.modal-icon-danger {
+  width: 48px;
+  height: 48px;
+}
+.modal-icon-gold {
+  width: 44px;
+  height: 44px;
+  background: rgba(212, 175, 79, .18);
+  color: var(--gold-1);
+}
+.modal-icon-success {
+  width: 46px;
+  height: 46px;
 }
 
-/* ===================== 6. Buttons ===================== */
+/* ===================== 5. Buttons ===================== */
 .btn-brand {
   background: linear-gradient(90deg, var(--navy) 0%, var(--gold-2) 100%);
   border: 0;
@@ -537,22 +510,15 @@ footer.app-footer {
   --bs-btn-hover-bg: var(--danger); --bs-btn-hover-border-color: var(--danger);
   --bs-btn-active-bg: var(--danger); --bs-btn-active-border-color: var(--danger);
 }
-.btn-outline-success {
-  --bs-btn-color: var(--success); --bs-btn-border-color: var(--border-strong);
-  --bs-btn-hover-bg: var(--success); --bs-btn-hover-border-color: var(--success);
-  --bs-btn-active-bg: var(--success); --bs-btn-active-border-color: var(--success);
-}
 .btn-outline-secondary {
   --bs-btn-color: var(--text); --bs-btn-border-color: var(--border-strong);
   --bs-btn-hover-color: var(--text); --bs-btn-hover-bg: var(--surface-2); --bs-btn-hover-border-color: var(--border-strong);
 }
 .btn { transition: all .18s ease; }
 
-/* .text-primary is used on a few readable (non-icon) labels — route it through the
-   contrast-tuned gold instead of the flat/gradient-oriented --bs-primary-rgb. */
 .text-primary { color: var(--brand-text) !important; }
 
-/* ===================== 7. Forms ===================== */
+/* ===================== 6. Forms & Tables ===================== */
 .form-control, .form-select {
   background-color: var(--surface-2);
   border: 1px solid var(--border);
@@ -567,14 +533,7 @@ footer.app-footer {
 }
 .form-control::placeholder { color: var(--text-muted); }
 .form-floating > label { color: var(--text-muted); }
-.input-group-text {
-  background-color: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
 
-/* Like .btn-primary, Bootstrap bakes .table-light/.table-dark colors in as literal
-   component variables at build time rather than reading the root --bs-* tokens. */
 .table-light {
   --bs-table-color: var(--text);
   --bs-table-bg: var(--surface-2);
@@ -584,52 +543,47 @@ footer.app-footer {
   --bs-table-hover-bg: var(--surface-2);
   --bs-table-hover-color: var(--text);
 }
-.table-dark {
-  --bs-table-color: #fff;
-  --bs-table-bg: var(--navy);
-  --bs-table-border-color: rgba(255, 255, 255, .12);
-  --bs-table-striped-bg: #141452;
-  --bs-table-striped-color: #fff;
-  --bs-table-hover-bg: #181860;
-  --bs-table-hover-color: #fff;
-}
 
-/* ===================== 8. Badges & alerts ===================== */
+/* ===================== 7. Badges & Alerts ===================== */
 .badge { font-weight: 600; letter-spacing: .01em; }
-/* .bg-dark badges (card brand chips) must stay a dark chip with white text even in
-   dark mode, where --bs-dark is intentionally flipped to a light value for .text-dark
-   legibility elsewhere (bg-light + text-dark pairs used on cashier/room chips). */
 [data-bs-theme="dark"] .badge.bg-dark { background-color: var(--surface-2) !important; }
 .alert {
   border-radius: 12px;
   border-width: 1px;
 }
 
-/* ===================== 9. KPI numbers ===================== */
-.stat-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
-.stat-value.accent { color: var(--brand-text); }
-.stat-value.on-navy { color: #fff; }
-.stat-delta { font-size: .8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
-.stat-delta.up { color: var(--success); }
-.stat-delta.down { color: var(--danger); }
-
-/* ===================== 10. Quick-action cards ===================== */
-.quick-card {
-  text-decoration: none;
-  display: block;
-  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
-}
-.quick-card:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, .18);
+/* ===================== 8. Page-Specific Views ===================== */
+/* Login View */
+.login-row { min-height: 75vh; }
+.login-header-navy {
+  background: var(--navy-gradient);
+  border-bottom: 3px solid var(--gold-2);
+  box-shadow: var(--navy-glow);
 }
 
-/* ===================== 11. File dropzones ===================== */
+/* USD Upload View */
+#processingOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 11, 0.88);
+  backdrop-filter: blur(6px);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: #ffffff;
+}
+.processing-spinner {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+.db-status-label { font-size: 0.65rem; }
 .dropzone {
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
+  cursor: pointer;
   transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
 }
 .dropzone:hover, .dropzone.drag-active {
@@ -637,13 +591,40 @@ footer.app-footer {
   box-shadow: var(--gold-glow);
   background: rgba(212, 175, 79, .04);
 }
-.dropzone.loaded {
-  border-color: var(--success);
-  border-style: solid;
-  background: var(--bs-success-bg-subtle);
+.dropzone-icon-circle {
+  background: var(--gold-gradient);
+  box-shadow: var(--gold-glow);
+  color: #0A0A0B;
+  width: 4rem;
+  height: 4rem;
+}
+.alignment-thead {
+  background: var(--bs-secondary-bg);
+}
+.alignment-thead tr {
+  font-size: 0.72rem;
 }
 
-/* ===================== 12. Responsive (down to 375px) ===================== */
+/* USD Preview View */
+.voucher-search-wrapper { max-width: 400px; }
+.voucher-table-scroll {
+  max-height: 500px;
+  overflow-y: auto;
+}
+.th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.sticky-action-bar {
+  position: sticky;
+  bottom: 1rem;
+  z-index: 1020;
+  background: var(--surface);
+  backdrop-filter: blur(8px);
+  border-color: var(--border-strong) !important;
+}
+
+/* ===================== 9. Responsive ===================== */
 @media (max-width: 991.98px) {
   .sidebar-panel {
     position: fixed;
@@ -659,5 +640,5 @@ footer.app-footer {
 }
 @media (max-width: 420px) {
   .topbar-utility { padding: 0.6rem 1rem; }
-  .card-executive, .card-hero-gold, .card-hero-navy { border-radius: 12px; }
+  .card-executive { border-radius: 12px; }
 }
