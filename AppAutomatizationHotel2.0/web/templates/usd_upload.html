@@ -2,24 +2,11 @@
 
 {% block extra_css %}
 <style>
-  .bulk-dropzone {
-    border: 2.5px dashed var(--hotel-gold);
-    border-radius: 1rem;
-    background: linear-gradient(180deg, #fffdf7 0%, #fffbeb 100%);
-    transition: all 0.25s ease;
-    cursor: pointer;
-  }
-  .bulk-dropzone:hover,
-  .bulk-dropzone.drag-active {
-    border-color: var(--hotel-navy);
-    background: #fef3c7;
-    transform: translateY(-2px);
-  }
   #processingOverlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(12, 12, 66, 0.85);
+    background: rgba(10, 10, 11, 0.88);
     backdrop-filter: blur(6px);
     z-index: 9999;
     align-items: center;
@@ -41,18 +28,18 @@
 <!-- Header -->
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
   <div>
-    <span class="badge rounded-pill px-3 py-1 mb-1" style="background: rgba(153,105,9,0.14); color: var(--hotel-gold);">
+    <span class="badge rounded-pill px-3 py-1 mb-1" style="background: var(--brand-subtle); color: var(--brand-text);">
       <i class="bi bi-shield-check me-1"></i> Flujo Inteligente: Auto-Detección ➔ Previsualización en Memoria ➔ Confirmación en BD
     </span>
-    <h3 class="fw-bold mb-0" style="color: var(--hotel-navy);">Conciliación en Dólares (USD) — Carga y Auto-Detección</h3>
+    <h3 class="fw-bold mb-0">Conciliación en Dólares (USD) — Carga y Auto-Detección</h3>
     <p class="text-muted small mb-0">El motor inspecciona la estructura interna de los 7 reportes Excel, los alinea automáticamente y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
   </div>
 
   <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
-  <div class="d-flex align-items-center gap-2 bg-white border rounded-4 px-3 py-2 shadow-sm">
+  <div class="d-flex align-items-center gap-2 card-executive px-3 py-2">
     <div class="me-1">
       <div class="text-uppercase text-muted fw-bold" style="font-size: 0.65rem;">Estado BD (Pruebas)</div>
-      <div class="fw-bold small" style="color: var(--hotel-navy);">
+      <div class="fw-bold small">
         <i class="bi bi-database me-1 text-primary"></i> {{ saved_processes_count|default:0 }} proceso(s) guardado(s)
       </div>
     </div>
@@ -72,7 +59,7 @@
             <i class="bi bi-database-dash fs-4"></i>
           </div>
           <div>
-            <h5 class="modal-title fw-bold mb-0" style="color: var(--hotel-navy);">¿Vaciar Base de Datos de Pruebas?</h5>
+            <h5 class="modal-title fw-bold mb-0">¿Vaciar Base de Datos de Pruebas?</h5>
             <small class="text-muted">{{ saved_processes_count|default:0 }} proceso(s) almacenado(s)</small>
           </div>
         </div>
@@ -117,18 +104,18 @@
         </span>
       </div>
 
-      <label class="bulk-dropzone p-5 w-100 text-center d-block mb-2" id="bulkDropzoneBox">
+      <label class="dropzone p-5 w-100 text-center d-block mb-2" id="bulkDropzoneBox">
         <div class="mb-3">
-          <span class="d-inline-flex align-items-center justify-content-center rounded-circle p-3 shadow-sm" style="background: var(--hotel-navy); color: #fff; width: 4rem; height: 4rem;">
+          <span class="d-inline-flex align-items-center justify-content-center rounded-circle" style="background: var(--gold-gradient); box-shadow: var(--gold-glow); color: #0A0A0B; width: 4rem; height: 4rem;">
             <i class="bi bi-cloud-arrow-up-fill fs-2"></i>
           </span>
         </div>
-        <h5 class="fw-bold mb-1" style="color: var(--hotel-navy);">Arrastre aquí los 7 archivos Excel o haga clic para seleccionarlos</h5>
+        <h5 class="fw-bold mb-1">Arrastre aquí los 7 archivos Excel o haga clic para seleccionarlos</h5>
         <p class="text-muted small mb-3">
           El sistema identificará automáticamente cuál corresponde a
           <strong>ERP Hotel, Transbank, Cartola Bancaria, Visa, MasterCard, American Express y Diners Club</strong>.
         </p>
-        <span class="btn btn-gold rounded-pill px-4 py-2 fw-semibold shadow-sm">
+        <span class="btn btn-brand rounded-pill px-4 py-2 fw-semibold shadow-sm">
           <i class="bi bi-folder2-open me-1"></i> Seleccionar Archivos (.xls / .xlsx)
         </span>
         <input type="file" id="bulkFilesInput" class="d-none" accept=".xls,.xlsx" multiple onchange="handleBulkFilesSelected(this.files)">
@@ -138,7 +125,7 @@
     <!-- Estado de Escaneo de Huellas -->
     <div id="expScanningSpinner" class="text-center py-5 d-none">
       <div class="spinner-border text-warning mb-3" role="status"></div>
-      <h6 class="fw-bold mb-1" style="color: var(--hotel-navy);">Inspeccionando estructura interna de los archivos...</h6>
+      <h6 class="fw-bold mb-1">Inspeccionando estructura interna de los archivos...</h6>
       <p class="text-muted small mb-0">Leyendo encabezados, códigos de cliente Transbank y formato de columnas.</p>
     </div>
 
@@ -148,7 +135,7 @@
         <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 rounded-pill mb-1">
           <i class="bi bi-2-circle-fill me-1"></i> Paso 2 de 2: Verificación de Alineación y Confirmación
         </span>
-        <h5 class="fw-bold mb-0" style="color: var(--hotel-navy);">Revise y confirme la alineación de los archivos detectados</h5>
+        <h5 class="fw-bold mb-0">Revise y confirme la alineación de los archivos detectados</h5>
         <p class="text-muted small mb-0">
           Verifique que cada rol tenga asignado el archivo correcto. Si se equivocó en uno o le faltó alguno, puede usar el botón <strong>"Subir"</strong> de esa fila sin volver a cargar todo.
         </p>
@@ -160,7 +147,7 @@
       <!-- Tabla de los 7 Roles Alineados -->
       <div class="table-responsive border rounded-4 mb-4">
         <table class="table table-hover align-middle mb-0">
-          <thead style="background: #f8fafc;">
+          <thead style="background: var(--bs-secondary-bg);">
             <tr class="text-uppercase text-muted" style="font-size: 0.72rem;">
               <th class="ps-3 py-2" style="width: 23%;">Rol Requerido por el Sistema</th>
               <th class="py-2" style="width: 34%;">Archivo Asignado (Elegir o Subir Individual)</th>
@@ -179,7 +166,7 @@
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
           <div>
-            <div class="fw-bold small" style="color: var(--hotel-navy);">¿La alineación de los 7 archivos es correcta?</div>
+            <div class="fw-bold small">¿La alineación de los 7 archivos es correcta?</div>
             <div class="text-muted" style="font-size: 0.75rem;">Al confirmar, los archivos se procesarán en este orden y se abrirá la previsualización en memoria.</div>
           </div>
         </div>
@@ -187,7 +174,7 @@
           <button type="button" class="btn btn-outline-secondary rounded-pill px-4" onclick="resetExperimentalFiles()">
             <i class="bi bi-arrow-repeat me-1"></i> Cambiar Todos los Archivos
           </button>
-          <button type="button" id="btnConfirmAlignment" class="btn btn-gold btn-lg rounded-pill px-5 shadow-sm" onclick="confirmAlignmentAndSubmit()">
+          <button type="button" id="btnConfirmAlignment" class="btn btn-brand btn-lg rounded-pill px-5 shadow-sm" onclick="confirmAlignmentAndSubmit()">
             <i class="bi bi-check2-circle me-2"></i> Confirmar Alineación y Procesar
           </button>
         </div>

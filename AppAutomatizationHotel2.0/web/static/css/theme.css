@@ -1,0 +1,663 @@
+/* ============================================================================
+   Hotel Plaza San Francisco — "Dark Luxury Tech" design system
+   Dark mode is primary. Gold = most important element on screen (primary
+   action, active nav item, hero KPI). Navy = brand identity / second-level
+   accent. Everything else stays neutral — color is reserved for what matters.
+   ========================================================================== */
+
+/* ===================== 1. Tokens ===================== */
+:root, [data-bs-theme="light"] {
+  /* Base neutrals */
+  --bg-base: #F5F5F7;
+  --bg-sidebar: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-2: #F0F0F3;
+  --border: rgba(12, 12, 66, .08);
+  --border-strong: rgba(12, 12, 66, .16);
+  --text: #0C0C42;
+  --text-muted: #6E6D85;
+
+  /* Liquid glass — translucent chrome (sidebar, topbar, modals, small chips) */
+  --glass-bg: rgba(255, 255, 255, .55);
+  --glass-bg-strong: rgba(255, 255, 255, .72);
+  --glass-border: rgba(255, 255, 255, .5);
+  --glass-highlight: rgba(255, 255, 255, .85);
+  --glass-shadow: 0 8px 32px rgba(12, 12, 66, .10);
+  --glass-blur: blur(20px) saturate(180%);
+  --glass-modal-bg: rgba(255, 255, 255, .82);
+
+  /* Gold */
+  --gold-1: #F2D58A;
+  --gold-2: #D4AF4F;
+  --gold-3: #8A6614;
+  --gold-gradient: linear-gradient(135deg, #F2D58A 0%, #D4AF4F 45%, #8A6614 100%);
+  --gold-glow: 0 0 24px rgba(212, 175, 79, .20);
+  --brand: #D4AF4F;       /* flat gold — icons, focus rings, small accents */
+  --brand-text: #8A6614;  /* gold tuned for AA contrast as readable text on light */
+  --brand-subtle: #FBF3DC;
+  --brand-border: #EBD38F;
+
+  /* Navy */
+  --navy: #0C0C42;
+  --navy-lift: #4F5BD5;
+  --navy-gradient: linear-gradient(135deg, #1A1F6B 0%, #0C0C42 100%);
+  --navy-glow: 0 0 24px rgba(79, 91, 213, .18);
+  --navy-text: var(--navy);
+
+  /* Status */
+  --success: #1F9D66;
+  --warning: #C2410C;
+  --danger: #DC2626;
+
+  --radius: 16px;
+  --radius-icon: 12px;
+
+  /* Bootstrap overrides */
+  --bs-primary: var(--brand);
+  --bs-primary-rgb: 212, 175, 79;
+  --bs-danger: var(--danger);
+  --bs-danger-rgb: 220, 38, 38;
+  --bs-success: var(--success);
+  --bs-success-rgb: 31, 157, 102;
+  --bs-warning: var(--warning);
+  --bs-warning-rgb: 194, 65, 12;
+  --bs-light: var(--surface-2);
+  --bs-light-rgb: 240, 240, 243;
+  --bs-dark: var(--navy);
+  --bs-dark-rgb: 12, 12, 66;
+
+  --bs-body-bg: var(--bg-base);
+  --bs-body-color: var(--text);
+  --bs-border-color: var(--border);
+  --bs-secondary-bg: var(--surface-2);
+  --bs-tertiary-bg: var(--bg-base);
+  --bs-emphasis-color: var(--text);
+  --bs-card-bg: var(--surface);
+  --bs-modal-bg: var(--glass-modal-bg);
+
+  --bs-success-bg-subtle: #E3F7ED;
+  --bs-success-border-subtle: #B9E9D1;
+  --bs-success-text-emphasis: #15663F;
+  --bs-warning-bg-subtle: #FBE7DA;
+  --bs-warning-border-subtle: #F0B88F;
+  --bs-warning-text-emphasis: #7A2A05;
+  --bs-danger-bg-subtle: #FCE4E4;
+  --bs-danger-border-subtle: #F6B3B3;
+  --bs-danger-text-emphasis: #8F1D1D;
+  --bs-primary-bg-subtle: #FBF3DC;
+  --bs-primary-border-subtle: #EBD38F;
+  --bs-primary-text-emphasis: var(--brand-text);
+  --bs-info-bg-subtle: rgba(79, 91, 213, .10);
+  --bs-info-border-subtle: rgba(79, 91, 213, .30);
+  --bs-info-text-emphasis: #3339A3;
+}
+
+[data-bs-theme="dark"] {
+  /* Base neutrals */
+  --bg-base: #0A0A0B;
+  --bg-sidebar: #0F0F11;
+  --surface: #141416;
+  --surface-2: #1C1C1F;
+  --border: rgba(255, 255, 255, .06);
+  --border-strong: rgba(255, 255, 255, .12);
+  --text: #EDEDEF;
+  --text-muted: #9A9AA3;
+
+  /* Liquid glass — translucent chrome (sidebar, topbar, modals, small chips) */
+  --glass-bg: rgba(255, 255, 255, .06);
+  --glass-bg-strong: rgba(255, 255, 255, .10);
+  --glass-border: rgba(255, 255, 255, .14);
+  --glass-highlight: rgba(255, 255, 255, .3);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, .45);
+  --glass-blur: blur(20px) saturate(180%);
+  --glass-modal-bg: rgba(20, 20, 22, .80);
+
+  /* Gold */
+  --gold-1: #F2D58A;
+  --gold-2: #D4AF4F;
+  --gold-3: #8A6614;
+  --gold-gradient: linear-gradient(135deg, #F2D58A 0%, #D4AF4F 45%, #8A6614 100%);
+  --gold-glow: 0 0 24px rgba(212, 175, 79, .20);
+  --brand: #D4AF4F;
+  --brand-text: #D4AF4F;
+  --brand-subtle: rgba(212, 175, 79, .12);
+  --brand-border: rgba(212, 175, 79, .28);
+
+  /* Navy */
+  --navy: #0C0C42;
+  --navy-lift: #4F5BD5;
+  --navy-gradient: linear-gradient(135deg, #1A1F6B 0%, #0C0C42 100%);
+  --navy-glow: 0 0 24px rgba(79, 91, 213, .18);
+  --navy-text: var(--navy-lift);
+
+  /* Status */
+  --success: #4ADE80;
+  --warning: #FB923C;
+  --danger: #F87171;
+
+  --bs-primary: var(--brand);
+  --bs-primary-rgb: 212, 175, 79;
+  --bs-success: var(--success);
+  --bs-success-rgb: 74, 222, 128;
+  --bs-warning: var(--warning);
+  --bs-warning-rgb: 251, 146, 60;
+  --bs-danger: var(--danger);
+  --bs-danger-rgb: 248, 113, 113;
+  --bs-light: var(--surface-2);
+  --bs-light-rgb: 28, 28, 31;
+  --bs-dark: var(--text);
+  --bs-dark-rgb: 237, 237, 239;
+
+  --bs-body-bg: var(--bg-base);
+  --bs-body-color: var(--text);
+  --bs-border-color: var(--border);
+  --bs-secondary-bg: var(--surface-2);
+  --bs-tertiary-bg: #121214;
+  --bs-emphasis-color: var(--text);
+  --bs-card-bg: var(--surface);
+  --bs-modal-bg: var(--glass-modal-bg);
+
+  --bs-success-bg-subtle: rgba(74, 222, 128, .12);
+  --bs-success-border-subtle: rgba(74, 222, 128, .28);
+  --bs-success-text-emphasis: #86EFAC;
+  --bs-warning-bg-subtle: rgba(251, 146, 60, .12);
+  --bs-warning-border-subtle: rgba(251, 146, 60, .28);
+  --bs-warning-text-emphasis: #FDBA74;
+  --bs-danger-bg-subtle: rgba(248, 113, 113, .12);
+  --bs-danger-border-subtle: rgba(248, 113, 113, .28);
+  --bs-danger-text-emphasis: #FCA5A5;
+  --bs-primary-bg-subtle: rgba(212, 175, 79, .12);
+  --bs-primary-border-subtle: rgba(212, 175, 79, .28);
+  --bs-primary-text-emphasis: var(--brand-text);
+  --bs-info-bg-subtle: rgba(79, 91, 213, .14);
+  --bs-info-border-subtle: rgba(79, 91, 213, .32);
+  --bs-info-text-emphasis: #AEB4F5;
+}
+
+/* ===================== 2. Base / background ===================== */
+html { color-scheme: light dark; }
+body {
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-base);
+  position: relative;
+}
+h1, h2, h3, h4, h5, .brand-word, .stat-value, .font-display {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+/* Soft ambient color blobs, fixed behind the whole app — this is what the
+   glass chrome (sidebar/topbar/modals) actually refracts via backdrop-filter. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(640px circle at 10% 15%, rgba(212, 175, 79, .10), transparent 60%),
+    radial-gradient(560px circle at 90% 80%, rgba(79, 91, 213, .14), transparent 60%);
+}
+[data-bs-theme="light"] body::before,
+:root:not([data-bs-theme="dark"]) body::before {
+  background:
+    radial-gradient(640px circle at 10% 15%, rgba(212, 175, 79, .14), transparent 60%),
+    radial-gradient(560px circle at 90% 80%, rgba(79, 91, 213, .10), transparent 60%);
+}
+
+/* A soft, contained navy glow behind the header — not tinting the whole page */
+.topbar-utility { position: relative; isolation: isolate; overflow: hidden; }
+.topbar-utility::before {
+  content: "";
+  position: absolute;
+  inset: -60% -10% auto -10%;
+  height: 220%;
+  background: radial-gradient(ellipse at top left, rgba(12, 12, 66, .30) 0%, transparent 60%);
+  z-index: -1;
+  pointer-events: none;
+}
+[data-bs-theme="light"] .topbar-utility::before,
+:root:not([data-bs-theme="dark"]) .topbar-utility::before {
+  background: radial-gradient(ellipse at top left, rgba(12, 12, 66, .06) 0%, transparent 60%);
+}
+
+/* Gold gradient text, used sparingly on one key word in a title */
+.text-gold-gradient {
+  background: var(--gold-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ===================== 3. Layout shell ===================== */
+.app-wrapper { display: flex; flex: 1; min-height: 100vh; position: relative; z-index: 1; }
+.main-content-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.sidebar-panel {
+  width: 265px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--text);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 100vh;
+  position: sticky;
+  top: 0;
+  transition: background-color .15s ease, color .15s ease, transform .2s ease;
+}
+.sidebar-panel::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-highlight), transparent);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text);
+  padding-bottom: .9rem;
+  margin-bottom: .9rem;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-brand-mark {
+  width: 36px; height: 36px; border-radius: var(--radius-icon);
+  flex-shrink: 0;
+  background: var(--navy-gradient);
+  box-shadow: var(--navy-glow);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  font-weight: 500;
+  font-size: 0.925rem;
+  transition: background-color .15s ease, color .15s ease;
+}
+.sidebar-link:hover { background-color: var(--surface-2); color: var(--text); }
+.sidebar-link.active {
+  background: var(--gold-gradient);
+  color: #0A0A0B;
+  font-weight: 600;
+  box-shadow: var(--gold-glow);
+}
+.sidebar-link.active i { color: #0A0A0B; }
+
+.sidebar-section-label {
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  padding: 0 .5rem;
+  margin-bottom: .5rem;
+  display: block;
+}
+
+.topbar-utility {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
+  padding: 0.75rem 1.75rem;
+}
+.topbar-mobile {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+}
+.topbar-mobile button {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+}
+.sidebar-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 1035;
+}
+
+.dollar-pill {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--text);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 50px;
+  font-size: 0.875rem;
+}
+.dollar-pill i { color: var(--brand); }
+
+.badge-info-chip {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--navy-text);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  font-weight: 600;
+}
+
+.btn-theme-toggle {
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color .15s ease, border-color .15s ease, transform .15s ease;
+}
+.btn-theme-toggle:hover { background: var(--glass-bg); border-color: var(--brand-border); transform: scale(1.06); }
+
+/* Glass modals — translucent over the blurred page + Bootstrap's own backdrop */
+.modal-content {
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .3), inset 0 1px 0 var(--glass-highlight);
+}
+
+footer.app-footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+/* ===================== 4. Cards ===================== */
+.card-executive {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .02) 0%, rgba(0, 0, 0, .08) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 10px 30px rgba(0, 0, 0, .18);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+[data-bs-theme="light"] .card-executive,
+:root:not([data-bs-theme="dark"]) .card-executive {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), 0 10px 24px rgba(12, 12, 66, .06);
+}
+.card-executive::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at top left, rgba(212, 175, 79, .18) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.card-executive:hover {
+  border-color: var(--brand-border);
+  box-shadow: var(--gold-glow), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.card-executive:hover::before { opacity: 1; }
+.card-executive > * { position: relative; z-index: 1; }
+
+/* Hero cards — at most one gold + one navy per view */
+.card-hero-gold {
+  position: relative;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.card-hero-gold::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at top left, rgba(212, 175, 79, .18) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.card-hero-gold:hover {
+  border-color: var(--brand-border);
+  box-shadow: var(--gold-glow);
+}
+.card-hero-gold:hover::before { opacity: 1; }
+.card-hero-gold > * { position: relative; z-index: 1; }
+
+.card-hero-navy {
+  position: relative;
+  border: 1px solid rgba(79, 91, 213, .25);
+  border-radius: var(--radius);
+  background: var(--navy-gradient);
+  color: #fff;
+  box-shadow: var(--navy-glow);
+}
+.card-hero-navy .text-muted { color: rgba(255, 255, 255, .65) !important; }
+
+/* ===================== 5. Icon squares ===================== */
+.icon-square {
+  width: 44px; height: 44px; border-radius: var(--radius-icon);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.icon-square-primary { background: var(--gold-gradient); color: #0A0A0B; }
+.icon-square-gold { background: rgba(212, 175, 79, .10); color: var(--brand); }
+.icon-square-navy { background: rgba(79, 91, 213, .10); color: var(--navy-text); }
+.icon-square-neutral { background: var(--surface-2); color: var(--text-muted); }
+/* existing class name, used across the upload/dashboard templates — alias to the gold variant */
+.quick-icon {
+  width: 42px; height: 42px; border-radius: var(--radius-icon);
+  background: rgba(212, 175, 79, .10); color: var(--brand);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ===================== 6. Buttons ===================== */
+.btn-brand {
+  background: linear-gradient(90deg, var(--navy) 0%, var(--gold-2) 100%);
+  border: 0;
+  color: #fff !important;
+  font-weight: 600;
+  transition: box-shadow .2s ease, transform .15s ease, filter .2s ease;
+}
+.btn-brand:hover { box-shadow: var(--gold-glow); filter: brightness(1.05); transform: translateY(-1px); color: #fff !important; }
+.btn-brand:active { transform: translateY(0); }
+
+.btn-primary {
+  --bs-btn-color: #0A0A0B;
+  --bs-btn-bg: var(--gold-2); --bs-btn-border-color: var(--gold-2);
+  --bs-btn-hover-color: #0A0A0B;
+  --bs-btn-hover-bg: var(--gold-1); --bs-btn-hover-border-color: var(--gold-1);
+  --bs-btn-active-bg: var(--gold-2); --bs-btn-active-border-color: var(--gold-2);
+  --bs-btn-disabled-bg: var(--gold-2); --bs-btn-disabled-border-color: var(--gold-2);
+  font-weight: 600;
+}
+.btn-primary:hover { box-shadow: var(--gold-glow); }
+.btn-danger {
+  --bs-btn-bg: var(--danger); --bs-btn-border-color: var(--danger);
+  --bs-btn-hover-bg: var(--danger); --bs-btn-hover-border-color: var(--danger);
+  --bs-btn-active-bg: var(--danger); --bs-btn-active-border-color: var(--danger);
+  --bs-btn-disabled-bg: var(--danger); --bs-btn-disabled-border-color: var(--danger);
+}
+.btn-primary:hover, .btn-danger:hover { filter: brightness(0.94); }
+.btn-success {
+  --bs-btn-bg: var(--success); --bs-btn-border-color: var(--success);
+  --bs-btn-hover-bg: var(--success); --bs-btn-hover-border-color: var(--success);
+  --bs-btn-active-bg: var(--success); --bs-btn-active-border-color: var(--success);
+}
+.btn-success:hover { filter: brightness(0.94); }
+
+.btn-outline-primary {
+  --bs-btn-color: var(--brand-text); --bs-btn-border-color: var(--border-strong);
+  --bs-btn-hover-color: #0A0A0B;
+  --bs-btn-hover-bg: var(--gold-2); --bs-btn-hover-border-color: var(--gold-2);
+  --bs-btn-active-bg: var(--gold-2); --bs-btn-active-border-color: var(--gold-2);
+}
+.btn-outline-danger {
+  --bs-btn-color: var(--danger); --bs-btn-border-color: var(--border-strong);
+  --bs-btn-hover-bg: var(--danger); --bs-btn-hover-border-color: var(--danger);
+  --bs-btn-active-bg: var(--danger); --bs-btn-active-border-color: var(--danger);
+}
+.btn-outline-success {
+  --bs-btn-color: var(--success); --bs-btn-border-color: var(--border-strong);
+  --bs-btn-hover-bg: var(--success); --bs-btn-hover-border-color: var(--success);
+  --bs-btn-active-bg: var(--success); --bs-btn-active-border-color: var(--success);
+}
+.btn-outline-secondary {
+  --bs-btn-color: var(--text); --bs-btn-border-color: var(--border-strong);
+  --bs-btn-hover-color: var(--text); --bs-btn-hover-bg: var(--surface-2); --bs-btn-hover-border-color: var(--border-strong);
+}
+.btn { transition: all .18s ease; }
+
+/* .text-primary is used on a few readable (non-icon) labels — route it through the
+   contrast-tuned gold instead of the flat/gradient-oriented --bs-primary-rgb. */
+.text-primary { color: var(--brand-text) !important; }
+
+/* ===================== 7. Forms ===================== */
+.form-control, .form-select {
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+}
+.form-control:focus, .form-select:focus {
+  background-color: var(--surface-2);
+  color: var(--text);
+  border-color: rgba(212, 175, 79, .5);
+  box-shadow: 0 0 0 .2rem rgba(212, 175, 79, .15);
+}
+.form-control::placeholder { color: var(--text-muted); }
+.form-floating > label { color: var(--text-muted); }
+.input-group-text {
+  background-color: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* Like .btn-primary, Bootstrap bakes .table-light/.table-dark colors in as literal
+   component variables at build time rather than reading the root --bs-* tokens. */
+.table-light {
+  --bs-table-color: var(--text);
+  --bs-table-bg: var(--surface-2);
+  --bs-table-border-color: var(--border);
+  --bs-table-striped-bg: var(--surface-2);
+  --bs-table-striped-color: var(--text);
+  --bs-table-hover-bg: var(--surface-2);
+  --bs-table-hover-color: var(--text);
+}
+.table-dark {
+  --bs-table-color: #fff;
+  --bs-table-bg: var(--navy);
+  --bs-table-border-color: rgba(255, 255, 255, .12);
+  --bs-table-striped-bg: #141452;
+  --bs-table-striped-color: #fff;
+  --bs-table-hover-bg: #181860;
+  --bs-table-hover-color: #fff;
+}
+
+/* ===================== 8. Badges & alerts ===================== */
+.badge { font-weight: 600; letter-spacing: .01em; }
+/* .bg-dark badges (card brand chips) must stay a dark chip with white text even in
+   dark mode, where --bs-dark is intentionally flipped to a light value for .text-dark
+   legibility elsewhere (bg-light + text-dark pairs used on cashier/room chips). */
+[data-bs-theme="dark"] .badge.bg-dark { background-color: var(--surface-2) !important; }
+.alert {
+  border-radius: 12px;
+  border-width: 1px;
+}
+
+/* ===================== 9. KPI numbers ===================== */
+.stat-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+.stat-value.accent { color: var(--brand-text); }
+.stat-value.on-navy { color: #fff; }
+.stat-delta { font-size: .8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.stat-delta.up { color: var(--success); }
+.stat-delta.down { color: var(--danger); }
+
+/* ===================== 10. Quick-action cards ===================== */
+.quick-card {
+  text-decoration: none;
+  display: block;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.quick-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .18);
+}
+
+/* ===================== 11. File dropzones ===================== */
+.dropzone {
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+.dropzone:hover, .dropzone.drag-active {
+  border-color: var(--brand);
+  box-shadow: var(--gold-glow);
+  background: rgba(212, 175, 79, .04);
+}
+.dropzone.loaded {
+  border-color: var(--success);
+  border-style: solid;
+  background: var(--bs-success-bg-subtle);
+}
+
+/* ===================== 12. Responsive (down to 375px) ===================== */
+@media (max-width: 991.98px) {
+  .sidebar-panel {
+    position: fixed;
+    inset: 0 25% 0 0;
+    max-width: 300px;
+    z-index: 1040;
+    transform: translateX(-100%);
+    box-shadow: 24px 0 48px rgba(0, 0, 0, .35);
+  }
+  .sidebar-panel.open { transform: translateX(0); }
+  .sidebar-scrim.open { display: block; }
+  .topbar-mobile { display: flex; }
+}
+@media (max-width: 420px) {
+  .topbar-utility { padding: 0.6rem 1rem; }
+  .card-executive, .card-hero-gold, .card-hero-navy { border-radius: 12px; }
+}
