@@ -22,38 +22,43 @@
 
   <style>
     /* ===================== Brand tokens, sampled from plazasanfrancisco.cl =====================
-       Navy #0C0C42 and gold #996909 are the hotel's actual brand colors (confirmed via the live
-       site's heading/footer and "Reservar Ahora" button). Success/warning/danger are semantic
-       status colors, deliberately NOT reusing the brand gold so "pending/error" states stay
-       visually distinct from ordinary brand/primary-action styling. */
-    :root {
-      --brand: #996909;
-      --brand-dim: #F3E9D2;
+       Navy #0C0C42 is the hotel's actual heading/footer color. Gold is split into three roles
+       so contrast stays correct in both themes: --brand (fills, icons, the active sidebar bar),
+       --brand-text (gold used AS text, tuned for contrast on its background), and --brand-subtle
+       / --brand-border (the pale tinted-background pairing used by badges/alerts).
+       Success/warning/danger are semantic status colors, kept distinct from the brand gold so
+       "pending/error" states don't read as just another primary-action color. */
+    :root, [data-bs-theme="light"] {
+      --brand: #C9A13B;
+      --brand-text: #8A6614;
+      --brand-subtle: #FBF3DC;
+      --brand-border: #EBD38F;
       --ink: #0C0C42;
-      --ink-muted: #797989;
-      --border: #E3E3E3;
+      --ink-muted: #6E6D85;
+      --border: #E4E3EC;
+      --sidebar-bg: #FFFFFF;
       --success: #1F9D66;
       --warning: #C2410C;
       --danger: #DC2626;
 
-      --bs-primary: #996909;
-      --bs-primary-rgb: 153, 105, 9;
+      --bs-primary: #C9A13B;
+      --bs-primary-rgb: 201, 161, 59;
       --bs-danger: #DC2626;
       --bs-danger-rgb: 220, 38, 38;
       --bs-success: #1F9D66;
       --bs-success-rgb: 31, 157, 102;
       --bs-warning: #C2410C;
       --bs-warning-rgb: 194, 65, 12;
-      --bs-light: #F0F0F0;
-      --bs-light-rgb: 240, 240, 240;
+      --bs-light: #EEEDF4;
+      --bs-light-rgb: 238, 237, 244;
       --bs-dark: #0C0C42;
       --bs-dark-rgb: 12, 12, 66;
 
-      --bs-body-bg: #F4F4F6;
+      --bs-body-bg: #F5F4F8;
       --bs-body-color: #0C0C42;
-      --bs-border-color: #E3E3E3;
-      --bs-secondary-bg: #EFEFF2;
-      --bs-tertiary-bg: #F4F4F6;
+      --bs-border-color: #E4E3EC;
+      --bs-secondary-bg: #EEEDF4;
+      --bs-tertiary-bg: #F5F4F8;
       --bs-emphasis-color: #0C0C42;
       --bs-card-bg: #FFFFFF;
       --bs-modal-bg: #FFFFFF;
@@ -67,39 +72,44 @@
       --bs-danger-bg-subtle: #FCE4E4;
       --bs-danger-border-subtle: #F6B3B3;
       --bs-danger-text-emphasis: #8F1D1D;
-      --bs-primary-bg-subtle: #F3E9D2;
-      --bs-primary-border-subtle: #E2CA96;
-      --bs-primary-text-emphasis: #6B4A06;
+      --bs-primary-bg-subtle: var(--brand-subtle);
+      --bs-primary-border-subtle: var(--brand-border);
+      --bs-primary-text-emphasis: var(--brand-text);
     }
 
     /* ===================== Dark theme overrides ===================== */
     [data-bs-theme="dark"] {
-      --brand: #C9971F;
-      --brand-dim: #4A3A12;
-      --ink: #F3F2F8;
-      --ink-muted: #A8A6BE;
-      --border: #35356F;
+      --brand: #E2B84F;
+      --brand-text: #E2B84F;
+      --brand-subtle: rgba(226, 184, 79, .12);
+      --brand-border: rgba(226, 184, 79, .35);
+      --ink: #E8E7F2;
+      --ink-muted: #A3A2BF;
+      --border: #24264F;
+      --sidebar-bg: #0F1030;
       --success: #3FBF87;
       --warning: #FB923C;
       --danger: #F87171;
 
+      --bs-primary: #E2B84F;
+      --bs-primary-rgb: 226, 184, 79;
       --bs-success: #3FBF87;
       --bs-success-rgb: 63, 191, 135;
       --bs-warning: #FB923C;
       --bs-warning-rgb: 251, 146, 60;
-      --bs-light: #23235E;
-      --bs-light-rgb: 35, 35, 94;
-      --bs-dark: #F3F2F8;
-      --bs-dark-rgb: 243, 242, 248;
+      --bs-light: #1C1E4E;
+      --bs-light-rgb: 28, 30, 78;
+      --bs-dark: #E8E7F2;
+      --bs-dark-rgb: 232, 231, 242;
 
-      --bs-body-bg: #0C0C42;
-      --bs-body-color: #F3F2F8;
-      --bs-border-color: #35356F;
-      --bs-secondary-bg: #23235E;
-      --bs-tertiary-bg: #16163D;
-      --bs-emphasis-color: #F3F2F8;
-      --bs-card-bg: #1A1A4D;
-      --bs-modal-bg: #1A1A4D;
+      --bs-body-bg: #0B0C26;
+      --bs-body-color: #E8E7F2;
+      --bs-border-color: #24264F;
+      --bs-secondary-bg: #1C1E4E;
+      --bs-tertiary-bg: #101132;
+      --bs-emphasis-color: #E8E7F2;
+      --bs-card-bg: #141640;
+      --bs-modal-bg: #141640;
 
       --bs-success-bg-subtle: #163B2C;
       --bs-success-border-subtle: #1F5C41;
@@ -110,9 +120,9 @@
       --bs-danger-bg-subtle: #4A1616;
       --bs-danger-border-subtle: #6B2020;
       --bs-danger-text-emphasis: #FCA5A5;
-      --bs-primary-bg-subtle: #4A3A12;
-      --bs-primary-border-subtle: #6B5419;
-      --bs-primary-text-emphasis: #E8C978;
+      --bs-primary-bg-subtle: var(--brand-subtle);
+      --bs-primary-border-subtle: var(--brand-border);
+      --bs-primary-text-emphasis: var(--brand-text);
     }
 
     body {
@@ -126,7 +136,7 @@
     .app-wrapper { display: flex; flex: 1; min-height: 100vh; }
     .sidebar-panel {
       width: 265px;
-      background: var(--bs-card-bg);
+      background: var(--sidebar-bg);
       color: var(--ink);
       border-right: 1px solid var(--border);
       display: flex;
@@ -153,8 +163,8 @@
     }
     .sidebar-link:hover { background-color: var(--bs-secondary-bg); color: var(--ink); }
     .sidebar-link.active {
-      background-color: var(--brand-dim);
-      color: var(--brand);
+      background-color: var(--brand-subtle);
+      color: var(--brand-text);
       border-left-color: var(--brand);
       font-weight: 600;
     }
@@ -215,7 +225,7 @@
     }
     .btn-success:hover { filter: brightness(0.92); }
     .btn-outline-primary {
-      --bs-btn-color: var(--brand); --bs-btn-border-color: var(--brand);
+      --bs-btn-color: var(--brand-text); --bs-btn-border-color: var(--brand);
       --bs-btn-hover-bg: var(--brand); --bs-btn-hover-border-color: var(--brand);
       --bs-btn-active-bg: var(--brand); --bs-btn-active-border-color: var(--brand);
     }
@@ -229,6 +239,9 @@
       --bs-btn-hover-bg: var(--success); --bs-btn-hover-border-color: var(--success);
       --bs-btn-active-bg: var(--success); --bs-btn-active-border-color: var(--success);
     }
+    /* .text-primary reads from --bs-primary-rgb, which is tuned for fills/icons, not for
+       gold-on-background readable text — repoint it at the contrast-tuned --brand-text. */
+    .text-primary { color: var(--brand-text) !important; }
     .btn-theme-toggle {
       border: 1px solid var(--border);
       color: var(--ink);
@@ -242,18 +255,18 @@
     }
     .btn-theme-toggle:hover { background: var(--bs-secondary-bg); }
     .stat-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.01em; }
-    .stat-value.accent { color: var(--brand); }
+    .stat-value.accent { color: var(--brand-text); }
     .quick-card { text-decoration: none; display: block; transition: border-color .15s ease, transform .15s ease; }
     .quick-card:hover { border-color: var(--ink-muted); transform: translateY(-2px); }
     .quick-icon {
       width: 42px; height: 42px; border-radius: 10px;
-      background: var(--brand-dim); color: var(--brand);
+      background: var(--brand-subtle); color: var(--brand);
       display: flex; align-items: center; justify-content: center;
     }
     /* .bg-dark badges (card brand chips) must stay a dark chip with white text even in
        dark mode, where --bs-dark is intentionally flipped to a light value for .text-dark
        legibility elsewhere. */
-    [data-bs-theme="dark"] .badge.bg-dark { background-color: #23235E !important; }
+    [data-bs-theme="dark"] .badge.bg-dark { background-color: #1C1E4E !important; }
   </style>
   {% block extra_css %}{% endblock %}
 </head>

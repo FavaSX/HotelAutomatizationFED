@@ -15,7 +15,7 @@
   }
   .clp-upload-card:hover {
     border-color: var(--ink);
-    background: var(--brand-dim);
+    background: var(--brand-subtle);
     transform: translateY(-2px);
   }
   .clp-upload-card.loaded {
@@ -46,7 +46,7 @@
 </div>
 
 <div class="mb-4">
-  <span class="badge rounded-pill px-3 py-1 mb-1" style="background: var(--brand-dim); color: var(--brand);">
+  <span class="badge rounded-pill px-3 py-1 mb-1" style="background: var(--brand-subtle); color: var(--brand-text);">
     <i class="bi bi-shield-check me-1"></i> Fase 2: Cruce Directo con Persistencia Atómica
   </span>
   <h3 class="fw-bold mb-0" style="color: var(--ink);">Conciliación en Pesos (CLP) — Carga de Archivos</h3>
@@ -57,7 +57,7 @@
   {% csrf_token %}
 
   <div class="card card-executive p-4 mb-4">
-    <h6 class="text-uppercase mb-3" style="color: var(--brand); letter-spacing: 0.04em;">1. Transbank (Abonos por día)</h6>
+    <h6 class="text-uppercase mb-3" style="color: var(--brand-text); letter-spacing: 0.04em;">1. Transbank (Abonos por día)</h6>
     <div class="row g-3 mb-4">
       <div class="col-md-4">
         <label class="clp-upload-card w-100 d-block mb-0" for="clp_credito">
@@ -85,7 +85,7 @@
       </div>
     </div>
 
-    <h6 class="text-uppercase mb-3" style="color: var(--brand); letter-spacing: 0.04em;">2. Hotel y Banco</h6>
+    <h6 class="text-uppercase mb-3" style="color: var(--brand-text); letter-spacing: 0.04em;">2. Hotel y Banco</h6>
     <div class="row g-3">
       <div class="col-md-6">
         <label class="clp-upload-card w-100 d-block mb-0" for="clp_bordero">
