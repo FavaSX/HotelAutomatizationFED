@@ -164,11 +164,6 @@ body {
   display: flex;
   flex-direction: column;
   background-color: var(--bg-base);
-  background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 48px 48px;
-  background-attachment: fixed;
 }
 h1, h2, h3, h4, h5, .brand-word, .stat-value, .font-display {
   font-family: 'Space Grotesk', sans-serif;
