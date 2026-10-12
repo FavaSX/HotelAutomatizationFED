@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load currency_filters %}
+{% load currency_filters l10n %}
 
 {% block content %}
 <!-- Top Header -->
@@ -170,23 +170,58 @@
     <ul class="nav nav-tabs border-bottom-0 gap-2" id="previewTabs" role="tablist">
       <li class="nav-item">
         <button class="nav-link active fw-bold text-success" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button">
-          <i class="bi bi-check2-all me-1"></i> Ubicadas Exactas ({{ counts.matched }})
+          <i class="bi bi-check2-all me-1"></i> Ubicadas Exactas (<span id="countBadgeMatched">{{ counts.matched }}</span>)
         </button>
       </li>
       <li class="nav-item">
         <button class="nav-link fw-bold text-warning-emphasis" data-bs-toggle="tab" data-bs-target="#tabDiscrepancies" type="button">
-          <i class="bi bi-shuffle me-1"></i> Con Diferencia ({{ counts.discrepancies }})
+          <i class="bi bi-shuffle me-1"></i> Con Diferencia (<span id="countBadgeDiscrepancies">{{ counts.discrepancies }}</span>)
         </button>
       </li>
       <li class="nav-item">
         <button class="nav-link fw-bold text-danger" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button">
-          <i class="bi bi-exclamation-octagon me-1"></i> En TBK pero NO en ERP ({{ counts.orphans }})
+          <i class="bi bi-exclamation-octagon me-1"></i> En TBK pero NO en ERP (<span id="countBadgeOrphans">{{ counts.orphans }}</span>)
         </button>
       </li>
     </ul>
     <span class="badge bg-light text-dark border mb-2">
-      Total Liquidación Transbank: <strong>{{ counts.total }} vouchers</strong>
+      Mostrando: <strong id="visibleTotalBadge">{{ counts.total }}</strong> de <strong>{{ counts.total }} vouchers</strong>
     </span>
+  </div>
+
+  <!-- Barra de Búsqueda Instantánea y Filtro por Tarjeta (Alineados a la Izquierda) -->
+  <div class="bg-light border-bottom px-4 py-3 d-flex flex-wrap justify-content-start align-items-center gap-3">
+    <div class="position-relative flex-grow-1" style="max-width: 400px;">
+      <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+      <input type="text" id="voucherSearchInput" class="form-control form-control-sm rounded-pill ps-5 pe-5 py-2 border-secondary-subtle shadow-none"
+             placeholder="Buscar por voucher, doc ERP, huésped, hab., cajero..."
+             oninput="applyVoucherFilters()">
+      <button type="button" id="btnClearVoucherSearch" class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-2 py-0 px-2 text-muted d-none"
+              onclick="clearVoucherSearch()" title="Limpiar búsqueda">
+        <i class="bi bi-x-circle-fill"></i>
+      </button>
+    </div>
+
+    <div class="vr d-none d-md-block text-secondary opacity-25 my-1"></div>
+
+    <div class="d-flex flex-wrap align-items-center gap-1" id="cardBrandFilterGroup">
+      <span class="text-muted small fw-semibold me-1"><i class="bi bi-funnel me-1"></i>Tarjeta:</span>
+      <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 card-filter-btn active" data-card="ALL" onclick="setCardBrandFilter('ALL', this)">
+        Todas
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="VISA" onclick="setCardBrandFilter('VISA', this)">
+        Visa
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="MASTERCARD" onclick="setCardBrandFilter('MASTERCARD', this)">
+        MasterCard
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="AMERICAN EXPRESS" onclick="setCardBrandFilter('AMERICAN EXPRESS', this)">
+        American Express
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="DINERS" onclick="setCardBrandFilter('DINERS', this)">
+        Diners
+      </button>
+    </div>
   </div>
 
   <div class="card-body p-0 tab-content">
@@ -202,16 +237,29 @@
               <th>Hab.</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
-              <th class="text-end">Monto TBK</th>
-              <th class="text-end">Monto Operador</th>
-              <th class="text-end">Dif. USD</th>
-              <th class="text-end">Monto CLP</th>
+              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyMatched', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
+                Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
+              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyMatched', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
+                Monto Operador <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
+              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyMatched', 'diff', this)" title="Ordenar por Diferencia USD (Mayor a Menor / Menor a Mayor)">
+                Dif. USD <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
+              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyMatched', 'clp', this)" title="Ordenar por Monto CLP (Mayor a Menor / Menor a Mayor)">
+                Monto CLP <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
               <th class="pe-4">Diagnóstico</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="tbodyMatched">
             {% for item in matched_vouchers %}
-            <tr>
+            <tr class="voucher-row"
+                data-card="{{ item.card_name|upper }}"
+                data-tbk="{{ item.gross_amount_usd|unlocalize }}"
+                data-op="{{ item.operator_amount_usd|unlocalize }}"
+                data-diff="{{ item.difference_usd|unlocalize }}"
+                data-clp="{{ item.erp_amount_clp|unlocalize }}">
               <td class="ps-4 fw-bold font-monospace text-success">{{ item.authorization_code }}</td>
               <td class="small">{{ item.document_number|default:"—" }}</td>
               <td class="small fw-semibold">{{ item.guest_name }}</td>
@@ -225,8 +273,13 @@
               <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="11" class="text-center py-4 text-muted">No hay transacciones ubicadas.</td></tr>
+            <tr class="empty-static-row"><td colspan="11" class="text-center py-4 text-muted">No hay transacciones ubicadas.</td></tr>
             {% endfor %}
+            <tr id="noMatchRowMatched" class="d-none">
+              <td colspan="11" class="text-center py-4 text-muted">
+                <i class="bi bi-search me-1"></i> No se encontraron vouchers ubicados con ese criterio de búsqueda.
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -243,15 +296,25 @@
               <th>Huésped / Hab.</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
-              <th class="text-end">Monto TBK</th>
-              <th class="text-end">Monto Operador</th>
-              <th class="text-end">Diferencia</th>
+              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyDiscrepancies', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
+                Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
+              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyDiscrepancies', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
+                Monto Operador <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
+              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia (Mayor a Menor / Menor a Mayor)">
+                Diferencia <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
               <th class="pe-4">Diagnóstico</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="tbodyDiscrepancies">
             {% for item in discrepancy_vouchers %}
-            <tr>
+            <tr class="voucher-row"
+                data-card="{{ item.card_name|upper }}"
+                data-tbk="{{ item.gross_amount_usd|unlocalize }}"
+                data-op="{{ item.operator_amount_usd|unlocalize }}"
+                data-diff="{{ item.difference_usd|unlocalize }}">
               <td class="ps-4 fw-bold font-monospace text-warning-emphasis">{{ item.authorization_code }}</td>
               <td class="small">{{ item.document_number }}</td>
               <td class="small">
@@ -266,8 +329,13 @@
               <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="9" class="text-center py-4 text-muted">Sin diferencias de monto en este proceso.</td></tr>
+            <tr class="empty-static-row"><td colspan="9" class="text-center py-4 text-muted">Sin diferencias de monto en este proceso.</td></tr>
             {% endfor %}
+            <tr id="noMatchRowDiscrepancies" class="d-none">
+              <td colspan="9" class="text-center py-4 text-muted">
+                <i class="bi bi-search me-1"></i> No se encontraron vouchers con diferencia para ese filtro.
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -282,13 +350,17 @@
               <th class="ps-4">Cód. Autorización</th>
               <th>Tarjeta</th>
               <th>Fecha Venta</th>
-              <th class="text-end">Monto TBK</th>
+              <th class="text-end" style="cursor: pointer; user-select: none;" onclick="sortVoucherTable('tbodyOrphans', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
+                Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
               <th class="pe-4">Observación</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="tbodyOrphans">
             {% for item in orphan_vouchers %}
-            <tr>
+            <tr class="voucher-row"
+                data-card="{{ item.card_name|upper }}"
+                data-tbk="{{ item.gross_amount_usd|unlocalize }}">
               <td class="ps-4 fw-bold font-monospace text-danger">{{ item.authorization_code }}</td>
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
               <td>{{ item.sale_date }}</td>
@@ -296,8 +368,13 @@
               <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5" class="text-center py-4 text-muted">No hay vouchers huérfanos.</td></tr>
+            <tr class="empty-static-row"><td colspan="5" class="text-center py-4 text-muted">No hay vouchers huérfanos.</td></tr>
             {% endfor %}
+            <tr id="noMatchRowOrphans" class="d-none">
+              <td colspan="5" class="text-center py-4 text-muted">
+                <i class="bi bi-search me-1"></i> No se encontraron vouchers huérfanos para ese filtro.
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -486,6 +563,134 @@
 {% block extra_js %}
 <script>
   let isCommitting = false;
+  let activeCardBrandFilter = 'ALL';
+  const currentSortState = {};
+
+  function sortVoucherTable(tbodyId, dataKey, thElem) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+
+    const stateKey = `${tbodyId}_${dataKey}`;
+    // Primer clic: Mayor a Menor ('desc'); segundo clic: Menor a Mayor ('asc')
+    const nextDir = (currentSortState[stateKey] === 'desc') ? 'asc' : 'desc';
+    currentSortState[stateKey] = nextDir;
+
+    // Resetear íconos de esa tabla y marcar la columna activa
+    const table = tbody.closest('table');
+    if (table) {
+      table.querySelectorAll('thead .sort-icon').forEach(icon => {
+        icon.className = 'bi bi-arrow-down-up ms-1 sort-icon opacity-50';
+      });
+    }
+    const activeIcon = thElem.querySelector('.sort-icon');
+    if (activeIcon) {
+      activeIcon.className = nextDir === 'desc'
+        ? 'bi bi-caret-down-fill ms-1 sort-icon text-primary'
+        : 'bi bi-caret-up-fill ms-1 sort-icon text-primary';
+    }
+
+    const rows = Array.from(tbody.querySelectorAll('tr.voucher-row'));
+    const parseNum = (el) => {
+      let raw = String(el.getAttribute('data-' + dataKey) || '0').trim();
+      if (raw.includes(',')) {
+        raw = raw.replace(/\./g, '').replace(',', '.');
+      }
+      return parseFloat(raw) || 0;
+    };
+
+    rows.sort((a, b) => {
+      const valA = parseNum(a);
+      const valB = parseNum(b);
+      return nextDir === 'desc' ? (valB - valA) : (valA - valB);
+    });
+
+    const noMatchRow = tbody.querySelector('tr[id^="noMatchRow"]');
+    rows.forEach(row => {
+      if (noMatchRow) {
+        tbody.insertBefore(row, noMatchRow);
+      } else {
+        tbody.appendChild(row);
+      }
+    });
+  }
+
+  function setCardBrandFilter(brandKey, btnElem) {
+    activeCardBrandFilter = brandKey;
+    document.querySelectorAll('#cardBrandFilterGroup .card-filter-btn').forEach(btn => {
+      btn.classList.remove('btn-dark', 'active');
+      btn.classList.add('btn-outline-secondary');
+    });
+    btnElem.classList.remove('btn-outline-secondary');
+    btnElem.classList.add('btn-dark', 'active');
+    applyVoucherFilters();
+  }
+
+  function clearVoucherSearch() {
+    const input = document.getElementById('voucherSearchInput');
+    if (input) {
+      input.value = '';
+      input.focus();
+    }
+    applyVoucherFilters();
+  }
+
+  function filterSingleTab(tbodyId, noMatchRowId, countBadgeId) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return 0;
+
+    const query = (document.getElementById('voucherSearchInput')?.value || '').trim().toLowerCase();
+    const rows = tbody.querySelectorAll('tr.voucher-row');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+      const cardAttr = (row.getAttribute('data-card') || '').toUpperCase();
+      const rowText = row.textContent.toLowerCase();
+
+      const matchesCard = (activeCardBrandFilter === 'ALL') || cardAttr.includes(activeCardBrandFilter);
+      const matchesQuery = (!query) || rowText.includes(query);
+
+      if (matchesCard && matchesQuery) {
+        row.classList.remove('d-none');
+        visibleCount++;
+      } else {
+        row.classList.add('d-none');
+      }
+    });
+
+    const noMatchRow = document.getElementById(noMatchRowId);
+    if (noMatchRow) {
+      if (rows.length > 0 && visibleCount === 0) {
+        noMatchRow.classList.remove('d-none');
+      } else {
+        noMatchRow.classList.add('d-none');
+      }
+    }
+
+    const badge = document.getElementById(countBadgeId);
+    if (badge) {
+      badge.textContent = visibleCount;
+    }
+
+    return visibleCount;
+  }
+
+  function applyVoucherFilters() {
+    const query = (document.getElementById('voucherSearchInput')?.value || '').trim();
+    const clearBtn = document.getElementById('btnClearVoucherSearch');
+    if (clearBtn) {
+      clearBtn.classList.toggle('d-none', query.length === 0);
+    }
+
+    const vMatched = filterSingleTab('tbodyMatched', 'noMatchRowMatched', 'countBadgeMatched');
+    const vDisc = filterSingleTab('tbodyDiscrepancies', 'noMatchRowDiscrepancies', 'countBadgeDiscrepancies');
+    const vOrphans = filterSingleTab('tbodyOrphans', 'noMatchRowOrphans', 'countBadgeOrphans');
+
+    const totalVisible = vMatched + vDisc + vOrphans;
+    const totalBadge = document.getElementById('visibleTotalBadge');
+    if (totalBadge) {
+      totalBadge.textContent = totalVisible;
+    }
+  }
 
   async function executeCommitToDatabase() {
     if (isCommitting) return;
