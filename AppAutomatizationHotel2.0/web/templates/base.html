@@ -19,273 +19,28 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <style>
-    /* ===================== Brand tokens, sampled from plazasanfrancisco.cl =====================
-       Navy #0C0C42 is the hotel's actual heading/footer color. Gold is split into three roles
-       so contrast stays correct in both themes: --brand (fills, icons, the active sidebar bar),
-       --brand-text (gold used AS text, tuned for contrast on its background), and --brand-subtle
-       / --brand-border (the pale tinted-background pairing used by badges/alerts).
-       Success/warning/danger are semantic status colors, kept distinct from the brand gold so
-       "pending/error" states don't read as just another primary-action color. */
-    :root, [data-bs-theme="light"] {
-      --brand: #C9A13B;
-      --brand-text: #8A6614;
-      --brand-subtle: #FBF3DC;
-      --brand-border: #EBD38F;
-      --ink: #0C0C42;
-      --ink-muted: #6E6D85;
-      --border: #E4E3EC;
-      --sidebar-bg: #FFFFFF;
-      --success: #1F9D66;
-      --warning: #C2410C;
-      --danger: #DC2626;
-
-      --bs-primary: #C9A13B;
-      --bs-primary-rgb: 201, 161, 59;
-      --bs-danger: #DC2626;
-      --bs-danger-rgb: 220, 38, 38;
-      --bs-success: #1F9D66;
-      --bs-success-rgb: 31, 157, 102;
-      --bs-warning: #C2410C;
-      --bs-warning-rgb: 194, 65, 12;
-      --bs-light: #EEEDF4;
-      --bs-light-rgb: 238, 237, 244;
-      --bs-dark: #0C0C42;
-      --bs-dark-rgb: 12, 12, 66;
-
-      --bs-body-bg: #F5F4F8;
-      --bs-body-color: #0C0C42;
-      --bs-border-color: #E4E3EC;
-      --bs-secondary-bg: #EEEDF4;
-      --bs-tertiary-bg: #F5F4F8;
-      --bs-emphasis-color: #0C0C42;
-      --bs-card-bg: #FFFFFF;
-      --bs-modal-bg: #FFFFFF;
-
-      --bs-success-bg-subtle: #E3F7ED;
-      --bs-success-border-subtle: #B9E9D1;
-      --bs-success-text-emphasis: #15663F;
-      --bs-warning-bg-subtle: #FBE7DA;
-      --bs-warning-border-subtle: #F0B88F;
-      --bs-warning-text-emphasis: #7A2A05;
-      --bs-danger-bg-subtle: #FCE4E4;
-      --bs-danger-border-subtle: #F6B3B3;
-      --bs-danger-text-emphasis: #8F1D1D;
-      --bs-primary-bg-subtle: var(--brand-subtle);
-      --bs-primary-border-subtle: var(--brand-border);
-      --bs-primary-text-emphasis: var(--brand-text);
-    }
-
-    /* ===================== Dark theme overrides ===================== */
-    [data-bs-theme="dark"] {
-      --brand: #E2B84F;
-      --brand-text: #E2B84F;
-      --brand-subtle: rgba(226, 184, 79, .12);
-      --brand-border: rgba(226, 184, 79, .35);
-      --ink: #E8E7F2;
-      --ink-muted: #A3A2BF;
-      --border: #24264F;
-      --sidebar-bg: #0F1030;
-      --success: #3FBF87;
-      --warning: #FB923C;
-      --danger: #F87171;
-
-      --bs-primary: #E2B84F;
-      --bs-primary-rgb: 226, 184, 79;
-      --bs-success: #3FBF87;
-      --bs-success-rgb: 63, 191, 135;
-      --bs-warning: #FB923C;
-      --bs-warning-rgb: 251, 146, 60;
-      --bs-light: #1C1E4E;
-      --bs-light-rgb: 28, 30, 78;
-      --bs-dark: #E8E7F2;
-      --bs-dark-rgb: 232, 231, 242;
-
-      --bs-body-bg: #0B0C26;
-      --bs-body-color: #E8E7F2;
-      --bs-border-color: #24264F;
-      --bs-secondary-bg: #1C1E4E;
-      --bs-tertiary-bg: #101132;
-      --bs-emphasis-color: #E8E7F2;
-      --bs-card-bg: #141640;
-      --bs-modal-bg: #141640;
-
-      --bs-success-bg-subtle: #163B2C;
-      --bs-success-border-subtle: #1F5C41;
-      --bs-success-text-emphasis: #6FE3B2;
-      --bs-warning-bg-subtle: #4A2A10;
-      --bs-warning-border-subtle: #6B3F18;
-      --bs-warning-text-emphasis: #FDBA74;
-      --bs-danger-bg-subtle: #4A1616;
-      --bs-danger-border-subtle: #6B2020;
-      --bs-danger-text-emphasis: #FCA5A5;
-      --bs-primary-bg-subtle: var(--brand-subtle);
-      --bs-primary-border-subtle: var(--brand-border);
-      --bs-primary-text-emphasis: var(--brand-text);
-    }
-
-    body {
-      font-family: 'Inter', sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    h1, h2, h3, h4, h5, .brand-word, .stat-value { font-family: 'Space Grotesk', sans-serif; }
-
-    .app-wrapper { display: flex; flex: 1; min-height: 100vh; }
-    .sidebar-panel {
-      width: 265px;
-      background: var(--sidebar-bg);
-      color: var(--ink);
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
-      min-height: 100vh;
-      position: sticky;
-      top: 0;
-      transition: background-color .15s ease, color .15s ease;
-    }
-    .sidebar-link {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: var(--ink-muted);
-      text-decoration: none;
-      padding: 10px 14px;
-      border-radius: 8px;
-      margin-bottom: 4px;
-      font-weight: 500;
-      font-size: 0.925rem;
-      border-left: 3px solid transparent;
-      transition: 0.15s;
-    }
-    .sidebar-link:hover { background-color: var(--bs-secondary-bg); color: var(--ink); }
-    .sidebar-link.active {
-      background-color: var(--brand-subtle);
-      color: var(--brand-text);
-      border-left-color: var(--brand);
-      font-weight: 600;
-    }
-    .main-content-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    .topbar-utility {
-      background: var(--bs-card-bg);
-      border-bottom: 1px solid var(--border);
-      padding: 0.75rem 1.75rem;
-    }
-    .dollar-pill {
-      background: var(--bs-secondary-bg);
-      color: var(--ink);
-      border: 1px solid var(--border);
-      font-weight: 600;
-      padding: 5px 14px;
-      border-radius: 50px;
-      font-size: 0.875rem;
-    }
-    .dollar-pill i { color: var(--brand); }
-    .card-executive {
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05);
-      background: var(--bs-card-bg);
-    }
-    .btn-brand {
-      background-color: var(--brand) !important;
-      border-color: var(--brand) !important;
-      color: #ffffff !important;
-      font-weight: 600;
-      transition: all 0.2s ease;
-    }
-    .btn-brand:hover {
-      filter: brightness(0.92);
-      color: #ffffff !important;
-      transform: translateY(-1px);
-    }
-    /* Bootstrap 5.3 bakes solid .btn-* colors in as literal component variables at build
-       time (unlike utilities, which read the root --bs-* tokens), so they must be
-       re-pointed at our brand tokens explicitly. */
-    .btn-primary {
-      --bs-btn-bg: var(--brand); --bs-btn-border-color: var(--brand);
-      --bs-btn-hover-bg: var(--brand); --bs-btn-hover-border-color: var(--brand);
-      --bs-btn-active-bg: var(--brand); --bs-btn-active-border-color: var(--brand);
-      --bs-btn-disabled-bg: var(--brand); --bs-btn-disabled-border-color: var(--brand);
-    }
-    .btn-danger {
-      --bs-btn-bg: var(--danger); --bs-btn-border-color: var(--danger);
-      --bs-btn-hover-bg: var(--danger); --bs-btn-hover-border-color: var(--danger);
-      --bs-btn-active-bg: var(--danger); --bs-btn-active-border-color: var(--danger);
-      --bs-btn-disabled-bg: var(--danger); --bs-btn-disabled-border-color: var(--danger);
-    }
-    .btn-primary:hover, .btn-danger:hover { filter: brightness(0.92); }
-    .btn-success {
-      --bs-btn-bg: var(--success); --bs-btn-border-color: var(--success);
-      --bs-btn-hover-bg: var(--success); --bs-btn-hover-border-color: var(--success);
-      --bs-btn-active-bg: var(--success); --bs-btn-active-border-color: var(--success);
-    }
-    .btn-success:hover { filter: brightness(0.92); }
-    .btn-outline-primary {
-      --bs-btn-color: var(--brand-text); --bs-btn-border-color: var(--brand);
-      --bs-btn-hover-bg: var(--brand); --bs-btn-hover-border-color: var(--brand);
-      --bs-btn-active-bg: var(--brand); --bs-btn-active-border-color: var(--brand);
-    }
-    .btn-outline-danger {
-      --bs-btn-color: var(--danger); --bs-btn-border-color: var(--danger);
-      --bs-btn-hover-bg: var(--danger); --bs-btn-hover-border-color: var(--danger);
-      --bs-btn-active-bg: var(--danger); --bs-btn-active-border-color: var(--danger);
-    }
-    .btn-outline-success {
-      --bs-btn-color: var(--success); --bs-btn-border-color: var(--success);
-      --bs-btn-hover-bg: var(--success); --bs-btn-hover-border-color: var(--success);
-      --bs-btn-active-bg: var(--success); --bs-btn-active-border-color: var(--success);
-    }
-    /* .text-primary reads from --bs-primary-rgb, which is tuned for fills/icons, not for
-       gold-on-background readable text — repoint it at the contrast-tuned --brand-text. */
-    .text-primary { color: var(--brand-text) !important; }
-    .btn-theme-toggle {
-      border: 1px solid var(--border);
-      color: var(--ink);
-      background: transparent;
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .btn-theme-toggle:hover { background: var(--bs-secondary-bg); }
-    .stat-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.01em; }
-    .stat-value.accent { color: var(--brand-text); }
-    .quick-card { text-decoration: none; display: block; transition: border-color .15s ease, transform .15s ease; }
-    .quick-card:hover { border-color: var(--ink-muted); transform: translateY(-2px); }
-    .quick-icon {
-      width: 42px; height: 42px; border-radius: 10px;
-      background: var(--brand-subtle); color: var(--brand);
-      display: flex; align-items: center; justify-content: center;
-    }
-    /* .bg-dark badges (card brand chips) must stay a dark chip with white text even in
-       dark mode, where --bs-dark is intentionally flipped to a light value for .text-dark
-       legibility elsewhere. */
-    [data-bs-theme="dark"] .badge.bg-dark { background-color: #1C1E4E !important; }
-  </style>
+  {% load static %}
+  <link href="{% static 'css/theme.css' %}" rel="stylesheet">
   {% block extra_css %}{% endblock %}
 </head>
 
 <body>
+  <div class="sidebar-scrim" id="sidebarScrim"></div>
+
   <div class="app-wrapper">
-    <!-- SIDEBAR LATERAL FINANCIERO -->
+    <!-- SIDEBAR -->
     {% if user.is_authenticated %}
-    <aside class="sidebar-panel p-3 shadow-sm">
-      <a href="{% url 'dashboard' %}" class="d-flex align-items-center text-decoration-none pb-3 mb-3" style="border-bottom: 1px solid var(--border); color: var(--ink);">
-        <div class="d-flex align-items-center justify-content-center me-2 flex-shrink-0" style="width: 34px; height: 34px; border-radius: 9px; background: var(--brand); color: #fff; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px;">PS</div>
+    <aside class="sidebar-panel p-3" id="sidebarPanel">
+      <a href="{% url 'dashboard' %}" class="sidebar-brand">
+        <div class="sidebar-brand-mark">PS</div>
         <div>
           <span class="fw-bold d-block lh-1 brand-word" style="font-size: 15px;">PLAZA SAN FRANCISCO</span>
-          <small style="font-size: 0.72rem; color: var(--ink-muted);">Suite de Conciliación Financiera</small>
+          <small style="font-size: 0.72rem; color: var(--text-muted);">Suite de Conciliación Financiera</small>
         </div>
       </a>
 
       <div class="mb-auto">
-        <small class="text-uppercase fw-bold px-2 mb-2 d-block" style="font-size: 0.7rem; color: var(--ink-muted);">Operaciones</small>
+        <small class="sidebar-section-label">Operaciones</small>
         <a href="{% url 'dashboard' %}" class="sidebar-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
           <i class="bi bi-grid-1x2-fill fs-5"></i> Inicio
         </a>
@@ -300,7 +55,7 @@
         </a>
 
         <hr style="border-color: var(--border);" class="my-3">
-        <small class="text-uppercase fw-bold px-2 mb-2 d-block" style="font-size: 0.7rem; color: var(--ink-muted);">Cuenta</small>
+        <small class="sidebar-section-label">Cuenta</small>
         <a href="{% url 'settings' %}" class="sidebar-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
           <i class="bi bi-gear-fill fs-5"></i> Configuración
         </a>
@@ -313,8 +68,8 @@
 
       <div class="pt-3" style="border-top: 1px solid var(--border);">
         <div class="mb-2 px-1">
-          <small class="d-block" style="font-size: 0.72rem; color: var(--ink-muted);">Auditor conectado</small>
-          <span class="fw-semibold" style="color: var(--ink);"><i class="bi bi-person-check me-1" style="color: var(--brand);"></i>{{ user.first_name|default:user.username }}</span>
+          <small class="d-block" style="font-size: 0.72rem; color: var(--text-muted);">Auditor conectado</small>
+          <span class="fw-semibold" style="color: var(--text);"><i class="bi bi-person-check me-1" style="color: var(--brand);"></i>{{ user.first_name|default:user.username }}</span>
         </div>
         <a href="{% url 'logout' %}" class="btn btn-outline-secondary btn-sm w-100 rounded-pill fw-semibold">
           <i class="bi bi-box-arrow-right me-1"></i> Cerrar Sesión
@@ -323,12 +78,22 @@
     </aside>
     {% endif %}
 
-    <!-- ÁREA DE CONTENIDO -->
+    <!-- CONTENT AREA -->
     <div class="main-content-area">
       {% if user.is_authenticated %}
-      <div class="topbar-utility d-flex flex-wrap align-items-center justify-content-between gap-3 shadow-sm">
-        <span class="badge rounded-pill px-3 py-2" style="background: var(--bs-secondary-bg); color: var(--ink); font-weight: 600;">
-          <i class="bi bi-shield-check me-1" style="color: var(--brand);"></i> Hotel Plaza San Francisco — Suite de Conciliación Financiera
+      <div class="topbar-mobile">
+        <a href="{% url 'dashboard' %}" class="d-flex align-items-center text-decoration-none" style="color: var(--text);">
+          <div class="sidebar-brand-mark me-2" style="width: 30px; height: 30px; font-size: 12px;">PS</div>
+          <span class="fw-bold brand-word" style="font-size: 14px;">PLAZA SAN FRANCISCO</span>
+        </a>
+        <button type="button" id="mobileMenuBtn" aria-label="Abrir menú">
+          <i class="bi bi-list fs-4"></i>
+        </button>
+      </div>
+
+      <div class="topbar-utility d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <span class="badge badge-info-chip rounded-pill px-3 py-2">
+          <i class="bi bi-shield-check me-1"></i> Hotel Plaza San Francisco — Suite de Conciliación Financiera
         </span>
 
         <div class="d-flex align-items-center gap-2">
@@ -345,7 +110,7 @@
       {% if messages %}
       <div class="container-fluid px-4 mt-3">
         {% for message in messages %}
-        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show shadow-sm border-0" role="alert">
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} alert-dismissible fade show border-0" role="alert">
           <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
           <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
@@ -357,7 +122,7 @@
         {% block content %}{% endblock %}
       </main>
 
-      <footer class="py-3 px-4 text-center text-muted small mt-auto" style="background: var(--bs-card-bg); border-top: 1px solid var(--border);">
+      <footer class="app-footer py-3 px-4 text-center text-muted small mt-auto">
         <strong>Hotel Plaza San Francisco</strong> — Sistema de Conciliación Financiera ERP v2.0
       </footer>
     </div>
@@ -381,6 +146,18 @@
           syncIcon();
         });
       }
+    })();
+
+    (function () {
+      var menuBtn = document.getElementById('mobileMenuBtn');
+      var sidebar = document.getElementById('sidebarPanel');
+      var scrim = document.getElementById('sidebarScrim');
+      if (!menuBtn || !sidebar || !scrim) return;
+      function openSidebar() { sidebar.classList.add('open'); scrim.classList.add('open'); }
+      function closeSidebar() { sidebar.classList.remove('open'); scrim.classList.remove('open'); }
+      menuBtn.addEventListener('click', openSidebar);
+      scrim.addEventListener('click', closeSidebar);
+      sidebar.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', closeSidebar); });
     })();
 
     document.addEventListener('DOMContentLoaded', async () => {

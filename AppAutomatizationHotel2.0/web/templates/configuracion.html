@@ -5,17 +5,17 @@
 
 {% block content %}
 <div class="mb-4">
-  <h1 class="h3 fw-bold mb-1" style="color: var(--ink);">Configuración</h1>
+  <h1 class="h3 fw-bold mb-1">Configuración</h1>
   <p class="text-muted mb-0">Datos de tu cuenta y, si eres administrador, los parámetros del motor de conciliación.</p>
 </div>
 
 <div class="card card-executive mb-4">
   <div class="d-flex align-items-center gap-3 p-4" style="border-bottom: 1px solid var(--border);">
-    <div class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style="width: 64px; height: 64px; background: var(--bs-secondary-bg); font-size: 22px; font-weight: 600; color: var(--ink);">
+    <div class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style="width: 64px; height: 64px; background: var(--gold-gradient); font-size: 22px; font-weight: 700; color: #0A0A0B; font-family: 'Space Grotesk', sans-serif;">
       {{ user.first_name|default:user.username|slice:":2"|upper }}
     </div>
     <div>
-      <div class="fw-bold fs-5" style="color: var(--ink);">{{ user.get_full_name|default:user.username }}</div>
+      <div class="fw-bold fs-5">{{ user.get_full_name|default:user.username }}</div>
       <div class="text-muted small">{{ role_label }} · Hotel Plaza San Francisco</div>
     </div>
   </div>
@@ -42,8 +42,9 @@
 
 <!-- Password change -->
 <div class="card card-executive mb-4">
-  <div class="p-4" style="border-bottom: 1px solid var(--border);">
-    <h2 class="h6 fw-bold mb-0" style="color: var(--ink);"><i class="bi bi-key-fill me-1"></i> Cambiar Contraseña</h2>
+  <div class="d-flex align-items-center gap-3 p-4" style="border-bottom: 1px solid var(--border);">
+    <div class="icon-square icon-square-gold"><i class="bi bi-key-fill"></i></div>
+    <h2 class="h6 fw-bold mb-0">Cambiar Contraseña</h2>
   </div>
   <form method="post" class="p-4">
     {% csrf_token %}
@@ -76,9 +77,12 @@
 {% if user.is_staff %}
 <!-- System tolerances -->
 <div class="card card-executive mb-4">
-  <div class="p-4" style="border-bottom: 1px solid var(--border);">
-    <h2 class="h6 fw-bold mb-0" style="color: var(--ink);"><i class="bi bi-sliders me-1"></i> Tolerancias del Sistema</h2>
-    <p class="small text-muted mb-0 mt-1">Margen de redondeo aceptado al comparar montos entre el ERP y los operadores de tarjeta.</p>
+  <div class="d-flex align-items-start gap-3 p-4" style="border-bottom: 1px solid var(--border);">
+    <div class="icon-square icon-square-navy"><i class="bi bi-sliders"></i></div>
+    <div>
+      <h2 class="h6 fw-bold mb-0">Tolerancias del Sistema</h2>
+      <p class="small text-muted mb-0 mt-1">Margen de redondeo aceptado al comparar montos entre el ERP y los operadores de tarjeta.</p>
+    </div>
   </div>
   <form method="post" class="p-4">
     {% csrf_token %}

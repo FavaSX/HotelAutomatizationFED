@@ -4,34 +4,34 @@
 
 {% block content %}
 <div class="mb-4">
-  <h1 class="h3 fw-bold mb-1" style="color: var(--ink);">Hola, {{ user.first_name|default:user.username }}</h1>
+  <h1 class="h3 fw-bold mb-1">Hola, {{ user.first_name|default:user.username }}</h1>
   <p class="text-muted mb-0">Este es el resumen de la conciliación financiera del hotel.</p>
 </div>
 
 <div class="row g-3 mb-4">
   <div class="col-md-4">
-    <div class="card card-executive p-4 h-100">
+    <div class="card-hero-gold p-4 h-100">
       <div class="text-muted small text-uppercase fw-semibold">Conciliado automáticamente</div>
-      <div class="stat-value mt-2">{{ match_rate }}%</div>
+      <div class="stat-value accent mt-2">{{ match_rate }}%</div>
       <div class="small text-muted mt-1"><strong>{{ matched_count }}</strong> de {{ total_matches }} registros cruzados</div>
     </div>
   </div>
   <div class="col-md-4">
     <div class="card card-executive p-4 h-100">
       <div class="text-muted small text-uppercase fw-semibold">Excepciones pendientes</div>
-      <div class="stat-value accent mt-2">{{ pending_count }}</div>
+      <div class="stat-value mt-2" style="color: var(--warning);">{{ pending_count }}</div>
       <div class="small text-muted mt-1">requieren revisión manual</div>
     </div>
   </div>
   <div class="col-md-4">
-    <div class="card card-executive p-4 h-100">
-      <div class="text-muted small text-uppercase fw-semibold">Último cierre ejecutado</div>
+    <div class="card-hero-navy p-4 h-100">
+      <div class="small text-uppercase fw-semibold" style="color: rgba(255,255,255,.65);">Último cierre ejecutado</div>
       {% if last_process %}
-      <div class="stat-value mt-2" style="font-size: 1.4rem;">{{ last_process.execution_date|date:"d/m/Y H:i" }}</div>
-      <div class="small text-muted mt-1">{{ last_process.process_currency }} · {{ last_process.accounting_period }}</div>
+      <div class="stat-value on-navy mt-2" style="font-size: 1.4rem;">{{ last_process.execution_date|date:"d/m/Y H:i" }}</div>
+      <div class="small mt-1" style="color: rgba(255,255,255,.65);">{{ last_process.process_currency }} · {{ last_process.accounting_period }}</div>
       {% else %}
-      <div class="stat-value mt-2" style="font-size: 1.4rem;">Sin cierres aún</div>
-      <div class="small text-muted mt-1">Cargue el primer proceso de conciliación</div>
+      <div class="stat-value on-navy mt-2" style="font-size: 1.4rem;">Sin cierres aún</div>
+      <div class="small mt-1" style="color: rgba(255,255,255,.65);">Cargue el primer proceso de conciliación</div>
       {% endif %}
     </div>
   </div>
@@ -40,15 +40,15 @@
 <div class="row g-3 mb-4">
   <div class="col-md-6">
     <a href="{% url 'usd_upload' %}" class="card card-executive p-4 h-100 quick-card">
-      <div class="quick-icon mb-3"><i class="bi bi-currency-dollar fs-5"></i></div>
-      <h3 class="h6 fw-bold mb-1" style="color: var(--ink);">Conciliación Dólares</h3>
+      <div class="icon-square icon-square-gold mb-3"><i class="bi bi-currency-dollar fs-5"></i></div>
+      <h3 class="h6 fw-bold mb-1">Conciliación Dólares</h3>
       <p class="small text-muted mb-0">Sube los 7 archivos y ejecuta el cruce en memoria (Fase 1 — Preview &amp; Commit).</p>
     </a>
   </div>
   <div class="col-md-6">
     <a href="{% url 'clp_upload' %}" class="card card-executive p-4 h-100 quick-card">
-      <div class="quick-icon mb-3"><i class="bi bi-cash-coin fs-5"></i></div>
-      <h3 class="h6 fw-bold mb-1" style="color: var(--ink);">Conciliación Pesos (CLP)</h3>
+      <div class="icon-square icon-square-navy mb-3"><i class="bi bi-cash-coin fs-5"></i></div>
+      <h3 class="h6 fw-bold mb-1">Conciliación Pesos (CLP)</h3>
       <p class="small text-muted mb-0">Sube los 5 archivos (Transbank, Borderó, Cartola) y guarda el cierre directo en BD (Fase 2).</p>
     </a>
   </div>
@@ -56,7 +56,7 @@
 
 <div class="card card-executive">
   <div class="p-3 px-4" style="border-bottom: 1px solid var(--border);">
-    <h2 class="h6 fw-bold mb-0" style="color: var(--ink);">Actividad reciente</h2>
+    <h2 class="h6 fw-bold mb-0">Actividad reciente</h2>
   </div>
   <div class="list-group list-group-flush">
     {% for item in activity %}

@@ -3,15 +3,15 @@
 
 {% block content %}
 <!-- Top Header -->
-<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 p-3 bg-white rounded-3 border shadow-sm">
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 p-3 card-executive">
   <div>
     <div class="d-flex align-items-center gap-2 mb-1">
-      <span class="badge bg-warning text-dark border border-warning px-3 py-1 rounded-pill fw-bold">
+      <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-1 rounded-pill fw-bold">
         <i class="bi bi-eye-fill me-1"></i> Previsualización en Memoria (Borrador)
       </span>
       <span class="text-muted small">Base de datos intacta — Cero registros creados aún</span>
     </div>
-    <h3 class="fw-bold mb-0" style="color: var(--ink);">{{ preview.accounting_period }}</h3>
+    <h3 class="fw-bold mb-0">{{ preview.accounting_period }}</h3>
   </div>
 </div>
 
@@ -70,8 +70,8 @@
   <!-- Tabla USD -->
   <div class="col-lg-6">
     <div class="card card-executive h-100">
-      <div class="card-header bg-white border-bottom py-3">
-        <h6 class="fw-bold mb-0" style="color: var(--ink);">
+      <div class="card-header border-bottom py-3">
+        <h6 class="fw-bold mb-0">
           <i class="bi bi-currency-dollar text-primary me-1"></i> 2A. Cuadratura por Operador en Dólares (US$)
         </h6>
       </div>
@@ -117,8 +117,8 @@
   <!-- Tabla CLP -->
   <div class="col-lg-6">
     <div class="card card-executive h-100">
-      <div class="card-header bg-white border-bottom py-3">
-        <h6 class="fw-bold mb-0" style="color: var(--ink);">
+      <div class="card-header border-bottom py-3">
+        <h6 class="fw-bold mb-0">
           <i class="bi bi-cash-stack text-success me-1"></i> 2B. Cuadratura en Moneda Nacional (Pesos CLP)
         </h6>
       </div>
@@ -166,7 +166,7 @@
 <!-- 3. PESTAÑAS DE VOUCHERS Y CRUCE DETALLADO (GUIADO POR ABONO TBK) -->
 <!-- ====================================================================== -->
 <div class="card card-executive mb-4">
-  <div class="card-header bg-white border-bottom pt-3 pb-0 px-4 d-flex flex-wrap justify-content-between align-items-center">
+  <div class="card-header border-bottom pt-3 pb-0 px-4 d-flex flex-wrap justify-content-between align-items-center">
     <ul class="nav nav-tabs border-bottom-0 gap-2" id="previewTabs" role="tablist">
       <li class="nav-item">
         <button class="nav-link active fw-bold text-success" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button">
@@ -307,7 +307,7 @@
 
 <!-- Bottom Sticky Bar with Action Buttons -->
 <div class="p-3 rounded-4 border shadow-lg d-flex flex-wrap justify-content-between align-items-center gap-3"
-     style="position: sticky; bottom: 1rem; z-index: 1020; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(8px); border-color: rgba(15, 23, 42, 0.12) !important;">
+     style="position: sticky; bottom: 1rem; z-index: 1020; background: var(--surface); backdrop-filter: blur(8px); border-color: var(--border-strong) !important;">
   <div class="d-flex align-items-center gap-2 text-muted small">
     <i class="bi bi-info-circle-fill text-primary fs-5"></i>
     <span>Los datos anteriores fueron calculados en memoria. Si todo está conforme, haga clic en <strong>Confirmar y Guardar en BD</strong> para consolidar el cierre.</span>
@@ -334,7 +334,7 @@
             <i class="bi bi-trash3-fill fs-4"></i>
           </div>
           <div>
-            <h5 class="modal-title fw-bold mb-0" style="color: var(--ink);">¿Descartar borrador en memoria?</h5>
+            <h5 class="modal-title fw-bold mb-0">¿Descartar borrador en memoria?</h5>
             <small class="text-muted">{{ preview.accounting_period }}</small>
           </div>
         </div>
@@ -371,9 +371,9 @@
 
       <!-- PASO 1: CONFIRMACIÓN ANTES DE GUARDAR -->
       <div id="commitStepConfirm">
-        <div class="modal-header border-0 text-white px-4 py-3" style="background: linear-gradient(135deg, #0C0C42 0%, #1A1A4D 100%);">
+        <div class="modal-header border-0 text-white px-4 py-3" style="background: var(--navy-gradient); box-shadow: var(--navy-glow);">
           <div class="d-flex align-items-center gap-3">
-            <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; background: rgba(201, 151, 26, 0.2); color: #fbbf24;">
+            <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; background: rgba(212, 175, 79, .18); color: var(--gold-1);">
               <i class="bi bi-database-fill-check fs-4"></i>
             </div>
             <div>
@@ -425,7 +425,7 @@
 
       <!-- PASO 2: ÉXITO CONFIRMADO POR EL BACKEND + DESCARGA DE EXCEL -->
       <div id="commitStepSuccess" class="d-none">
-        <div class="modal-header border-0 text-white px-4 py-3" style="background: linear-gradient(135deg, #0C0C42 0%, #1A1A4D 100%); border-bottom: 3px solid var(--brand) !important;">
+        <div class="modal-header border-0 text-white px-4 py-3" style="background: var(--navy-gradient); border-bottom: 3px solid var(--gold-2) !important;">
           <div class="d-flex align-items-center gap-3">
             <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center shadow-sm" style="width: 46px; height: 46px;">
               <i class="bi bi-check-lg fs-3"></i>

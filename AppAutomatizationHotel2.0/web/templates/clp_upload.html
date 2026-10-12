@@ -4,30 +4,12 @@
 
 {% block extra_css %}
 <style>
-  .clp-upload-card {
-    border: 2.5px dashed var(--brand);
-    border-radius: 1rem;
-    background: var(--bs-secondary-bg);
-    transition: all 0.2s ease;
-    cursor: pointer;
-    padding: 1.25rem;
-    text-align: center;
-  }
-  .clp-upload-card:hover {
-    border-color: var(--ink);
-    background: var(--brand-subtle);
-    transform: translateY(-2px);
-  }
-  .clp-upload-card.loaded {
-    border-color: var(--success);
-    border-style: solid;
-    background: var(--bs-success-bg-subtle);
-  }
+  .dropzone { padding: 1.25rem; text-align: center; cursor: pointer; }
   #clpProcessingOverlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(12, 12, 66, 0.85);
+    background: rgba(10, 10, 11, 0.88);
     backdrop-filter: blur(6px);
     z-index: 9999;
     align-items: center;
@@ -49,7 +31,7 @@
   <span class="badge rounded-pill px-3 py-1 mb-1" style="background: var(--brand-subtle); color: var(--brand-text);">
     <i class="bi bi-shield-check me-1"></i> Fase 2: Cruce Directo con Persistencia Atómica
   </span>
-  <h3 class="fw-bold mb-0" style="color: var(--ink);">Conciliación en Pesos (CLP) — Carga de Archivos</h3>
+  <h3 class="fw-bold mb-0">Conciliación en Pesos (CLP) — Carga de Archivos</h3>
   <p class="text-muted small mb-0">Sube los 5 archivos tal cual se descargan. El motor detecta anulaciones, errores de tipeo y Redcompra automáticamente.</p>
 </div>
 
@@ -60,7 +42,7 @@
     <h6 class="text-uppercase mb-3" style="color: var(--brand-text); letter-spacing: 0.04em;">1. Transbank (Abonos por día)</h6>
     <div class="row g-3 mb-4">
       <div class="col-md-4">
-        <label class="clp-upload-card w-100 d-block mb-0" for="clp_credito">
+        <label class="dropzone w-100 d-block mb-0" for="clp_credito">
           <i class="bi bi-credit-card display-6 text-primary"></i>
           <h6 class="mt-2 mb-0">TBK Crédito</h6>
           <small class="text-muted">Seleccionar archivo</small>
@@ -68,7 +50,7 @@
         <input type="file" class="d-none" id="clp_credito" name="clp_credito" accept=".xls,.xlsx" required>
       </div>
       <div class="col-md-4">
-        <label class="clp-upload-card w-100 d-block mb-0" for="clp_debito">
+        <label class="dropzone w-100 d-block mb-0" for="clp_debito">
           <i class="bi bi-credit-card-2-front display-6 text-primary"></i>
           <h6 class="mt-2 mb-0">TBK Débito</h6>
           <small class="text-muted">Seleccionar archivo</small>
@@ -76,7 +58,7 @@
         <input type="file" class="d-none" id="clp_debito" name="clp_debito" accept=".xls,.xlsx" required>
       </div>
       <div class="col-md-4">
-        <label class="clp-upload-card w-100 d-block mb-0" for="clp_prepago">
+        <label class="dropzone w-100 d-block mb-0" for="clp_prepago">
           <i class="bi bi-wallet2 display-6 text-primary"></i>
           <h6 class="mt-2 mb-0">TBK Prepago</h6>
           <small class="text-muted">Seleccionar archivo</small>
@@ -88,7 +70,7 @@
     <h6 class="text-uppercase mb-3" style="color: var(--brand-text); letter-spacing: 0.04em;">2. Hotel y Banco</h6>
     <div class="row g-3">
       <div class="col-md-6">
-        <label class="clp-upload-card w-100 d-block mb-0" for="clp_bordero">
+        <label class="dropzone w-100 d-block mb-0" for="clp_bordero">
           <i class="bi bi-laptop display-6 text-primary"></i>
           <h6 class="mt-2 mb-0">Borderó (ERP)</h6>
           <small class="text-muted">Seleccionar archivo</small>
@@ -96,7 +78,7 @@
         <input type="file" class="d-none" id="clp_bordero" name="clp_bordero" accept=".xls,.xlsx" required>
       </div>
       <div class="col-md-6">
-        <label class="clp-upload-card w-100 d-block mb-0" for="clp_cartola">
+        <label class="dropzone w-100 d-block mb-0" for="clp_cartola">
           <i class="bi bi-bank display-6 text-primary"></i>
           <h6 class="mt-2 mb-0">Cartola Banco (CLP)</h6>
           <small class="text-muted">Seleccionar archivo</small>
@@ -116,7 +98,7 @@
 
 {% if recent_clp_processes %}
 <div class="card card-executive p-4">
-  <h6 class="fw-bold mb-3" style="color: var(--ink);"><i class="bi bi-clock-history me-1"></i> Últimos Cierres en Pesos</h6>
+  <h6 class="fw-bold mb-3"><i class="bi bi-clock-history me-1"></i> Últimos Cierres en Pesos</h6>
   <div class="table-responsive">
     <table class="table table-sm align-middle">
       <thead>
@@ -143,7 +125,7 @@
 {% endif %}
 
 <script>
-  document.querySelectorAll('.clp-upload-card input[type=file]').forEach(function() {});
+  document.querySelectorAll('.dropzone input[type=file]').forEach(function() {});
   document.querySelectorAll('input[type=file]').forEach(function(input) {
     input.addEventListener('change', function() {
       const label = document.querySelector('label[for="' + input.id + '"]');

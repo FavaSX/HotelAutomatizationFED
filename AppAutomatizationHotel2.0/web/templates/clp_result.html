@@ -8,7 +8,7 @@
     <span class="badge rounded-pill px-3 py-1 mb-1" style="background: var(--brand-subtle); color: var(--brand-text);">
       <i class="bi bi-check-circle me-1"></i> Proceso #{{ process.id }} guardado en Base de Datos
     </span>
-    <h3 class="fw-bold mb-0" style="color: var(--ink);">Resultados: Conciliación en Pesos (CLP)</h3>
+    <h3 class="fw-bold mb-0">Resultados: Conciliación en Pesos (CLP)</h3>
     <p class="text-muted small mb-0">
       Periodo: {{ process.accounting_period }} · Auditor: {{ process.user.username }} · {{ process.execution_date|date:"d/m/Y H:i" }}
     </p>
@@ -25,7 +25,7 @@
 
 <!-- Bank Deposit Validation -->
 <div class="card card-executive p-4 mb-4">
-  <h6 class="fw-bold mb-3" style="color: var(--ink);"><i class="bi bi-bank me-1"></i> Abonos de Transbank en la Cartola</h6>
+  <h6 class="fw-bold mb-3"><i class="bi bi-bank me-1"></i> Abonos de Transbank en la Cartola</h6>
   <div class="table-responsive">
     <table class="table table-bordered align-middle">
       <thead class="table-dark text-center">
@@ -54,7 +54,7 @@
 
 <!-- Brand Summary -->
 <div class="card card-executive p-4 mb-4">
-  <h6 class="fw-bold mb-3" style="color: var(--ink);"><i class="bi bi-credit-card me-1"></i> Cuadratura por Marca de Tarjeta</h6>
+  <h6 class="fw-bold mb-3"><i class="bi bi-credit-card me-1"></i> Cuadratura por Marca de Tarjeta</h6>
   <div class="table-responsive">
     <table class="table table-bordered align-middle">
       <thead class="table-dark text-center">
@@ -85,25 +85,25 @@
   </div>
   <div class="col-6 col-md-3">
     <div class="p-3 rounded text-center bg-light border">
-      <div class="fs-3 fw-bold" style="color: var(--ink);">{{ counts.amount_mismatch }}</div>
+      <div class="fs-3 fw-bold">{{ counts.amount_mismatch }}</div>
       <div class="small text-muted">Diferencia de Monto</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="p-3 rounded text-center bg-light border">
-      <div class="fs-3 fw-bold" style="color: var(--ink);">{{ counts.not_found }}</div>
+      <div class="fs-3 fw-bold">{{ counts.not_found }}</div>
       <div class="small text-muted">No en Bordero</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="p-3 rounded text-center bg-light border">
-      <div class="fs-3 fw-bold" style="color: var(--ink);">{{ counts.ghost }}</div>
+      <div class="fs-3 fw-bold">{{ counts.ghost }}</div>
       <div class="small text-muted">Bordero sin Voucher</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
     <div class="p-3 rounded text-center bg-light border">
-      <div class="fs-3 fw-bold" style="color: var(--ink);">{{ counts.card_mismatch }}</div>
+      <div class="fs-3 fw-bold">{{ counts.card_mismatch }}</div>
       <div class="small text-muted">Tipo Tarjeta Incorrecto</div>
     </div>
   </div>
@@ -123,7 +123,7 @@
 
 <!-- Discrepancies -->
 <div class="card card-executive p-4">
-  <h6 class="fw-bold mb-3" style="color: var(--ink);"><i class="bi bi-exclamation-triangle me-1"></i> Discrepancias y Excepciones</h6>
+  <h6 class="fw-bold mb-3"><i class="bi bi-exclamation-triangle me-1"></i> Discrepancias y Excepciones</h6>
   <div class="table-responsive">
     <table class="table table-bordered table-hover align-middle">
       <thead class="table-dark text-center">
