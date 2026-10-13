@@ -640,67 +640,127 @@ footer.app-footer {
 }
 .suggestion-confidence {
   font-size: 0.66rem;
-  font-weight: 700;
-  padding: 0.12rem 0.45rem;
+  font-weight: 600;
+  padding: 0.12rem 0.5rem;
   border-radius: 999px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-}
-.suggestion-confidence-alta {
-  background: rgba(16, 185, 129, 0.16);
-  color: #10B981;
-  border: 1px solid rgba(16, 185, 129, 0.35);
-}
-.suggestion-confidence-media {
-  background: rgba(245, 158, 11, 0.16);
-  color: #F59E0B;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border-strong);
 }
 .reason-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.28rem;
-  font-size: 0.71rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 500;
   padding: 0.18rem 0.55rem;
   border-radius: 6px;
   line-height: 1.25;
 }
-.reason-emerald {
-  background: rgba(16, 185, 129, 0.14);
-  color: #10B981;
-  border: 1px solid rgba(16, 185, 129, 0.32);
+/* Neutral style for all matching attributes (Zero Color Noise) */
+.reason-neutral,
+.reason-emerald,
+.reason-cyan,
+.reason-purple {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border);
 }
-html[data-bs-theme="light"] .reason-emerald {
-  background: rgba(16, 185, 129, 0.12);
-  color: #047857;
-}
+/* Highlight ONLY the field/reason where the discrepancy or typo occurred */
 .reason-gold {
   background: rgba(245, 158, 11, 0.15);
   color: #FBBF24;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  font-weight: 700;
 }
 html[data-bs-theme="light"] .reason-gold {
   background: rgba(245, 158, 11, 0.14);
   color: #B45309;
+  border-color: rgba(180, 83, 9, 0.35);
 }
-.reason-cyan {
-  background: rgba(56, 189, 248, 0.14);
-  color: #38BDF8;
-  border: 1px solid rgba(56, 189, 248, 0.32);
+/* Compact 3-Column Comparison Card (Transbank isolated left | ERP + Operator paired right) */
+.suggestion-3col-grid {
+  display: grid;
+  grid-template-columns: 0.95fr 1.15fr 1fr;
+  background: var(--surface);
 }
-html[data-bs-theme="light"] .reason-cyan {
-  background: rgba(2, 132, 199, 0.11);
-  color: #0369A1;
+@media (max-width: 991.98px) {
+  .suggestion-3col-grid {
+    grid-template-columns: 1fr;
+  }
 }
-.reason-purple {
-  background: rgba(168, 85, 247, 0.14);
-  color: #C084FC;
-  border: 1px solid rgba(168, 85, 247, 0.32);
+.suggestion-col-box {
+  padding: 0.65rem 0.95rem;
+  border-right: 1px solid var(--border);
+  min-width: 0;
 }
-html[data-bs-theme="light"] .reason-purple {
-  background: rgba(147, 51, 234, 0.10);
-  color: #6B21A8;
+.suggestion-col-box:last-child {
+  border-right: none;
+}
+.suggestion-col-tbk {
+  background: var(--surface-2);
+  border-right: 2px solid var(--border-strong);
+}
+.suggestion-col-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  height: 24px;
+  margin-bottom: 0.35rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.suggestion-kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  height: 30px;
+  padding: 0 0.45rem;
+  border-radius: 6px;
+  font-size: 0.79rem;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.14);
+  white-space: nowrap;
+}
+.suggestion-kv-row:last-child {
+  border-bottom: none;
+}
+.suggestion-kv-label {
+  color: var(--text-3);
+  font-size: 0.74rem;
+  flex-shrink: 0;
+}
+.suggestion-kv-val {
+  font-family: var(--bs-font-monospace);
+  font-weight: 600;
+  color: var(--text-1);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.suggestion-kv-diff {
+  background: rgba(245, 158, 11, 0.14);
+  border-left: 3px solid #F59E0B;
+}
+.suggestion-kv-diff .suggestion-kv-val {
+  color: #FBBF24;
+  font-weight: 700;
+}
+html[data-bs-theme="light"] .suggestion-kv-diff {
+  background: rgba(245, 158, 11, 0.13);
+}
+html[data-bs-theme="light"] .suggestion-kv-diff .suggestion-kv-val {
+  color: #B45309;
 }
 .suggestion-empty {
   font-size: 0.74rem;

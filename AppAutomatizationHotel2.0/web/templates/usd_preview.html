@@ -287,6 +287,26 @@
 
     <!-- TAB 2: DIFERENCIAS DE MONTO -->
     <div class="tab-pane fade" id="tabDiscrepancies" role="tabpanel">
+      {% if discrepancy_vouchers %}
+      <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3 suggestion-manual-box rounded-0">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="suggestion-badge-tag"><i class="bi bi-stars"></i> Nivel 2</span>
+          <span class="fw-bold small">Asistente de Cruce para Vouchers con Diferencia:</span>
+          <span class="reason-chip reason-emerald">
+            <i class="bi bi-check2-circle"></i> {{ suggestion_counts.discrepancies_with }} con sugerencia asistida
+          </span>
+          <span class="reason-chip reason-gold">
+            <i class="bi bi-slash-circle"></i> {{ suggestion_counts.discrepancies_without }} sin sugerencia
+          </span>
+        </div>
+        <button type="button"
+                class="btn-suggestion-trigger px-3 py-2"
+                onclick="openSectionSuggestionsModal('discrepancies')">
+          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ counts.discrepancies }} casos)
+        </button>
+      </div>
+      {% endif %}
+
       <div class="table-responsive voucher-table-scroll">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
@@ -305,7 +325,7 @@
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia (Mayor a Menor / Menor a Mayor)">
                 Diferencia <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="pe-4">Diagnóstico y Sugerencia Asistida</th>
+              <th class="pe-4">Diagnóstico y Estado Nivel 2</th>
             </tr>
           </thead>
           <tbody id="tbodyDiscrepancies">
@@ -329,19 +349,15 @@
               <td class="pe-4 small">
                 <div class="text-muted">{{ item.observation|format_observation }}</div>
                 {% if item.suggestion %}
-                <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
-                  <button type="button"
-                          class="btn-suggestion-trigger"
-                          data-voucher="{{ item.authorization_code }}"
-                          data-section="Diferencia de Monto"
-                          onclick="openSuggestionModal(this)">
-                    <i class="bi bi-stars"></i> Ver Sugerencia Asistida
-                    <span class="suggestion-confidence {% if item.suggestion.confidence == 'ALTA' %}suggestion-confidence-alta{% else %}suggestion-confidence-media{% endif %}">
-                      {{ item.suggestion.confidence }}
-                    </span>
-                  </button>
+                <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
+                  <span class="reason-chip reason-emerald">
+                    <i class="bi bi-stars"></i> Sugerencia ({{ item.suggestion.confidence }})
+                  </span>
                   <span class="small fw-semibold">{{ item.suggestion.headline }}</span>
-                  <script type="application/json" class="d-none suggestion-json">{{ item.suggestion|to_json|safe }}</script>
+                </div>
+                {% else %}
+                <div class="suggestion-empty mt-1">
+                  <i class="bi bi-slash-circle me-1"></i>Sin sugerencia secundaria detectada en archivos.
                 </div>
                 {% endif %}
               </td>
@@ -361,6 +377,26 @@
 
     <!-- TAB 3: EN TRANSBANK PERO NO EN ERP -->
     <div class="tab-pane fade" id="tabOrphans" role="tabpanel">
+      {% if orphan_vouchers %}
+      <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3 suggestion-manual-box rounded-0">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <span class="suggestion-badge-tag"><i class="bi bi-stars"></i> Nivel 2</span>
+          <span class="fw-bold small">Asistente de Cruce para Vouchers en TBK pero NO en ERP:</span>
+          <span class="reason-chip reason-emerald">
+            <i class="bi bi-check2-circle"></i> {{ suggestion_counts.orphans_with }} con sugerencia asistida
+          </span>
+          <span class="reason-chip reason-gold">
+            <i class="bi bi-slash-circle"></i> {{ suggestion_counts.orphans_without }} sin coincidencia en archivos
+          </span>
+        </div>
+        <button type="button"
+                class="btn-suggestion-trigger px-3 py-2"
+                onclick="openSectionSuggestionsModal('orphans')">
+          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ counts.orphans }} casos)
+        </button>
+      </div>
+      {% endif %}
+
       <div class="table-responsive voucher-table-scroll">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
@@ -371,7 +407,7 @@
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyOrphans', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
                 Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="pe-4">Observación y Sugerencia Asistida</th>
+              <th class="pe-4">Observación y Estado Nivel 2</th>
             </tr>
           </thead>
           <tbody id="tbodyOrphans">
@@ -386,23 +422,15 @@
               <td class="pe-4 small">
                 <div class="text-muted">{{ item.observation|format_observation }}</div>
                 {% if item.suggestion %}
-                <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
-                  <button type="button"
-                          class="btn-suggestion-trigger"
-                          data-voucher="{{ item.authorization_code }}"
-                          data-section="En TBK pero NO en ERP"
-                          onclick="openSuggestionModal(this)">
-                    <i class="bi bi-stars"></i> Ver Sugerencia Asistida
-                    <span class="suggestion-confidence {% if item.suggestion.confidence == 'ALTA' %}suggestion-confidence-alta{% else %}suggestion-confidence-media{% endif %}">
-                      {{ item.suggestion.confidence }}
-                    </span>
-                  </button>
+                <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
+                  <span class="reason-chip reason-emerald">
+                    <i class="bi bi-stars"></i> Sugerencia ({{ item.suggestion.confidence }})
+                  </span>
                   <span class="small fw-semibold">{{ item.suggestion.headline }}</span>
-                  <script type="application/json" class="d-none suggestion-json">{{ item.suggestion|to_json|safe }}</script>
                 </div>
                 {% else %}
                 <div class="suggestion-empty mt-1">
-                  <i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en ERP ni Operadora (posible cargo POS o facturación en periodo siguiente).
+                  <i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en ERP ni Operadora.
                 </div>
                 {% endif %}
               </td>
@@ -422,6 +450,10 @@
   </div>
 </div>
 
+<!-- JSON Data payloads for Level 2 Suggestions Modal -->
+<script type="application/json" id="jsonDiscrepanciesData">{{ discrepancy_vouchers|to_json|safe }}</script>
+<script type="application/json" id="jsonOrphansData">{{ orphan_vouchers|to_json|safe }}</script>
+
 <!-- Bottom Sticky Bar with Action Buttons -->
 <div class="p-3 rounded-4 border shadow-lg d-flex flex-wrap justify-content-between align-items-center gap-3 sticky-action-bar">
   <div class="d-flex align-items-center gap-2 text-muted small">
@@ -439,7 +471,7 @@
 </div>
 
 <!-- ====================================================================== -->
-<!-- MODAL GRANDE (XL): ASISTENTE DE CRUCE SECUNDARIO (NIVEL 2)             -->
+<!-- MODAL GRANDE (XL): LISTADO CONSOLIDADO DE SUGERENCIAS ASISTIDAS        -->
 <!-- ====================================================================== -->
 <div class="modal fade" id="suggestionDetailModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
@@ -452,11 +484,10 @@
           <div>
             <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
               <span class="suggestion-badge-tag">Asistencia Nivel 2</span>
-              <span class="badge bg-dark border rounded-pill font-monospace" id="sugModalVoucherBadge">Voucher —</span>
-              <span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill" id="sugModalSectionBadge">—</span>
-              <span class="suggestion-confidence suggestion-confidence-alta" id="sugModalConfidenceBadge">Confianza ALTA</span>
+              <span class="badge bg-dark border rounded-pill" id="sugModalSectionBadge">—</span>
+              <span class="suggestion-confidence suggestion-confidence-alta" id="sugModalStatsBadge">—</span>
             </div>
-            <h5 class="modal-title fw-bold mb-0" id="sugModalHeadline">Sugerencia de Cruce Secundario</h5>
+            <h5 class="modal-title fw-bold mb-0" id="sugModalHeadline">Listado de Sugerencias Asistidas y Casos Sin Coincidencia</h5>
           </div>
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
@@ -464,66 +495,54 @@
 
       <div class="modal-body p-4">
         <!-- 1. AVISO DE PRECAUCIÓN / REVISIÓN MANUAL -->
-        <div class="suggestion-caution-banner mb-4 d-flex align-items-start gap-3">
+        <div class="suggestion-caution-banner mb-3 d-flex align-items-start gap-3">
           <i class="bi bi-exclamation-triangle-fill text-warning fs-3 mt-1"></i>
           <div class="small">
             <div class="fw-bold text-uppercase mb-1">
               Precaución — Herramienta de Ayuda Referencial (Requiere Revisión Manual)
             </div>
             <div>
-              Esta sugerencia fue generada automáticamente cruzando columnas secundarias (saldos en pesos, montos en dólares, fechas y similitud de códigos de autorización).
+              Este listado muestra todos los casos de la sección divididos entre aquellos que <strong>sí encontraron una sugerencia secundaria</strong> (cruzando montos en dólares, saldos en pesos, fechas y similitud de códigos de autorización) y aquellos que <strong>no tienen coincidencia en los archivos cargados</strong>.
               <strong>Es únicamente una guía de asistencia y NO concilia ni modifica los datos automáticamente.</strong>
               El auditor debe verificar a mano los archivos originales antes de tomar una decisión contable.
             </div>
           </div>
         </div>
 
-        <!-- 2. RESALTADO DE MOTIVOS: ¿POR QUÉ HIZO MATCH? -->
-        <div class="p-3 rounded-3 border mb-4 suggestion-manual-box">
-          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-            <span class="suggestion-why-label">
-              <i class="bi bi-bullseye me-1"></i> ¿Por qué el sistema sugiere esta coincidencia?
-            </span>
-            <span class="small text-muted fw-semibold" id="sugModalCandidateSummary">—</span>
+        <!-- 2. BARRA DE FILTRO RÁPIDO DENTRO DEL MODAL -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 pb-3 border-bottom">
+          <div class="d-flex flex-wrap align-items-center gap-2" id="sugModalFilterGroup">
+            <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 sug-filter-btn active" onclick="filterModalSuggestions('ALL', this)">
+              Todos (<span id="sugCountAll">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 sug-filter-btn" onclick="filterModalSuggestions('WITH', this)">
+              <i class="bi bi-stars me-1"></i>Con Sugerencia Asistida (<span id="sugCountWith">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 sug-filter-btn" onclick="filterModalSuggestions('WITHOUT', this)">
+              <i class="bi bi-slash-circle me-1"></i>Sin Sugerencia en Archivos (<span id="sugCountWithout">0</span>)
+            </button>
           </div>
-          <div class="d-flex flex-wrap gap-2 mt-2" id="sugModalReasonsContainer"></div>
+          <span class="small text-muted">
+            <i class="bi bi-layout-three-columns me-1"></i>Comparativa lado a lado: <strong>1. Transbank</strong> · <strong>2. ERP Hotel</strong> · <strong>3. Operadora</strong>
+          </span>
         </div>
 
-        <!-- 3. TABLA COMPARATIVA LADO A LADO ENTRE LOS 3 ARCHIVOS -->
-        <h6 class="fw-bold text-uppercase text-muted small mb-2">
-          <i class="bi bi-layout-three-columns text-primary me-1"></i> Comparativa Detallada de Datos entre Archivos
-        </h6>
-        <div class="table-responsive rounded-3 border mb-4">
-          <table class="table table-hover align-middle mb-0">
-            <thead class="table-light small text-uppercase text-muted">
-              <tr>
-                <th class="ps-3">Campo Comparado</th>
-                <th>
-                  <i class="bi bi-credit-card-2-front text-primary me-1"></i>
-                  1. Transbank (<span id="sugThTbkFile">ABONO TBK.xlsx</span>)
-                </th>
-                <th>
-                  <i class="bi bi-building text-primary me-1"></i>
-                  2. ERP Hotel (<span id="sugThErpFile">TARJETAS ERP.xlsx</span>)
-                </th>
-                <th>
-                  <i class="bi bi-file-earmark-spreadsheet text-primary me-1"></i>
-                  3. Operadora (<span id="sugThOpFile">DOLAR.XLS</span>)
-                </th>
-                <th class="pe-3">Diagnóstico de Columna</th>
-              </tr>
-            </thead>
-            <tbody id="sugModalComparisonTbody"></tbody>
-          </table>
+        <!-- 3. BLOQUE A: CASOS CON SUGERENCIA ASISTIDA -->
+        <div id="sugModalWithSection" class="mb-4">
+          <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
+            <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Con Sugerencia Asistida</span>
+            <span class="text-muted">Coincidencias secundarias detectadas entre archivos</span>
+          </h6>
+          <div id="sugModalWithList" class="d-flex flex-column gap-3"></div>
         </div>
 
-        <!-- 4. GUÍA DE VERIFICACIÓN MANUAL -->
-        <div class="suggestion-manual-box d-flex align-items-start gap-3">
-          <i class="bi bi-clipboard2-check-fill text-primary fs-4 mt-1"></i>
-          <div class="small">
-            <div class="fw-bold mb-1">¿Qué debe revisar manualmente el auditor?</div>
-            <div class="text-muted" id="sugModalManualNote">—</div>
-          </div>
+        <!-- 4. BLOQUE B: CASOS SIN SUGERENCIA EN ARCHIVOS -->
+        <div id="sugModalWithoutSection">
+          <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
+            <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> Sin Sugerencia en Archivos</span>
+            <span class="text-muted">Vouchers sin coincidencias secundarias en ERP ni Operadora</span>
+          </h6>
+          <div id="sugModalWithoutList"></div>
         </div>
       </div>
 
@@ -701,6 +720,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_preview.js' %}?v=5"></script>
+<script src="{% static 'js/usd_preview.js' %}?v=14"></script>
 {% endblock %}
 

@@ -114,6 +114,7 @@ def usd_preview_view(request):
         "discrepancy_vouchers": preview.get("discrepancy_vouchers", []),
         "orphan_vouchers": preview.get("orphan_vouchers", []),
         "counts": preview.get("counts", {}),
+        "suggestion_counts": preview.get("suggestion_counts", {}),
     }
     return render(request, "usd_preview.html", context)
 

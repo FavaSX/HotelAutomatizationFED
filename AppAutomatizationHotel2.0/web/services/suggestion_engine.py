@@ -189,6 +189,13 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
         obs = str(disc.get("observation") or "")
         op_file_label = op_file_by_card.get(card_code, "Operadora DOLAR.XLS")
 
+        erp_idx_val = disc.get("erp_index")
+        erp_date_val = (
+            str(erp_txs[erp_idx_val].get("transaction_date") or sale_date)
+            if erp_idx_val is not None and 0 <= erp_idx_val < len(erp_txs)
+            else sale_date
+        )
+
         # Case 1A: Not found in Operator by document_number (op_usd == 0 and op_clp == 0)
         if op_usd == 0.0 and "No encontrado en archivo Operadora" in obs:
             best_op, best_op_idx, best_score = None, None, 0
@@ -230,6 +237,9 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                     "headline": f"Registro hallado en Operadora bajo Doc #{op_doc}",
                     "candidate_summary": f"Operadora {card_name}: Doc #{op_doc} · Monto Op: {fmt_usd(cand_usd)} · Saldo: {fmt_clp(cand_clp)} CLP",
                     "files_involved": _files_dict(card_code),
+                    "erp_cashier": cashier,
+                    "erp_card": f"{card_name} ({card_code})",
+                    "erp_date": erp_date_val,
                     "manual_check_note": (
                         f"El voucher {auth_code} sí está en el ERP (Doc #{doc_num}, {guest_name}, Hab. {room_number}), "
                         f"pero no cruzó en Nivel 1 porque en '{op_file_label}' fue registrado con el Doc #{op_doc}. "
@@ -252,7 +262,7 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                         op_clp_str=fmt_clp(cand_clp),
                         clp_status=(f"Saldo CLP 100% Exacto ({fmt_clp(erp_clp)})", "emerald"),
                         tbk_context=f"{card_name} ({card_code}) · {sale_date} · {masked_card}",
-                        erp_context=f"{guest_name} · Hab. {room_number} · {sale_date} ({cashier})",
+                        erp_context=f"{guest_name} · Hab. {room_number} · {erp_date_val} ({cashier})",
                         op_context=f"Operadora {card_name} · Doc #{op_doc}",
                         context_status=("Misma Tarjeta, Fecha y Estadía", "cyan"),
                     ),
@@ -266,6 +276,9 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                 "headline": f"Vinculado por Doc #{doc_num} y Saldo CLP (Col. USD en 0,00 en Operadora)",
                 "candidate_summary": f"ERP y Operadora coinciden en Doc #{doc_num} y {fmt_clp(erp_clp)} CLP, pero Operadora reportó US$ 0,00 en Moneda Extranjera.",
                 "files_involved": _files_dict(card_code),
+                "erp_cashier": cashier,
+                "erp_card": f"{card_name} ({card_code})",
+                "erp_date": erp_date_val,
                 "manual_check_note": (
                     f"El documento #{doc_num} ({guest_name}, Hab. {room_number}) coincide exactamente en "
                     f"Saldo Corregido CLP ({fmt_clp(erp_clp)}) entre el ERP y '{op_file_label}', pero la columna "
@@ -327,6 +340,9 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                 ),
                 "candidate_summary": f"Huésped: {guest_name} (Hab. {room_number}) · TBK: {fmt_usd(tbk_usd)} vs Operadora: {fmt_usd(op_usd)} · Saldo CLP: {fmt_clp(erp_clp)}",
                 "files_involved": _files_dict(card_code),
+                "erp_cashier": cashier,
+                "erp_card": f"{card_name} ({card_code})",
+                "erp_date": erp_date_val,
                 "manual_check_note": (
                     f"Tanto el Código ({auth_code}), el Doc (#{doc_num}) como el Saldo CLP ({fmt_clp(erp_clp)}) "
                     f"coinciden al 100% entre ERP y '{op_file_label}'. La diferencia de {fmt_usd(abs(diff_usd))} "
@@ -429,6 +445,9 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                     "headline": f"Coincidencia sugerida en ERP y Operadora (Doc #{erp_doc})",
                     "candidate_summary": f"Huésped: {erp_guest} · Hab: {erp_room} · Cód. ERP: {erp_auth} · Op: {fmt_usd(op_usd)} ({fmt_clp(erp_clp)} CLP)",
                     "files_involved": _files_dict(card_code),
+                    "erp_cashier": erp_cashier,
+                    "erp_card": f"{card_name} ({card_code})",
+                    "erp_date": erp_date,
                     "manual_check_note": (
                         f"El voucher de Transbank '{auth_code}' no cruzó de forma directa porque en el ERP Hotel "
                         f"(Doc #{erp_doc}, Factura {erp_invoice}, Hab. {erp_room} — {erp_guest}) el cajero '{erp_cashier}' "
@@ -524,6 +543,7 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                     doc1, doc2 = e1.get("document_number"), e2.get("document_number")
                     auth1, auth2 = e1.get("authorization_code"), e2.get("authorization_code")
                     guest, room = e1.get("guest_name") or "—", e1.get("room_number") or "—"
+                    split_cashier = str(e1.get("cashier_username") or "—")
 
                     reasons = [_chip(f"Monto US$ Exacto ({fmt_usd(tbk_usd)})", "bi-currency-dollar", "emerald")]
                     if best_badge:
@@ -539,6 +559,9 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                         "headline": f"Posible voucher dividido en 2 facturas ERP (Docs #{doc1} + #{doc2})",
                         "candidate_summary": f"Huésped: {guest} · Hab: {room} · Cód. ERP: {auth1} / {auth2} · Suma ERP: {fmt_clp(sum_clp)} CLP",
                         "files_involved": _files_dict(card_code),
+                        "erp_cashier": split_cashier,
+                        "erp_card": f"{card_name} ({card_code})",
+                        "erp_date": sale_date,
                         "manual_check_note": (
                             f"El voucher de Transbank '{auth_code}' por {fmt_usd(tbk_usd)} corresponde a la suma "
                             f"exacta de 2 facturas en el ERP Hotel para el mismo huésped ({guest}, Hab. {room}) "
@@ -619,4 +642,16 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                 ),
             }
 
+    disc_with = sum(1 for v in discrepancy_vouchers if v.get("suggestion"))
+    orph_with = sum(1 for v in orphan_vouchers if v.get("suggestion"))
+    preview_data["suggestion_counts"] = {
+        "discrepancies_with": disc_with,
+        "discrepancies_without": len(discrepancy_vouchers) - disc_with,
+        "discrepancies_total": len(discrepancy_vouchers),
+        "orphans_with": orph_with,
+        "orphans_without": len(orphan_vouchers) - orph_with,
+        "orphans_total": len(orphan_vouchers),
+    }
+
     return preview_data
+

@@ -269,11 +269,6 @@ def calculate_usd_preview(
             guest_name = erp_item.guest_name or "—"
             room_number = erp_item.room_number or "—"
             cashier_username = erp_item.cashier_username or "—"
-
-            summary_accumulators[raw_card_type]["usd_erp_total"] += gross_amount_usd
-            summary_accumulators[raw_card_type]["usd_tbk_total"] += operator_usd
-            summary_accumulators[raw_card_type]["clp_erp_total"] += erp_amount_clp
-            summary_accumulators[raw_card_type]["clp_tbk_total"] += operator_clp
         else:
             erp_index = None
             operator_index = None
@@ -289,6 +284,11 @@ def calculate_usd_preview(
             is_within_tolerance = False
             sys_result = "NOT_FOUND_IN_ERP"
             observation_text = f"Voucher {auth_code} no encontrado en ERP Hotel"
+
+        summary_accumulators[raw_card_type]["usd_erp_total"] += gross_amount_usd
+        summary_accumulators[raw_card_type]["usd_tbk_total"] += operator_usd
+        summary_accumulators[raw_card_type]["clp_erp_total"] += erp_amount_clp
+        summary_accumulators[raw_card_type]["clp_tbk_total"] += operator_clp
 
         sale_date_str = sale_date.strftime("%d/%m/%Y") if sale_date else None
         transbank_transactions_data.append({
