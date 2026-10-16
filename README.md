@@ -2,6 +2,10 @@
 
 El **Sistema de Conciliación Financiera ERP** es una plataforma web corporativa desarrollada en **Django** y diseñada para automatizar, auditar y persistir el cruce masivo de datos financieros entre el sistema central del hotel (ERP), los abonos de **Transbank**, las **cartolas bancarias** y los reportes de liquidación de los **operadores de tarjetas de crédito internacionales** (*Visa, MasterCard, American Express y Diners Club*).
 
+La plataforma cubre hoy dos procesos de cierre:
+* **Fase 1 — Dólares (USD):** tarjetas internacionales cobradas en moneda extranjera y su liquidación en pesos.
+* **Fase 2 — Pesos Chilenos (CLP):** ventas nacionales con tarjetas de **Crédito, Débito y Prepago** abonadas por Transbank.
+
 ---
 
 ## Fase 1: Conciliación de Transacciones Internacionales en Dólares (USD)
@@ -60,6 +64,64 @@ A diferencia del esquema tradicional a ciegas, el sistema opera bajo una arquite
 
 ---
 
+## Fase 2: Conciliación Nacional de Tarjetas en Pesos Chilenos (CLP)
+
+La segunda fase automatiza la cuadratura diaria de las ventas con tarjeta en **moneda nacional (CLP)**. Toma como fuente de verdad los tres abonos de Transbank (**Crédito**, **Débito** y **Prepago**), ubica cada voucher en el **Borderó** del hotel y confirma que el abono neto de cada modalidad llegó a la cuenta corriente. Reutiliza la arquitectura de la Fase 1: auto-detección de archivos, previsualización en memoria, confirmación atómica, deduplicación y bitácora de auditoría.
+
+### 1. Archivos de Entrada (Los 5 Insumos)
+El contador sube **5 archivos Excel** en cualquier orden y con cualquier nombre. `file_detector.py` (`CLP_REQUIRED_ROLES`) los reconoce por su contenido interno:
+
+* **A. Borderó ERP del Hotel**
+  * **Origen:** Reporte *"Cargos de Débitos y Créditos"* del sistema hotelero. Su encabezado trae el período: *"Periodo de: 04/09/2026 hasta 07/09/2026"*.
+  * **Datos extraídos:** Solo pagos con tarjeta en pesos (*Red Compra*, *Visa $*, *Master Card $*, *Amex $*, *Diners $*), incluidas sus reversas. Por cada pago: Código de Autorización, Medio de Pago, Monto, Fecha y Hora, N° de Factura, Cuenta, **Huésped**, **Habitación** y **Cajero**. Las filas en US$ se dejan para la Fase 1.
+
+* **B, C y D. Abonos por Día de Transbank (Crédito, Débito y Prepago)**
+  * **Origen:** Portal Privado de Transbank, un archivo por medio de pago.
+  * **Cabecera:** Período de consulta (fecha del abono), Cuenta Corriente, Total Ventas, Comisión e IVA, Ventas Anuladas, Cobros por Servicio y **Total Abono**.
+  * **Detalle de vouchers:** Fecha de Venta, Código de Autorización, Monto Bruto, Monto Válido, Tipo y N° de Cuota (`1/3`, `S/C`), Comisión, IVA de Comisión, **Abono Neto**, Tarjeta Enmascarada y Local. La marca (*Visa, MasterCard, Amex, Diners*) se deduce del BIN de la tarjeta. Las anulaciones y otros movimientos que no son venta se omiten.
+
+* **E. Cartola Bancaria en Pesos**
+  * **Datos extraídos:** Movimientos de la cuenta corriente, incluidos los abonos identificados como depósitos de Transbank.
+
+---
+
+### 2. Reglas de Negocio del Cruce (`clp_reconciliation.py`)
+1. **Transbank como fuente de verdad:** Cada voucher se busca en el Borderó por **código de autorización normalizado**.
+2. **Medio de pago compatible:** Débito y Prepago deben estar registrados en el Borderó como **Red Compra**, y Crédito como **Visa $ / Master Card $ / Amex $ / Diners $**. Si el monto coincide pero el medio no, el voucher queda como *Medio de pago distinto*.
+3. **Tolerancia CLP parametrizable:** La diferencia aceptada se configura en `SystemConfiguration.clp_rounding_tolerance` y siempre queda entre **±$500 y ±$1.000**. El valor por defecto es $1.000.
+4. **Reversas y códigos repetidos:** Cuando un código tiene varias filas en el Borderó, primero se compara contra el **neto de todas** (así se anulan las reversas) y, si no cuadra, contra la fila más cercana. Los vouchers que tienen monto exacto se procesan antes, para que un código compartido no lo tome la venta equivocada.
+5. **Cuotas y período:** Las cuotas posteriores (`2/3`, `3/3`) y las ventas fuera del período del Borderó cargado se separan como **Fuera de Período**, con la indicación de buscarlas en el Borderó de la venta original.
+6. **Abono bancario por modalidad:** El *Total Abono* de cada archivo Transbank se busca en la cartola dentro de la tolerancia, dando preferencia a la glosa esperada (`TC TBK` para Crédito, `ABONOS REALIZADOS POR TRANSBANK` para Débito y Prepago) y a la misma fecha. Un movimiento bancario nunca se asigna a dos abonos.
+
+| Resultado | Significado | Acción sugerida |
+| --- | --- | --- |
+| `MATCHED` | Código y monto coinciden en el Borderó | — |
+| `AMOUNT_MISMATCH` | El código existe, pero el monto difiere más allá de la tolerancia | Revisar el monto con recepción |
+| `CARD_TYPE_MISMATCH` | El monto coincide, pero está registrado con otro medio de pago | Corregir el medio de pago en el ERP |
+| `NOT_FOUND_IN_ERP` | El voucher de Transbank no está en el Borderó | Buscar la venta con el cajero y registrarla en el ERP |
+| `OUT_OF_PERIOD` | Cuota posterior o venta de otra fecha | Buscar en el Borderó del período de la venta |
+
+---
+
+### 3. Motor de Sugerencias Asistidas Nivel 2 (`clp_suggestion_engine.py`)
+El motor solo ayuda al auditor y **nunca concilia de forma automática**:
+* **Vouchers no ubicados:** Propone filas del Borderó que ningún voucher reclamó, con el mismo monto y medio de pago, registradas el mismo día o el siguiente, y con un código parecido (error de digitación u OCR) o sin código. Cada propuesta muestra sus razones (*Monto Exacto*, *Misma Fecha*, *Mismo Medio*, *Código digitado como…*).
+* **Diferencias de monto:** Detecta cuando la diferencia se registró como un cargo separado el mismo día.
+* **Borderó sin voucher:** Lista los pagos con tarjeta del Borderó que no corresponden a ningún voucher. Por ejemplo, ventas a crédito que Transbank abonará en un depósito posterior.
+
+---
+
+### 4. Flujo de Trabajo del Contador (Preview & Commit)
+1. **Carga masiva (`/reconciliation/clp/`):** El contador arrastra los 5 archivos, revisa la tabla de alineación propuesta por el detector y la corrige si hace falta.
+2. **Previsualización en memoria:** Muestra KPIs, cuadratura por **modalidad** (Crédito, Débito, Prepago) y por **marca**, la validación de los 3 abonos contra la cartola y 6 pestañas de auditoría: *Cuadrados*, *Con Diferencia*, *En TBK pero NO en Borderó*, *Fuera de Período*, *En Borderó sin Voucher* y *Reporte de Excepciones*.
+3. **Confirmación y guardado (`clp_persistence.py`):** `commit_clp_preview_to_database` guarda todo en una sola transacción atómica y aplica las mismas protecciones de la Fase 1:
+   * Si al menos el 80% de los vouchers y los abonos coinciden con un proceso ya guardado, actualiza ese proceso en lugar de crear uno nuevo.
+   * Filtra en SQL por llaves naturales para no duplicar movimientos, filas del Borderó ni vouchers.
+   * Registra en `AuditResolutionLog` los vouchers que cambian de resultado al volver a subir los archivos.
+4. **Excel oficial (`clp_report_exporter.py`):** Desde un proceso guardado se descarga un libro de 3 hojas: **Resumen Pesos**, **Vouchers Cuadrados** y **Reporte de Excepciones**. Esta última hoja trae las columnas Tipo de error, Fecha de origen, Documento / Código, Monto discrepante y Acción sugerida.
+
+---
+
 ## Hito 1: Auditoría del Sistema Legacy y Reingeniería Total (Plataforma v2.0)
 
 El punto de partida del proyecto fue la recepción de un prototipo heredado (**Sistema Legacy v1.0**). Antes de avanzar hacia nuevas fases, el equipo realizó una auditoría forense de código, arquitectura, seguridad y precisión matemática sobre dicho proyecto original.
@@ -79,7 +141,7 @@ Durante la auditoría del código original se detectaron fallas críticas que im
 
 ### 2. Nueva Arquitectura de Base de Datos Relacional y Motor Anti-Duplicados
 Se diseñó e implementó desde cero un modelo relacional normalizado en Django compuesto por **11 modelos (3 catálogos base y 8 tablas operativas de conciliación)**:
-* **Catálogos y Configuración:** `CardType` (franquicias y prefijos BIN), `ReconciliationStatus` (estados de gestión contable) y `SystemConfiguration` (tolerancias de redondeo en USD y CLP editables por administración).
+* **Catálogos y Configuración:** `CardType` (franquicias y prefijos BIN), `ReconciliationStatus` (estados de gestión contable) y `SystemConfiguration` (tolerancias de redondeo en USD y CLP editables por administración). La migración `0003_clp_tolerance_and_catalogs` carga los catálogos base (Visa, MasterCard, American Express, Diners Club; estados *Pendiente* y *Aceptado*) y limita la tolerancia CLP al rango de $500 a $1.000.
 * **Cabecera y Resúmenes del Cierre:** `ReconciliationProcess` (registro maestro de ejecución), `BankDepositValidation` (validación del abono bancario por modalidad) y `ReconciliationSummary` (cuadraturas consolidadas por tarjeta en tablas USD y CLP).
 * ** Almacén de Transacciones Limpias:** `BankStatementMovement`, `ErpTransaction`, `TransbankTransaction` y `CardOperatorTransaction`.
 * **Auditoría y Gestión de Discrepancias:** `CrossMatchResult` (resultado individual por cada voucher con diagnóstico del sistema y estado de resolución) y `AuditResolutionLog` (bitácora inmutable de cambios de estado).
@@ -103,8 +165,12 @@ Para evitar que la base de datos se infle si un contador guarda dos veces el mis
   * `usd_reconciliation.py`: Motor matemático de cruce triple en memoria para Dólares.
   * `reconciliation_persistence.py`: Persistencia transaccional, deduplicación en las 8 tablas y registro automático en `AuditResolutionLog`.
   * `report_exporter.py`: Generación de reportes Excel multi-hoja estilizados con `openpyxl`.
-  * `file_detector.py`: Clasificación y alineación automática de los 7 archivos por estructura interna.
-  * `excel_parsers.py` y `column_detector.py`: Lectura compartida y sanitización de Cartola, ERP y Operadoras.
+  * `file_detector.py`: Clasificación y alineación automática por estructura interna de los 7 archivos USD y los 5 archivos CLP.
+  * `excel_parsers.py` y `column_detector.py`: Lectura compartida y sanitización de Cartola, ERP/Borderó, Operadoras y abonos Transbank en pesos.
+  * `clp_reconciliation.py`: Motor de cruce en memoria para Pesos (Transbank Crédito, Débito y Prepago vs. Borderó y Cartola).
+  * `clp_suggestion_engine.py`: Sugerencias asistidas de Nivel 2 para vouchers en pesos no ubicados o con diferencia.
+  * `clp_persistence.py`: Persistencia transaccional y deduplicación del cierre en pesos.
+  * `clp_report_exporter.py`: Excel oficial del cierre en pesos con el Reporte de Excepciones.
 
 ---
 
@@ -115,6 +181,19 @@ Para evitar que la base de datos se infle si un contador guarda dos veces el mis
 
 ---
 
-## Próximos Pasos: Fase 2 (Conciliación Nacional en Pesos Chilenos - CLP)
-*(En desarrollo: incorporación del cruce para tarjetas de Crédito, Débito y Prepago en moneda nacional CLP aprovechando la misma arquitectura relacional, auto-detección de archivos y previsualización de la plataforma v2.0).*
+## Puesta en Marcha
+```bash
+cd AppAutomatizationHotel2.0
+python manage.py migrate      # obligatorio: carga catálogos y tolerancias (sin ellos falla el guardado)
+python manage.py test web     # suite de pruebas USD y CLP
+python manage.py runserver
+```
+* Conciliación en Dólares: `/` (página de inicio)
+* Conciliación en Pesos: `/reconciliation/clp/`
+
+---
+
+## Estado del Proyecto
+* **Fase 1 (USD):** Implementada.
+* **Fase 2 (CLP):** Versión 1 implementada (cruce, sugerencias asistidas, persistencia y Excel de excepciones).
 
