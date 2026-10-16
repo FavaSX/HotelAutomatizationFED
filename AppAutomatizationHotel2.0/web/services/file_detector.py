@@ -1,7 +1,7 @@
 """
-Automatic File Role Detector for US Dollars (USD) Reconciliation.
+Automatic File Role Detector for US Dollars (USD) and Chilean Pesos (CLP) Reconciliation.
 Inspects the internal cell structure (first 45 rows) of uploaded Excel files
-to automatically classify each file into one of the 7 required USD reconciliation slots.
+to automatically classify each file into one of the 7 required USD slots or the 5 required CLP slots.
 """
 
 import io
@@ -139,10 +139,15 @@ def detect_and_align_usd_files(uploaded_files: List[Any]) -> Dict[str, Any]:
     Inspects a batch of uploaded Excel files and aligns them against the 7 required USD roles.
     """
     inspected_files = [inspect_single_excel_file(f, idx) for idx, f in enumerate(uploaded_files)]
+    return align_inspected_files(inspected_files, USD_REQUIRED_ROLES)
+
+
+def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles: List[Dict[str, str]]) -> Dict[str, Any]:
+    """Assigns each inspected file to at most one required role, preferring HIGH confidence detections."""
     used_file_indices = set()
     aligned_roles: List[Dict[str, Any]] = []
 
-    for role_meta in USD_REQUIRED_ROLES:
+    for role_meta in required_roles:
         role_key = role_meta["role_key"]
         candidates = [
             c for c in inspected_files
@@ -180,5 +185,102 @@ def detect_and_align_usd_files(uploaded_files: List[Any]) -> Dict[str, Any]:
         "unassigned_files": [f for f in inspected_files if f["file_index"] not in used_file_indices],
         "all_matched": all(r["matched"] for r in aligned_roles),
         "matched_count": sum(1 for r in aligned_roles if r["matched"]),
-        "total_required": len(USD_REQUIRED_ROLES),
+        "total_required": len(required_roles),
     }
+
+
+# ==============================================================================
+# CLP (PESOS) FILE DETECTION
+# ==============================================================================
+
+CLP_REQUIRED_ROLES: List[Dict[str, str]] = [
+    {"role_key": "erp", "input_name": "clp_erp_file", "role_label": "1. Borderó ERP Hotel", "badge": "ERP", "badge_class": "bg-primary"},
+    {"role_key": "bank", "input_name": "clp_bank_file", "role_label": "2. Cartola Bancaria (Pesos)", "badge": "BANCO", "badge_class": "bg-success"},
+    {"role_key": "tbk_credit", "input_name": "clp_tbk_credit_file", "role_label": "3. Abono Transbank Crédito", "badge": "TBK", "badge_class": "bg-info text-dark"},
+    {"role_key": "tbk_debit", "input_name": "clp_tbk_debit_file", "role_label": "4. Abono Transbank Débito", "badge": "TBK", "badge_class": "bg-info text-dark"},
+    {"role_key": "tbk_prepaid", "input_name": "clp_tbk_prepaid_file", "role_label": "5. Abono Transbank Prepago", "badge": "TBK", "badge_class": "bg-info text-dark"},
+]
+
+CLP_TBK_MEDIUM_ROLES = {"credito": "tbk_credit", "debito": "tbk_debit", "prepago": "tbk_prepaid"}
+
+CLP_FILENAME_FALLBACKS = [
+    ("tbk_credit", ("credito",)),
+    ("tbk_debit", ("debito",)),
+    ("tbk_prepaid", ("prepago",)),
+    ("erp", ("bordero", "erp")),
+    ("bank", ("cartola", "banco")),
+]
+
+
+def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
+    """
+    Reads the first rows of an uploaded Excel file and classifies it as one of the 5 CLP roles.
+    The 3 Transbank settlements share the same layout; only the 'Medio de pago' cell tells them apart.
+    """
+    file_name = getattr(uploaded_file, "name", f"archivo_{file_index}")
+    result = {
+        "file_index": file_index,
+        "file_name": file_name,
+        "detected_role": None,
+        "confidence": "LOW",
+        "row_count": 0,
+        "evidence": "No se encontró una huella contable reconocida en las primeras filas",
+    }
+
+    try:
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(0)
+        raw_bytes = uploaded_file.read()
+        if hasattr(uploaded_file, "seek"):
+            uploaded_file.seek(0)
+        dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+        result["row_count"] = len(dataframe)
+        head = dataframe.head(45)
+        normalized_content = normalize_text(" | ".join(
+            str(cell) for _, row in head.iterrows() for cell in row if pd.notna(cell)
+        ))
+
+        # 1. Transbank 'Abonos por día': read the value below the 'Medio de pago:' label
+        if "abonos por dia" in normalized_content and "medio de pago" in normalized_content:
+            for row_index in range(len(head) - 1):
+                for col_index, cell in enumerate(head.iloc[row_index].values):
+                    if normalize_text(cell).startswith("medio de pago"):
+                        medium = normalize_text(head.iloc[row_index + 1].values[col_index])
+                        role = CLP_TBK_MEDIUM_ROLES.get(medium)
+                        if role:
+                            result.update(
+                                detected_role=role,
+                                confidence="HIGH",
+                                evidence=f"Huella interna: Transbank 'Abonos por día' · Medio de pago: {str(head.iloc[row_index + 1].values[col_index]).strip()}",
+                            )
+                            return result
+
+        # 2. Bordero 'Cargos de Débitos y Créditos'
+        if "cargos de debitos y creditos" in normalized_content or (
+            "cod. deb" in normalized_content and "reserva" in normalized_content and "factura" in normalized_content
+        ):
+            result.update(detected_role="erp", confidence="HIGH", evidence="Huella interna: Borderó FrontOffice 'Cargos de Débitos y Créditos'")
+            return result
+
+        # 3. Bank statement in pesos
+        if ("saldo disponible" in normalized_content and "saldo contable" in normalized_content) or (
+            "cargos" in normalized_content and "abonos" in normalized_content and "sucursal" in normalized_content
+        ):
+            currency = "Pesos Chilenos (CLP)" if "pesos" in normalized_content else "moneda no indicada"
+            result.update(detected_role="bank", confidence="HIGH", evidence=f"Huella interna: Cartola Cuenta Corriente ({currency})")
+            return result
+    except Exception:
+        pass
+
+    normalized_filename = normalize_text(file_name)
+    for role_key, keywords in CLP_FILENAME_FALLBACKS:
+        if any(kw in normalized_filename for kw in keywords):
+            result.update(detected_role=role_key, confidence="MEDIUM", evidence=f"Identificado por nombre de archivo ('{file_name}')")
+            break
+    return result
+
+
+def detect_and_align_clp_files(uploaded_files: List[Any]) -> Dict[str, Any]:
+    """Inspects a batch of uploaded Excel files and aligns them against the 5 required CLP roles."""
+    inspected_files = [inspect_single_clp_excel_file(f, idx) for idx, f in enumerate(uploaded_files)]
+    return align_inspected_files(inspected_files, CLP_REQUIRED_ROLES)

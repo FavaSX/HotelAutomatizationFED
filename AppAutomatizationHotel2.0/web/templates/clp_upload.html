@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block module_subtitle %}Módulo Pesos (CLP){% endblock %}
+
+{% block content %}
+<!-- Processing Overlay -->
+<div id="processingOverlay">
+  <div class="spinner-border text-warning mb-3 processing-spinner" role="status"></div>
+  <h4 class="fw-bold mb-1">Analizando Conciliación en Pesos...</h4>
+  <p class="text-white-50 mb-0">Cruzando Transbank (Crédito, Débito, Prepago) vs. Borderó y Cartola en memoria. No se guardará nada hasta su confirmación.</p>
+</div>
+
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <span class="badge rounded-pill px-3 py-1 mb-1 badge-brand-pill">
+      <i class="bi bi-shield-check me-1"></i> Flujo Inteligente: Auto-Detección ➔ Previsualización en Memoria ➔ Confirmación en BD
+    </span>
+    <h3 class="fw-bold mb-0">Conciliación en Pesos (CLP) — Carga y Auto-Detección</h3>
+    <p class="text-muted small mb-0">El motor inspecciona los 5 reportes Excel (Borderó, Cartola y los 3 abonos Transbank), los alinea automáticamente y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
+  </div>
+
+  <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
+  <div class="d-flex align-items-center gap-2 card-executive px-3 py-2">
+    <div class="me-1">
+      <div class="text-uppercase text-muted fw-bold db-status-label">Estado BD (Pruebas)</div>
+      <div class="fw-bold small">
+        <i class="bi bi-database me-1 text-primary"></i> {{ saved_clp_processes_count|default:0 }} cierre(s) en pesos · {{ saved_processes_count|default:0 }} en total
+      </div>
+    </div>
+    <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#clearTestDbModal" {% if not saved_processes_count %}disabled{% endif %}>
+      <i class="bi bi-trash3 me-1"></i> Vaciar BD Pruebas
+    </button>
+  </div>
+</div>
+
+<!-- Modal Ejecutivo: Vaciar BD Pruebas -->
+<div class="modal fade" id="clearTestDbModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <div class="modal-header border-0 pb-0 pt-4 px-4">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center modal-icon-danger">
+            <i class="bi bi-database-dash fs-4"></i>
+          </div>
+          <div>
+            <h5 class="modal-title fw-bold mb-0">¿Vaciar Base de Datos de Pruebas?</h5>
+            <small class="text-muted">{{ saved_processes_count|default:0 }} proceso(s) almacenado(s), en dólares y en pesos</small>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        <p class="text-muted small mb-0">
+          Se eliminarán todos los cierres de conciliación de prueba (dólares y pesos) y sus transacciones asociadas, conservando intactos los catálogos de tarjetas y estados.
+        </p>
+      </div>
+      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+        <form method="post" action="{% url 'clear_test_db' %}" class="m-0">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="clp_upload">
+          <button type="submit" class="btn btn-danger rounded-pill px-4 fw-semibold shadow-sm">
+            <i class="bi bi-trash3 me-1"></i> Sí, Vaciar Base de Datos
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<form method="post" enctype="multipart/form-data" id="clpUploadForm"
+      data-detect-url="{% url 'clp_detect_files' %}"
+      data-role-inputs='{"erp": "input_clp_erp", "bank": "input_clp_bank", "tbk_credit": "input_clp_tbk_credit", "tbk_debit": "input_clp_tbk_debit", "tbk_prepaid": "input_clp_tbk_prepaid"}'>
+  {% csrf_token %}
+
+  <!-- Hidden file inputs populated automatically upon alignment confirmation -->
+  <input type="file" name="clp_erp_file" id="input_clp_erp" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_bank_file" id="input_clp_bank" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_tbk_credit_file" id="input_clp_tbk_credit" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_tbk_debit_file" id="input_clp_tbk_debit" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_tbk_prepaid_file" id="input_clp_tbk_prepaid" class="d-none" accept=".xls,.xlsx">
+
+  <div class="card card-executive p-4 mb-4">
+    <!-- FASE 1: Zona de Carga Masiva -->
+    <div id="expPhase1Dropzone">
+      <div class="mb-2">
+        <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-1 rounded-pill">
+          <i class="bi bi-1-circle-fill me-1 text-warning"></i> Paso 1 de 2: Carga Masiva de Archivos
+        </span>
+      </div>
+
+      <label class="dropzone p-5 w-100 text-center d-block mb-2" id="bulkDropzoneBox">
+        <div class="mb-3">
+          <span class="d-inline-flex align-items-center justify-content-center rounded-circle dropzone-icon-circle">
+            <i class="bi bi-cloud-arrow-up-fill fs-2"></i>
+          </span>
+        </div>
+        <h5 class="fw-bold mb-1">Arrastre aquí los 5 archivos Excel o haga clic para seleccionarlos</h5>
+        <p class="text-muted small mb-3">
+          El sistema identificará automáticamente cuál corresponde a
+          <strong>Borderó ERP, Cartola Bancaria y los abonos Transbank de Crédito, Débito y Prepago</strong>
+          (los 3 abonos se distinguen por la celda "Medio de pago").
+        </p>
+        <span class="btn btn-brand rounded-pill px-4 py-2 fw-semibold shadow-sm">
+          <i class="bi bi-folder2-open me-1"></i> Seleccionar Archivos (.xls / .xlsx)
+        </span>
+        <input type="file" id="bulkFilesInput" class="d-none" accept=".xls,.xlsx" multiple onchange="handleBulkFilesSelected(this.files)">
+      </label>
+    </div>
+
+    <!-- Estado de Escaneo de Huellas -->
+    <div id="expScanningSpinner" class="text-center py-5 d-none">
+      <div class="spinner-border text-warning mb-3" role="status"></div>
+      <h6 class="fw-bold mb-1">Inspeccionando estructura interna de los archivos...</h6>
+      <p class="text-muted small mb-0">Leyendo encabezados, medio de pago Transbank y formato de columnas.</p>
+    </div>
+
+    <!-- FASE 2: Tabla de Alineación Detectada y Confirmación -->
+    <div id="expPhase2Alignment" class="d-none">
+      <div class="mb-3">
+        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 rounded-pill mb-1">
+          <i class="bi bi-2-circle-fill me-1"></i> Paso 2 de 2: Verificación de Alineación y Confirmación
+        </span>
+        <h5 class="fw-bold mb-0">Revise y confirme la alineación de los archivos detectados</h5>
+        <p class="text-muted small mb-0">
+          Verifique que cada rol tenga asignado el archivo correcto. Si se equivocó en uno o le faltó alguno, puede usar el botón <strong>"Subir"</strong> de esa fila sin volver a cargar todo.
+        </p>
+      </div>
+
+      <div id="alignmentSummaryAlert" class="alert rounded-4 mb-3 py-2 px-3 small"></div>
+
+      <div class="table-responsive border rounded-4 mb-4">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="alignment-thead">
+            <tr class="text-uppercase text-muted">
+              <th class="ps-3 py-2">Rol Requerido por el Sistema</th>
+              <th class="py-2">Archivo Asignado (Elegir o Subir Individual)</th>
+              <th class="py-2">Evidencia / Huella Interna Detectada</th>
+              <th class="text-center pe-3 py-2">Certeza</th>
+            </tr>
+          </thead>
+          <tbody id="alignmentTableBody" class="small"></tbody>
+        </table>
+      </div>
+
+      <div class="d-flex flex-wrap justify-content-between align-items-center bg-light border rounded-4 p-3 gap-3">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
+          <div>
+            <div class="fw-bold small">¿La alineación de los 5 archivos es correcta?</div>
+            <div class="text-muted small">Al confirmar, los archivos se procesarán y se abrirá la previsualización en memoria.</div>
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary rounded-pill px-4" onclick="resetExperimentalFiles()">
+            <i class="bi bi-arrow-repeat me-1"></i> Cambiar Todos los Archivos
+          </button>
+          <button type="button" id="btnConfirmAlignment" class="btn btn-brand btn-lg rounded-pill px-5 shadow-sm" onclick="confirmAlignmentAndSubmit()">
+            <i class="bi bi-check2-circle me-2"></i> Confirmar Alineación y Procesar
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/usd_upload.js' %}?v=4"></script>
+{% endblock %}

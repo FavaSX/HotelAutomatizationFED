@@ -62,6 +62,26 @@ TRANSBANK_USD_COLUMN_RULES = {
     "installment_number": {"keywords": ["n cuota", "n° cuota"], "default_index": 8},
 }
 
+# Transbank "Abonos por día" report (Crédito / Débito / Prepago en Pesos).
+# The detail header is split across two rows (29 and 30); both are scanned.
+TRANSBANK_CLP_COLUMN_RULES = {
+    "sale_date": {"keywords": ["fecha de venta"], "default_index": 1},
+    "movement_type": {"keywords": ["tipo de movimiento"], "default_index": 2},
+    "merchant_code": {"keywords": ["codigo de comercio"], "default_index": 3},
+    "merchant_location": {"keywords": ["nombre local"], "default_index": 4},
+    "gross_amount": {"keywords": ["monto original de venta"], "default_index": 6},
+    "installment_type": {"keywords": ["tipo de venta/cuota", "tipo de venta"], "default_index": 8},
+    "installment_number": {"keywords": ["n° de cuota", "n de cuota"], "default_index": 9},
+    "valid_amount": {"keywords": ["monto venta valido para abono"], "default_index": 10},
+    "commission": {"keywords": ["comision transbank (-)"], "default_index": 11},
+    "commission_vat": {"keywords": ["iva comision transbank (-)"], "default_index": 12},
+    "net_deposit": {"keywords": ["total abono (=)"], "default_index": 13},
+    "masked_card_number": {"keywords": ["n° de tarjeta", "n de tarjeta"], "default_index": 24},
+    "authorization_code": {"keywords": ["codigo de autorizacion de venta"], "default_index": 25},
+    "transaction_identifier": {"keywords": ["id transaccion (tid)", "id transaccion"], "default_index": 30},
+    "receipt_number": {"keywords": ["n° de boleta", "n de boleta"], "default_index": 31},
+}
+
 
 # ==============================================================================
 # 2. HYBRID COLUMN RESOLVER
@@ -144,10 +164,40 @@ def safe_decimal(raw_value: Any, default: Decimal = Decimal("0.00")) -> Decimal:
         return default
 
 
+def normalize_auth_code(raw_value: Any) -> str:
+    """
+    Authorization code key used to cross Transbank against the ERP / Bordero:
+    uppercase and without leading zeros (Excel drops them from numeric codes,
+    while cashiers often prepend an extra '0' to alphanumeric ones).
+    """
+    return clean_code_string(raw_value).lstrip("0")
+
+
+SPANISH_MONTHS = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7,
+    "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+}
+
+
+def _parse_spanish_long_date(text: str):
+    """Parses Transbank long dates such as '04 septiembre 2026'."""
+    parts = normalize_text(text).replace(" de ", " ").split()
+    if len(parts) != 3 or parts[1] not in SPANISH_MONTHS:
+        return None
+    try:
+        return pd.Timestamp(year=int(parts[2]), month=SPANISH_MONTHS[parts[1]], day=int(parts[0])).date()
+    except (ValueError, TypeError):
+        return None
+
+
 def safe_date(raw_value: Any):
     """Parses date values safely, strictly returning None instead of pd.NaT."""
     if pd.isna(raw_value):
         return None
+    if isinstance(raw_value, str):
+        spanish_date = _parse_spanish_long_date(raw_value)
+        if spanish_date:
+            return spanish_date
     try:
         parsed_timestamp = pd.to_datetime(raw_value, dayfirst=True, errors="coerce")
         if pd.isna(parsed_timestamp):

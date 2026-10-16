@@ -19,6 +19,7 @@ from .column_detector import (
     CARD_OPERATOR_COLUMN_RULES,
     resolve_dataframe_columns,
     clean_code_string,
+    normalize_auth_code,
     safe_decimal,
     safe_date,
     safe_time,
@@ -26,14 +27,10 @@ from .column_detector import (
 )
 
 
-def parse_and_validate_bank_deposits(
-    bank_dataframe: pd.DataFrame,
-    expected_deposits: List[Tuple[str, Decimal]],
-    tolerance: Decimal = Decimal("0.50")
-) -> List[Dict[str, Any]]:
+def parse_bank_statement_movements(bank_dataframe: pd.DataFrame) -> List[BankStatementMovement]:
     """
-    Parses the Bank Statement (cartola.xls or cartola.xlsx) in memory using hybrid column detection
-    and validates one or multiple expected Transbank deposits.
+    Parses every charge / deposit row of a Bank Statement (cartola.xls or cartola.xlsx)
+    in memory using hybrid column detection.
     """
     columns = resolve_dataframe_columns(bank_dataframe, BANK_STATEMENT_COLUMN_RULES)
     bank_movements: List[BankStatementMovement] = []
@@ -61,6 +58,35 @@ def parse_and_validate_bank_deposits(
         )
         bank_movements.append(movement)
 
+    return bank_movements
+
+
+def serialize_bank_movement(movement: BankStatementMovement, is_matched_target: bool) -> Dict[str, Any]:
+    """JSON-serializable representation of a bank movement for the in-memory preview session."""
+    return {
+        "movement_date": movement.movement_date.strftime("%d/%m/%Y") if movement.movement_date else None,
+        "description": movement.description,
+        "branch_or_channel": movement.branch_or_channel,
+        "document_number": movement.document_number,
+        "charge_amount": float(movement.charge_amount),
+        "deposit_amount": float(movement.deposit_amount),
+        "balance_amount": float(movement.balance_amount),
+        "is_transbank_deposit": movement.is_transbank_deposit,
+        "is_matched_target": is_matched_target,
+    }
+
+
+def parse_and_validate_bank_deposits(
+    bank_dataframe: pd.DataFrame,
+    expected_deposits: List[Tuple[str, Decimal]],
+    tolerance: Decimal = Decimal("0.50")
+) -> List[Dict[str, Any]]:
+    """
+    Parses the Bank Statement (cartola.xls or cartola.xlsx) in memory using hybrid column detection
+    and validates one or multiple expected Transbank deposits.
+    """
+    bank_movements = parse_bank_statement_movements(bank_dataframe)
+
     validations_summary = []
     for modality_code, expected_amount in expected_deposits:
         matched_movement = next(
@@ -74,18 +100,7 @@ def parse_and_validate_bank_deposits(
             "movement_date": matched_movement.movement_date if matched_movement else None,
             "is_matched": matched_movement is not None,
             "movements_data": [
-                {
-                    "movement_date": m.movement_date.strftime("%d/%m/%Y") if m.movement_date else None,
-                    "description": m.description,
-                    "branch_or_channel": m.branch_or_channel,
-                    "document_number": m.document_number,
-                    "charge_amount": float(m.charge_amount),
-                    "deposit_amount": float(m.deposit_amount),
-                    "balance_amount": float(m.balance_amount),
-                    "is_transbank_deposit": m.is_transbank_deposit,
-                    "is_matched_target": (m is matched_movement),
-                }
-                for m in bank_movements
+                serialize_bank_movement(m, m is matched_movement) for m in bank_movements
             ],
         })
 
@@ -211,3 +226,91 @@ def parse_card_operator_statements(
 
     return card_operator_index
 
+
+
+# Peso card payment codes of the Bordero, classified by the description text.
+# Red Compra (RCO) carries both debit and prepaid cards; every other card code is credit.
+CLP_BORDERO_CARD_KEYWORDS = (
+    ("REDCOMPRA", None),
+    ("RED COMPRA", None),
+    ("VISA", "VI"),
+    ("MASTER", "MC"),
+    ("AMEX", "AX"),
+    ("AMERICAN", "AX"),
+    ("DINERS", "DI"),
+)
+
+
+def classify_bordero_clp_payment(description: str):
+    """
+    Returns (is_peso_card_payment, payment_group, card_code) for a Bordero 'Descripción'.
+    payment_group is 'REDCOMPRA' (debit / prepaid) or 'CREDIT'. US$ rows belong to Phase 1.
+    """
+    upper_desc = description.upper()
+    if "US$" in upper_desc or ("$" not in upper_desc and "COMPRA" not in upper_desc):
+        return False, None, None
+    for keyword, card_code in CLP_BORDERO_CARD_KEYWORDS:
+        if keyword in upper_desc:
+            return True, ("REDCOMPRA" if card_code is None else "CREDIT"), card_code
+    return False, None, None
+
+
+def parse_bordero_clp_transactions(
+    bordero_dataframe: pd.DataFrame,
+) -> Tuple[List[Dict[str, Any]], Dict[str, List[int]]]:
+    """
+    Parses the Hotel Bordero ("Cargos de Débitos y Créditos") in memory, keeping only peso card
+    payments (Red Compra, Visa $, Master Card $, Amex $, Diners $) including their reversals.
+    Repeated page headers, 'Total VHF' and footer rows are skipped because they carry no card code.
+
+    Returns the serialized rows and an index {normalized_auth_code: [row positions]}.
+    """
+    columns = resolve_dataframe_columns(bordero_dataframe, ERP_COLUMN_RULES)
+    rows: List[Dict[str, Any]] = []
+    rows_by_auth_code: Dict[str, List[int]] = {}
+
+    for excel_row_number, (_, row) in enumerate(bordero_dataframe.iterrows(), start=1):
+        description = str(safe_cell(row, columns["payment_description"]) or "").strip()
+        is_card_payment, payment_group, card_code = classify_bordero_clp_payment(description)
+        if not is_card_payment:
+            continue
+        raw_amount = safe_decimal(safe_cell(row, columns["amount"]))
+        if raw_amount == 0:
+            continue
+
+        # The 'Factura' header sits one column to the right of its merged data cell.
+        invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"]))
+        if not invoice_number:
+            invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"] - 1))
+
+        raw_auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
+        transaction_date = safe_date(safe_cell(row, columns["transaction_date"]))
+        transaction_time = safe_time(safe_cell(row, columns["transaction_time"]))
+
+        position = len(rows)
+        rows.append({
+            "excel_row": excel_row_number,
+            "card_code": card_code or "",
+            "payment_group": payment_group,
+            "payment_code": str(safe_cell(row, columns["payment_code"]) or "").strip().upper(),
+            "payment_description": description,
+            "room_number": clean_code_string(safe_cell(row, columns["room_number"])),
+            "room_type": str(safe_cell(row, columns["room_type"]) or "").strip(),
+            "reservation_number": clean_code_string(safe_cell(row, columns["reservation_number"])),
+            "account_code": clean_code_string(safe_cell(row, columns["account_code"])),
+            "invoice_number": invoice_number,
+            "authorization_code": raw_auth_code,
+            "transaction_date": transaction_date.strftime("%d/%m/%Y") if transaction_date else None,
+            "transaction_time": transaction_time.strftime("%H:%M:%S") if transaction_time else None,
+            "cashier_username": str(safe_cell(row, columns["cashier_username"]) or "").strip(),
+            "guest_name": " ".join(str(safe_cell(row, columns["guest_name"]) or "").split()),
+            # Payments are negative in the Bordero; reversals come as positive values.
+            "amount": float(-raw_amount),
+            "reconciled": False,
+        })
+
+        normalized_code = normalize_auth_code(raw_auth_code)
+        if normalized_code:
+            rows_by_auth_code.setdefault(normalized_code, []).append(position)
+
+    return rows, rows_by_auth_code

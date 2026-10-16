@@ -1,3 +1,4 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -35,7 +36,13 @@ class ReconciliationStatus(models.Model):
 
 class SystemConfiguration(models.Model):
     usd_rounding_tolerance = models.DecimalField(max_digits=6, decimal_places=2, default=0.50)
-    clp_rounding_tolerance = models.DecimalField(max_digits=8, decimal_places=2, default=5.00)
+    # Business rule (requirements survey): CLP tolerance between ±500 and ±1.000 pesos.
+    clp_rounding_tolerance = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=1000.00,
+        validators=[MinValueValidator(500), MaxValueValidator(1000)],
+    )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
 

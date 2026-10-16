@@ -1,9 +1,9 @@
 /**
- * USD Preview & Commit Logic (usd_preview.html)
+ * Preview & Commit Logic (usd_preview.html, also loaded by clp_preview.html)
  * Handles:
  *  - Mayor a Menor / Menor a Mayor numeric column sorting
  *  - Card brand filter pills
- *  - Instant voucher search across all 3 tabs
+ *  - Instant voucher search across every voucher tab (tbody[data-voucher-tab])
  *  - 2-step AJAX database commit with official Excel download
  */
 
@@ -125,11 +125,11 @@ function applyVoucherFilters() {
     clearBtn.classList.toggle('d-none', query.length === 0);
   }
 
-  const vMatched = filterSingleTab('tbodyMatched', 'noMatchRowMatched', 'countBadgeMatched');
-  const vDisc = filterSingleTab('tbodyDiscrepancies', 'noMatchRowDiscrepancies', 'countBadgeDiscrepancies');
-  const vOrphans = filterSingleTab('tbodyOrphans', 'noMatchRowOrphans', 'countBadgeOrphans');
-
-  const totalVisible = vMatched + vDisc + vOrphans;
+  let totalVisible = 0;
+  document.querySelectorAll('tbody[data-voucher-tab]').forEach(tbody => {
+    const visible = filterSingleTab(tbody.id, tbody.dataset.noMatchRow, tbody.dataset.countBadge);
+    if (tbody.dataset.voucherTab !== 'aux') totalVisible += visible;
+  });
   const totalBadge = document.getElementById('visibleTotalBadge');
   if (totalBadge) {
     totalBadge.textContent = totalVisible;

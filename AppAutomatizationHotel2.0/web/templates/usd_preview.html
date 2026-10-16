@@ -252,7 +252,7 @@
               <th class="pe-4">Diagnóstico</th>
             </tr>
           </thead>
-          <tbody id="tbodyMatched">
+          <tbody id="tbodyMatched" data-voucher-tab="voucher" data-no-match-row="noMatchRowMatched" data-count-badge="countBadgeMatched">
             {% for item in matched_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
@@ -328,7 +328,7 @@
               <th class="pe-4">Diagnóstico y Estado Nivel 2</th>
             </tr>
           </thead>
-          <tbody id="tbodyDiscrepancies">
+          <tbody id="tbodyDiscrepancies" data-voucher-tab="voucher" data-no-match-row="noMatchRowDiscrepancies" data-count-badge="countBadgeDiscrepancies">
             {% for item in discrepancy_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
@@ -410,7 +410,7 @@
               <th class="pe-4">Observación y Estado Nivel 2</th>
             </tr>
           </thead>
-          <tbody id="tbodyOrphans">
+          <tbody id="tbodyOrphans" data-voucher-tab="voucher" data-no-match-row="noMatchRowOrphans" data-count-badge="countBadgeOrphans">
             {% for item in orphan_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
@@ -720,6 +720,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_preview.js' %}?v=14"></script>
+<script src="{% static 'js/usd_preview.js' %}?v=15"></script>
 {% endblock %}
 
