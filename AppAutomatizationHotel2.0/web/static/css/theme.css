@@ -691,6 +691,16 @@ html[data-bs-theme="light"] .reason-gold {
     grid-template-columns: 1fr;
   }
 }
+.suggestion-2col-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--surface);
+}
+@media (max-width: 767.98px) {
+  .suggestion-2col-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .suggestion-col-box {
   padding: 0.65rem 0.95rem;
   border-right: 1px solid var(--border);

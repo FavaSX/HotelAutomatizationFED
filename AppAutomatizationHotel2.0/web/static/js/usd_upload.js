@@ -1,10 +1,12 @@
 /**
- * USD Upload & Auto-Detection Logic (usd_upload.html)
+ * Upload & Auto-Detection Logic shared by usd_upload.html and clp_upload.html
  * Handles bulk drag-and-drop, structural fingerprint inspection,
  * manual or single-file slot replacement, and form submission.
+ * The upload form declares its detection URL (data-detect-url) and, for CLP,
+ * its role -> hidden input map (data-role-inputs).
  */
 
-const ROLE_INPUT_MAP = {
+const USD_ROLE_INPUT_MAP = {
   erp: 'input_usd_erp',
   transbank: 'input_usd_tbk',
   bank: 'input_usd_bank',
@@ -17,8 +19,22 @@ const ROLE_INPUT_MAP = {
 let bulkUploadedFiles = [];
 let latestDetectionReport = null;
 
+function getUploadForm() {
+  return document.querySelector('form[data-detect-url]');
+}
+
+function getRoleInputMap() {
+  const form = getUploadForm();
+  const declared = form ? form.getAttribute('data-role-inputs') : null;
+  return declared ? JSON.parse(declared) : USD_ROLE_INPUT_MAP;
+}
+
+function getRequiredFileCount() {
+  return Object.keys(getRoleInputMap()).length;
+}
+
 function getDetectFilesUrl() {
-  const form = document.getElementById('usdUploadForm');
+  const form = getUploadForm();
   return form ? form.getAttribute('data-detect-url') : '/reconciliation/usd/detect-files/';
 }
 
@@ -228,22 +244,23 @@ function validateCurrentAlignmentSelection() {
   const uniqueIndices = new Set(chosenIndices);
   const alertBox = document.getElementById('alignmentSummaryAlert');
   const confirmBtn = document.getElementById('btnConfirmAlignment');
+  const required = getRequiredFileCount();
 
-  if (chosenIndices.length === 7 && uniqueIndices.size === 7) {
+  if (chosenIndices.length === required && uniqueIndices.size === required) {
     alertBox.className = 'alert alert-success rounded-4 mb-3 py-2 px-3 small d-flex align-items-center justify-content-between';
     alertBox.innerHTML = `
-      <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡7 de 7 archivos alineados sin conflictos!</strong> Revise la tabla y confirme para iniciar el cruce financiero.</div>
+      <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡${required} de ${required} archivos alineados sin conflictos!</strong> Revise la tabla y confirme para iniciar el cruce financiero.</div>
       <span class="badge bg-success rounded-pill">${bulkUploadedFiles.length} archivo(s) analizado(s)</span>
     `;
     confirmBtn.disabled = false;
-  } else if (chosenIndices.length === 7 && uniqueIndices.size < 7) {
+  } else if (chosenIndices.length === required && uniqueIndices.size < required) {
     alertBox.className = 'alert alert-warning rounded-4 mb-3 py-2 px-3 small';
-    alertBox.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Atención:</strong> Ha asignado el mismo archivo en más de un rol. Por favor asigne 7 archivos distintos.';
+    alertBox.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Atención:</strong> Ha asignado el mismo archivo en más de un rol. Por favor asigne ${required} archivos distintos.`;
     confirmBtn.disabled = true;
   } else {
-    const missingCount = 7 - chosenIndices.length;
+    const missingCount = required - chosenIndices.length;
     alertBox.className = 'alert alert-danger rounded-4 mb-3 py-2 px-3 small';
-    alertBox.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i><strong>Faltan ${missingCount} archivo(s) por alinear</strong> (se subieron ${bulkUploadedFiles.length} archivo(s)). Seleccione los faltantes o vuelva a cargar el lote completo de 7 archivos.`;
+    alertBox.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i><strong>Faltan ${missingCount} archivo(s) por alinear</strong> (se subieron ${bulkUploadedFiles.length} archivo(s)). Seleccione los faltantes o vuelva a cargar el lote completo de ${required} archivos.`;
     confirmBtn.disabled = true;
   }
 }
@@ -263,10 +280,10 @@ function confirmAlignmentAndSubmit() {
     const roleKey = sel.getAttribute('data-role-key');
     const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
     if (fileIdx === null || !bulkUploadedFiles[fileIdx]) {
-      alert('Por favor asegúrese de que los 7 roles tengan un archivo asignado.');
+      alert(`Por favor asegúrese de que los ${getRequiredFileCount()} roles tengan un archivo asignado.`);
       return;
     }
-    const inputId = ROLE_INPUT_MAP[roleKey];
+    const inputId = getRoleInputMap()[roleKey];
     const fileInput = document.getElementById(inputId);
     const dt = new DataTransfer();
     dt.items.add(bulkUploadedFiles[fileIdx]);
@@ -274,6 +291,6 @@ function confirmAlignmentAndSubmit() {
   }
 
   showProcessingOverlay();
-  document.getElementById('usdUploadForm').submit();
+  getUploadForm().submit();
 }
 
