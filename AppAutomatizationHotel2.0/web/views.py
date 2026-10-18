@@ -14,7 +14,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 
-from .models import ReconciliationProcess
+from .models import ReconciliationProcess, SystemConfiguration
 from .services import (
     calculate_usd_preview,
     commit_usd_preview_to_database,
@@ -97,12 +97,20 @@ def usd_preview_view(request):
     needs_enrichment = (
         "suggestion_counts" not in preview
         or any(
-            v.get("suggestion") and "action" not in v.get("suggestion", {})
+            v.get("suggestion") and (
+                "action" not in v.get("suggestion", {})
+                or "Doc #" in v.get("suggestion", {}).get("headline", "")
+            )
             for v in preview.get("discrepancy_vouchers", []) + preview.get("orphan_vouchers", [])
         )
     )
     if needs_enrichment:
         enrich_preview_with_suggestions(preview)
+        request.session[USD_SESSION_KEY] = preview
+
+    if "tolerance" not in preview:
+        config = SystemConfiguration.objects.first()
+        preview["tolerance"] = float(config.usd_rounding_tolerance if config else 0.50)
         request.session[USD_SESSION_KEY] = preview
 
     all_cashiers = sorted({
@@ -298,6 +306,7 @@ def clp_preview_view(request):
         or any(
             v.get("suggestion") and (
                 "action" not in v.get("suggestion", {})
+                or "Doc #" in v.get("suggestion", {}).get("headline", "")
                 or v.get("suggestion", {}).get("headline", "").startswith("Posible registro")
             )
             for v in preview.get("discrepancy_vouchers", []) + preview.get("orphan_vouchers", []) + preview.get("out_of_period_vouchers", [])
@@ -311,12 +320,6 @@ def clp_preview_view(request):
         enrich_clp_preview_with_suggestions(preview)
         request.session[CLP_SESSION_KEY] = preview
 
-    # Same order as the official Excel report: most actionable exceptions first.
-    exception_vouchers = (
-        preview.get("orphan_vouchers", [])
-        + preview.get("discrepancy_vouchers", [])
-        + preview.get("out_of_period_vouchers", [])
-    )
     all_cashiers = sorted({
         r.get("cashier_username", "").strip()
         for r in (
@@ -324,7 +327,6 @@ def clp_preview_view(request):
             + preview.get("discrepancy_vouchers", [])
             + preview.get("orphan_vouchers", [])
             + preview.get("out_of_period_vouchers", [])
-            + preview.get("unmatched_erp_rows", [])
         )
         if r.get("cashier_username") and r.get("cashier_username") != "—"
     })
@@ -338,8 +340,6 @@ def clp_preview_view(request):
         "discrepancy_vouchers": preview.get("discrepancy_vouchers", []),
         "orphan_vouchers": preview.get("orphan_vouchers", []),
         "out_of_period_vouchers": preview.get("out_of_period_vouchers", []),
-        "unmatched_erp_rows": preview.get("unmatched_erp_rows", []),
-        "exception_vouchers": exception_vouchers,
         "cashiers": all_cashiers,
         "counts": preview.get("counts", {}),
         "suggestion_counts": preview.get("suggestion_counts", {}),

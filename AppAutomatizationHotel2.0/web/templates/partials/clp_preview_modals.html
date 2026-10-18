@@ -51,10 +51,10 @@
               <i class="bi bi-card-list me-1"></i>Por página:
             </label>
             <select id="clpSugPageSizeSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 95px;" onchange="changeClpSugPageSize(this.value)">
-              <option value="5">5</option>
-              <option value="10" selected>10</option>
-              <option value="20">20</option>
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
               <option value="50">50</option>
+              <option value="100">100</option>
               <option value="ALL">Todas</option>
             </select>
           </div>
@@ -168,7 +168,7 @@
             <div class="d-flex flex-wrap justify-content-between align-items-center small gap-1">
               <span class="text-muted fw-semibold">Vouchers ({{ counts.total }}):</span>
               <div class="d-flex flex-wrap gap-1">
-                <span class="badge bg-success-subtle text-success">{{ counts.matched }} Cuadrados</span>
+                <span class="badge bg-success-subtle text-success">{{ counts.matched }} Exactos</span>
                 <span class="badge bg-warning-subtle text-dark">{{ counts.discrepancies }} Dif.</span>
                 <span class="badge bg-danger-subtle text-danger">{{ counts.orphans }} Huérfanos</span>
                 <span class="badge bg-secondary-subtle text-secondary">{{ counts.out_of_period }} Fuera de período</span>

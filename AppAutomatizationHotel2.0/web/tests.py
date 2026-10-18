@@ -289,12 +289,28 @@ class ClpViewsTests(TestCase):
 
         response = self.client.get(reverse("clp_preview"))
         self.assertContains(response, "F0FUAZ")
-        self.assertContains(response, "Reporte de Excepciones")
+        self.assertContains(response, "Ubicadas Exactas")
+        self.assertContains(response, "Tolerancia ±$1.000 CLP")
+        self.assertNotContains(response, "Borderó histórico (")
 
         response = self.client.post(reverse("clp_commit"), HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         data = response.json()
         self.assertTrue(data["success"])
         self.assertEqual(self.client.get(data["export_url"]).status_code, 200)
 
-    def test_usd_upload_page_still_renders(self):
+    def test_usd_upload_and_preview_render(self):
         self.assertEqual(self.client.get(reverse("usd_upload")).status_code, 200)
+
+        # Verify USD preview renders the USD tolerance badge when session is populated
+        session = self.client.session
+        session["usd_reconciliation_preview"] = {
+            "accounting_period": "Cierre Dólares — 08/09/2026",
+            "tolerance": 0.50,
+            "bank_validation": {},
+            "counts": {"matched": 0, "discrepancies": 0, "orphans": 0, "total": 0},
+            "suggestion_counts": {},
+        }
+        session.save()
+        response = self.client.get(reverse("usd_preview"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Tolerancia ±US$ 0,50 USD")

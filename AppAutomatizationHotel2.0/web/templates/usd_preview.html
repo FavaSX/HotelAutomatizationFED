@@ -5,11 +5,13 @@
 <!-- Top Header -->
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 p-3 card-executive">
   <div>
-    <div class="d-flex align-items-center gap-2 mb-1">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
       <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-1 rounded-pill fw-bold">
         <i class="bi bi-eye-fill me-1"></i> Previsualización en Memoria (Borrador)
       </span>
-      <span class="text-muted small">Base de datos intacta — Cero registros creados aún</span>
+      <span class="badge bg-light text-dark border px-3 py-1 rounded-pill">
+        <i class="bi bi-rulers me-1"></i> Tolerancia ±US$ {{ preview.tolerance|num_usd|default:"0,50" }} USD
+      </span>
     </div>
     <h3 class="fw-bold mb-0">{{ preview.accounting_period }}</h3>
   </div>
@@ -21,7 +23,8 @@
 <div class="card card-executive p-4 mb-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="fw-bold text-uppercase text-muted small mb-0">
-      <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abono en Cartola Bancaria
+      <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abonos en Cartola Bancaria
+      {% if bank.bank_account_number %}(Cta. {{ bank.bank_account_number }}){% elif preview.bank_account_number %}(Cta. {{ preview.bank_account_number }}){% endif %}
     </h6>
     {% if bank.is_matched %}
     <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fs-6">
@@ -53,7 +56,6 @@
         <small class="text-muted">
           Fecha abono: {{ bank.bank_movement_date|default:"No detectado" }}
           {% if bank.bank_name %} · {{ bank.bank_name }}{% endif %}
-          {% if bank.bank_account_number %} (Cta. {{ bank.bank_account_number }}){% endif %}
         </small>
       </div>
     </div>
@@ -389,7 +391,7 @@
         <button type="button"
                 class="btn-suggestion-trigger px-3 py-2"
                 onclick="openSectionSuggestionsModal('discrepancies')">
-          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ counts.discrepancies }} casos)
+          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ suggestion_counts.discrepancies_with|default:0 }} casos)
         </button>
       </div>
       {% endif %}
@@ -534,7 +536,7 @@
         <button type="button"
                 class="btn-suggestion-trigger px-3 py-2"
                 onclick="openSectionSuggestionsModal('orphans')">
-          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ counts.orphans }} casos)
+          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ suggestion_counts.orphans_with|default:0 }} casos)
         </button>
       </div>
       {% endif %}

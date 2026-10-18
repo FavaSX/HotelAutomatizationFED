@@ -396,6 +396,7 @@ def calculate_usd_preview(
         "matched_vouchers": matched_vouchers,
         "discrepancy_vouchers": discrepancy_vouchers,
         "orphan_vouchers": orphan_vouchers,
+        "tolerance": float(usd_tolerance),
         "counts": {
             "matched": len(matched_vouchers),
             "discrepancies": len(discrepancy_vouchers),

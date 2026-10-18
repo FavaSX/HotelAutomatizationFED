@@ -286,9 +286,10 @@ def _collect_orphan_erp_op_proposals(
                     reasons.append(_chip(f"Misma Fecha ({erp_date})", "cyan"))
                 reasons.append(_chip(f"Misma Tarjeta ({card_code})", "purple"))
 
+                erp_match_code = f"Cód. {erp_auth}" if erp_auth else "Sin código"
                 suggestion_payload = {
                     "confidence": "ALTA" if score >= 120 else "MEDIA",
-                    "headline": f"Coincidencia sugerida en ERP y Operadora (Doc #{erp_doc})",
+                    "headline": f"Coincidencia sugerida en ERP y Operadora ({erp_match_code})",
                     "action": f"Corregir código de autorización en ERP de '{erp_auth or 'sin código'}' a '{auth_code}' (Doc #{erp_doc})",
                     "files_involved": files_for_card(card_code),
                     "erp_cashier": erp_cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date,
@@ -409,9 +410,11 @@ def _enrich_unassigned_orphan(
         claimed_op_indices.add(exact_op_idx)
         assigned_orphans.add(orph_idx)
 
+        op_auth_match = str(exact_op.get("authorization_code") or "").strip()
+        op_match_str = f"Cód. {op_auth_match}" if op_auth_match else f"Monto {fmt_usd(op_usd)}"
         orph["suggestion"] = {
             "confidence": "MEDIA",
-            "headline": f"Ubicado en Operadora (Doc #{op_doc}) — No facturado en ERP",
+            "headline": f"Ubicado en Operadora ({op_match_str}) — No facturado en ERP",
             "action": f"Ingresar cobro de Doc #{op_doc} ({fmt_usd(tbk_usd)}) en ERP Hotel o verificar omisión de facturación",
             "files_involved": files_for_card(card_code),
             "manual_check_note": (

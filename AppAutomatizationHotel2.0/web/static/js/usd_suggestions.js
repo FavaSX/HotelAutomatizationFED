@@ -12,7 +12,7 @@ let currentSugFilterMode = 'ALL';
 let currentSugPageSize = 20;
 let currentSugWithPage = 1;
 let currentSugWithoutPage = 1;
-const SUG_WITHOUT_PAGE_SIZE = 10;
+const SUG_WITHOUT_PAGE_SIZE = 20;
 
 function formatUsdClient(val) {
   const num = Number(val) || 0;

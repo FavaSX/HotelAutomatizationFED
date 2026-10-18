@@ -135,20 +135,14 @@ def _build_candidate_suggestion(
     else:
         action = "Corregir el código de autorización en el ERP"
 
-    account = str(erp_row.get("account_code") or "").strip()
-    invoice = str(erp_row.get("invoice_number") or "").strip()
-    if account and account not in ("—", "0", "None"):
-        doc_ref = f"Doc #{account}"
-    elif invoice and invoice not in ("—", "0", "None"):
-        doc_ref = f"Fact #{invoice}"
-    else:
-        doc_ref = f"Fila {erp_row.get('excel_row')}"
+    erp_code = str(erp_row.get("authorization_code") or "").strip()
+    match_ref = f"Cód. {erp_code}" if erp_code else "Sin código"
 
     return {
         "confidence": "ALTA" if score >= HIGH_CONFIDENCE_SCORE else "MEDIA",
         "score": score,
         "erp_index": erp_idx,
-        "headline": f"Coincidencia sugerida en Borderó ERP ({doc_ref})",
+        "headline": f"Coincidencia sugerida en Borderó ERP ({match_ref})",
         "cause": detail["cause"],
         "missing_code": missing_code,
         "action": action,
@@ -379,14 +373,7 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
             voucher, target_row, erp_index_ref, score, detail, _tbk_file(voucher), default_erp_file
         )
 
-    # 4. Bordero card payments that no voucher claimed (e.g. credit sales settled in later deposits).
-    preview_data["unmatched_erp_rows"] = [
-        {**_erp_row_view(row), "erp_index": idx, "payment_group": row.get("payment_group")}
-        for idx, row in enumerate(erp_rows)
-        if idx not in claimed and float(row.get("amount") or 0) > 0
-    ]
-
-    # 5. Exception report columns (Tipo de error / Acción sugerida) for every non-matched voucher.
+    # 4. Exception report columns (Tipo de error / Acción sugerida) for every non-matched voucher.
     for bucket in ("discrepancy_vouchers", "orphan_vouchers", "out_of_period_vouchers"):
         for voucher in preview_data.get(bucket, []):
             suggestion = voucher.get("suggestion")
@@ -410,6 +397,5 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
         "out_of_period_with": oop_with,
         "out_of_period_without": len(out_of_period) - oop_with,
     }
-    preview_data["counts"]["unmatched_erp"] = len(preview_data["unmatched_erp_rows"])
     return preview_data
 

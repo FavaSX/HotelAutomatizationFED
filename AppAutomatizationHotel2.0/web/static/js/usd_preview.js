@@ -20,9 +20,7 @@ const voucherCurrentPages = {
   tabMatched: 1,
   tabDiscrepancies: 1,
   tabOrphans: 1,
-  tabOutOfPeriod: 1,
-  tabUnmatchedErp: 1,
-  tabExceptions: 1
+  tabOutOfPeriod: 1
 };
 
 const VOUCHER_PAGINATION_CONFIG = {
@@ -49,18 +47,6 @@ const VOUCHER_PAGINATION_CONFIG = {
     rangeId: 'pageRangeOutOfPeriod',
     totalId: 'pageTotalOutOfPeriod',
     listId: 'paginationListOutOfPeriod'
-  },
-  tbodyUnmatchedErp: {
-    tabId: 'tabUnmatchedErp',
-    rangeId: 'pageRangeUnmatchedErp',
-    totalId: 'pageTotalUnmatchedErp',
-    listId: 'paginationListUnmatchedErp'
-  },
-  tbodyExceptions: {
-    tabId: 'tabExceptions',
-    rangeId: 'pageRangeExceptions',
-    totalId: 'pageTotalExceptions',
-    listId: 'paginationListExceptions'
   }
 };
 

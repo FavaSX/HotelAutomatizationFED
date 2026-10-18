@@ -14,12 +14,6 @@
       <span class="badge bg-light text-dark border px-3 py-1 rounded-pill">
         <i class="bi bi-rulers me-1"></i> Tolerancia ±${{ preview.tolerance|num_clp }} CLP
       </span>
-      {% if preview.file_names.extra_erp %}
-      <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1 rounded-pill">
-        <i class="bi bi-journal-plus me-1"></i> +{{ preview.file_names.extra_erp|length }} Borderó histórico ({{ preview.file_names.extra_erp|join:", " }})
-      </span>
-      {% endif %}
-      <span class="text-muted small">Base de datos intacta — Cero registros creados aún</span>
     </div>
     <h3 class="fw-bold mb-0">{{ preview.accounting_period }}</h3>
   </div>
@@ -91,8 +85,7 @@
         <tr>
           <th class="ps-3">Medio de Pago</th>
           <th class="text-center">Vouchers</th>
-          <th class="text-center">Cuadrados</th>
-          <th class="text-center">Excepciones</th>
+          <th class="text-center">Ubicadas Exactas</th>
           <th class="text-end">Ventas TBK</th>
           <th class="text-end">Ventas Borderó</th>
           <th class="text-end">Diferencia</th>
@@ -111,7 +104,6 @@
           </td>
           <td class="text-center">{{ row.vouchers }}</td>
           <td class="text-center text-success fw-bold">{{ row.matched }}</td>
-          <td class="text-center {% if row.exceptions %}text-danger fw-bold{% endif %}">{{ row.exceptions }}</td>
           <td class="text-end">${{ row.tbk_sales|num_clp }}</td>
           <td class="text-end">${{ row.erp_sales|num_clp }}</td>
           <td class="text-end fw-bold {% if row.difference == 0 %}text-success{% else %}text-danger{% endif %}">${{ row.difference|num_clp }}</td>
@@ -125,7 +117,6 @@
           <td class="ps-3">TOTAL GENERAL</td>
           <td class="text-center">{{ counts.total }}</td>
           <td class="text-center text-success">{{ counts.matched }}</td>
-          <td class="text-center">{{ exception_vouchers|length }}</td>
           <td class="text-end">${{ clp_totals.tbk_sales|num_clp }}</td>
           <td class="text-end">${{ clp_totals.erp_sales|num_clp }}</td>
           <td class="text-end {% if clp_totals.difference == 0 %}text-success{% else %}text-danger{% endif %}">${{ clp_totals.difference|num_clp }}</td>
@@ -149,7 +140,7 @@
     <ul class="nav nav-tabs border-bottom-0 gap-2" id="previewTabs" role="tablist">
       <li class="nav-item">
         <button class="nav-link active fw-bold text-success" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button">
-          <i class="bi bi-check2-all me-1"></i> Cuadrados (<span id="countBadgeMatched">{{ counts.matched }}</span>)
+          <i class="bi bi-check2-all me-1"></i> Ubicadas Exactas (<span id="countBadgeMatched">{{ counts.matched }}</span>)
         </button>
       </li>
       <li class="nav-item">
@@ -165,16 +156,6 @@
       <li class="nav-item">
         <button class="nav-link fw-bold text-secondary" data-bs-toggle="tab" data-bs-target="#tabOutOfPeriod" type="button">
           <i class="bi bi-calendar-x me-1"></i> Fuera de Período (<span id="countBadgeOutOfPeriod">{{ counts.out_of_period }}</span>)
-        </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold text-primary" data-bs-toggle="tab" data-bs-target="#tabUnmatchedErp" type="button">
-          <i class="bi bi-journal-x me-1"></i> En Borderó sin Voucher (<span id="countBadgeUnmatchedErp">{{ counts.unmatched_erp }}</span>)
-        </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tabExceptions" type="button">
-          <i class="bi bi-clipboard-data me-1"></i> Reporte de Excepciones (<span id="countBadgeExceptions">{{ exception_vouchers|length }}</span>)
         </button>
       </li>
     </ul>
@@ -332,13 +313,13 @@
               </td>
             </tr>
             {% empty %}
-            <tr class="empty-static-row"><td colspan="9" class="text-center py-4 text-muted">No hay vouchers cuadrados.</td></tr>
+            <tr class="empty-static-row"><td colspan="9" class="text-center py-4 text-muted">No hay vouchers ubicados exactamente en este proceso.</td></tr>
             {% endfor %}
-            <tr id="noMatchRowMatched" class="d-none"><td colspan="9" class="text-center py-4 text-muted"><i class="bi bi-search me-1"></i> Sin resultados para ese filtro.</td></tr>
+            <tr id="noMatchRowMatched" class="d-none"><td colspan="9" class="text-center py-4 text-muted"><i class="bi bi-search me-1"></i> No se encontraron vouchers ubicados con ese criterio de búsqueda.</td></tr>
           </tbody>
         </table>
       </div>
-      {% include "partials/voucher_pagination_bar.html" with suffix="Matched" total=counts.matched label="Cuadrados" %}
+      {% include "partials/voucher_pagination_bar.html" with suffix="Matched" total=counts.matched label="Ubicadas Exactas" %}
     </div>
 
 
@@ -353,7 +334,7 @@
           <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> {{ suggestion_counts.discrepancies_without }} sin sugerencia</span>
         </div>
         <button type="button" class="btn-suggestion-trigger px-3 py-2" onclick="openClpSuggestionsModal('discrepancies')">
-          <i class="bi bi-stars"></i> Ver Diagnóstico Nivel 2 ({{ counts.discrepancies }} casos)
+          <i class="bi bi-stars"></i> Ver Diagnóstico Nivel 2 ({{ suggestion_counts.discrepancies_with|default:0 }} casos)
         </button>
       </div>
       {% endif %}
@@ -443,7 +424,7 @@
           <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> {{ suggestion_counts.orphans_without }} sin coincidencia en archivos</span>
         </div>
         <button type="button" class="btn-suggestion-trigger px-3 py-2" onclick="openClpSuggestionsModal('orphans')">
-          <i class="bi bi-stars"></i> Ver Sugerencias Asistidas ({{ counts.orphans }} casos)
+          <i class="bi bi-stars"></i> Ver Sugerencias Asistidas ({{ suggestion_counts.orphans_with|default:0 }} casos)
         </button>
       </div>
       {% endif %}
@@ -504,7 +485,7 @@
           <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> {{ suggestion_counts.out_of_period_without }} pendiente(s) de su Borderó de origen</span>
         </div>
         <button type="button" class="btn-suggestion-trigger px-3 py-2" onclick="openClpSuggestionsModal('out_of_period')">
-          <i class="bi bi-stars"></i> Ver Cruce Histórico Nivel 2 ({{ suggestion_counts.out_of_period_with }} hallado(s))
+          <i class="bi bi-stars"></i> Ver Cruce Histórico Nivel 2 ({{ suggestion_counts.out_of_period_with|default:0 }} hallado(s))
         </button>
       </div>
       {% else %}
@@ -559,107 +540,6 @@
         </table>
       </div>
       {% include "partials/voucher_pagination_bar.html" with suffix="OutOfPeriod" total=counts.out_of_period label="Fuera de Período" %}
-    </div>
-
-    <!-- TAB 5: EN BORDERÓ SIN VOUCHER TRANSBANK -->
-    <div class="tab-pane fade" id="tabUnmatchedErp" role="tabpanel">
-      <div class="px-4 py-2 border-bottom small text-muted">
-        <i class="bi bi-info-circle me-1"></i>
-        Pagos con tarjeta en pesos del Borderó que ningún voucher de estos abonos reclamó. Las ventas a crédito suelen abonarse días después, así que muchas aparecerán en los próximos abonos.
-      </div>
-      <div class="table-responsive voucher-table-scroll">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light small text-uppercase text-muted sticky-top">
-            <tr>
-              <th class="ps-4">Fila</th>
-              <th>Cód. Borderó</th>
-              <th>Medio</th>
-              <th>Cuenta / Factura</th>
-              <th>Fecha Venta</th>
-              <th>Cajero</th>
-              <th class="text-end pe-4 th-sortable" onclick="sortVoucherTable('tbodyUnmatchedErp', 'erp', this)">Monto <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i></th>
-            </tr>
-          </thead>
-          <tbody id="tbodyUnmatchedErp" data-voucher-tab="aux" data-no-match-row="noMatchRowUnmatchedErp" data-count-badge="countBadgeUnmatchedErp">
-            {% for row in unmatched_erp_rows %}
-            <tr class="voucher-row"
-                data-card="{{ row.card_name|upper }}"
-                data-modality="{% if row.payment_group == 'REDCOMPRA' %}DÉBITO PREPAGO REDCOMPRA{% else %}CRÉDITO{% endif %}"
-                data-cashier="{{ row.cashier_username|default:''|upper }}"
-                data-erp="{{ row.amount|unlocalize }}">
-              <td class="ps-4 small text-muted">{{ row.excel_row }}</td>
-              <td class="font-monospace small fw-semibold">{{ row.authorization_code }}</td>
-              <td><span class="badge bg-light text-dark border">{{ row.payment_code }}</span> <small class="text-muted">{{ row.card_name }}</small></td>
-              <td class="small font-monospace">
-                <span class="text-dark">Cta: {{ row.account_code }}</span>
-                {% if row.invoice_number and row.invoice_number != "—" %}<span class="text-muted d-block">Fact: {{ row.invoice_number }}</span>{% endif %}
-              </td>
-              <td class="small text-nowrap text-muted"><i class="bi bi-calendar3 me-1"></i>{{ row.transaction_date }} {{ row.transaction_time }}</td>
-              <td><span class="badge bg-light text-dark border">{{ row.cashier_username }}</span></td>
-              <td class="text-end pe-4 fw-semibold">${{ row.amount|num_clp }}</td>
-            </tr>
-            {% empty %}
-            <tr class="empty-static-row"><td colspan="7" class="text-center py-4 text-muted">Todos los pagos del Borderó fueron cruzados.</td></tr>
-            {% endfor %}
-            <tr id="noMatchRowUnmatchedErp" class="d-none"><td colspan="7" class="text-center py-4 text-muted"><i class="bi bi-search me-1"></i> Sin resultados para ese filtro.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      {% include "partials/voucher_pagination_bar.html" with suffix="UnmatchedErp" total=counts.unmatched_erp label="En Borderó sin Voucher" %}
-    </div>
-
-    <!-- TAB 6: REPORTE DE EXCEPCIONES -->
-    <div class="tab-pane fade" id="tabExceptions" role="tabpanel">
-      <div class="px-4 py-2 border-bottom small text-muted">
-        <i class="bi bi-info-circle me-1"></i>
-        Reporte único de excepciones: lo que cuadra se oculta y solo quedan las anomalías con su acción sugerida. Se descarga en Excel al confirmar el cierre.
-      </div>
-      <div class="table-responsive voucher-table-scroll">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light small text-uppercase text-muted sticky-top">
-            <tr>
-              <th class="ps-4">Tipo de Error</th>
-              <th>Fecha de Origen</th>
-              <th>Documento / Código</th>
-              <th>Medio</th>
-              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyExceptions', 'tbk', this)">Monto Discrepante <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i></th>
-              <th class="pe-4">Acción Sugerida</th>
-            </tr>
-          </thead>
-          <tbody id="tbodyExceptions" data-voucher-tab="aux" data-no-match-row="noMatchRowExceptions" data-count-badge="countBadgeExceptions">
-            {% for item in exception_vouchers %}
-            <tr class="voucher-row"
-                data-card="{{ item.card_name|upper }} {% if item.payment_modality != 'CREDIT' %}REDCOMPRA{% endif %}"
-                data-modality="{{ item.modality_label|upper }}"
-                data-cashier="{% if item.cashier_username and item.cashier_username != '—' %}{{ item.cashier_username|upper }}{% elif item.suggestion %}{{ item.suggestion.erp_row.cashier_username|default:''|upper }}{% endif %}"
-                data-tbk="{% if item.system_result == 'AMOUNT_MISMATCH' or item.system_result == 'CARD_TYPE_MISMATCH' %}{{ item.difference|unlocalize }}{% else %}{{ item.tbk_amount|unlocalize }}{% endif %}">
-              <td class="ps-4 fw-semibold">
-                {% if item.system_result == 'NOT_FOUND_IN_ERP' %}
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">{{ item.error_type }}</span>
-                {% elif item.system_result == 'OUT_OF_PERIOD' %}
-                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">{{ item.error_type }}</span>
-                {% else %}
-                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">{{ item.error_type }}</span>
-                {% endif %}
-              </td>
-              <td class="small text-nowrap text-muted"><i class="bi bi-calendar3 me-1"></i>{{ item.sale_date }}</td>
-              <td class="font-monospace small">
-                {{ item.authorization_code }}{% if item.suggestion %} / {{ item.suggestion.erp_row.authorization_code }}{% elif item.erp_authorization_code and item.erp_authorization_code != item.authorization_code %} / {{ item.erp_authorization_code }}{% endif %}
-              </td>
-              <td><span class="badge bg-dark">{{ item.modality_label }}</span> <small class="text-muted">{{ item.card_name }}</small></td>
-              <td class="text-end fw-bold">
-                ${% if item.system_result == 'AMOUNT_MISMATCH' or item.system_result == 'CARD_TYPE_MISMATCH' %}{{ item.difference|num_clp }}{% else %}{{ item.tbk_amount|num_clp }}{% endif %}
-              </td>
-              <td class="pe-4 small">{{ item.action }}</td>
-            </tr>
-            {% empty %}
-            <tr class="empty-static-row"><td colspan="6" class="text-center py-4 text-success"><i class="bi bi-check-circle-fill me-1"></i> Sin excepciones: todo cuadró.</td></tr>
-            {% endfor %}
-            <tr id="noMatchRowExceptions" class="d-none"><td colspan="6" class="text-center py-4 text-muted"><i class="bi bi-search me-1"></i> Sin resultados para ese filtro.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      {% include "partials/voucher_pagination_bar.html" with suffix="Exceptions" total=exception_vouchers|length label="Reporte de Excepciones" %}
     </div>
   </div>
 </div>
