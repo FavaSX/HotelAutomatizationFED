@@ -217,6 +217,7 @@ def parse_card_operator_statements(
             )
 
             card_operator_index[card_code].setdefault(document_number, []).append({
+                "document_number": document_number,
                 "sequence_number": sequence_number,
                 "foreign_currency_usd": foreign_currency,
                 "balance_clp": balance_clp,

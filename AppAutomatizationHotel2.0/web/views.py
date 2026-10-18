@@ -109,6 +109,16 @@ def usd_preview_view(request):
     enrich_preview_with_suggestions(preview)
     request.session["usd_reconciliation_preview"] = preview
 
+    all_cashiers = sorted({
+        v.get("cashier_username", "").strip()
+        for v in (
+            preview.get("matched_vouchers", [])
+            + preview.get("discrepancy_vouchers", [])
+            + preview.get("orphan_vouchers", [])
+        )
+        if v.get("cashier_username") and v.get("cashier_username") != "—"
+    })
+
     context = {
         "preview": preview,
         "bank": preview.get("bank_validation", {}),
@@ -119,6 +129,7 @@ def usd_preview_view(request):
         "matched_vouchers": preview.get("matched_vouchers", []),
         "discrepancy_vouchers": preview.get("discrepancy_vouchers", []),
         "orphan_vouchers": preview.get("orphan_vouchers", []),
+        "cashiers": all_cashiers,
         "counts": preview.get("counts", {}),
         "suggestion_counts": preview.get("suggestion_counts", {}),
     }

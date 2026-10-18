@@ -5,6 +5,7 @@ Generates styled multi-sheet Excel workbooks directly from persisted database re
 """
 
 import io
+import json
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
@@ -155,7 +156,7 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
     # Sheet 2: Vouchers Ubicados Exactos
     ws_matched = wb.create_sheet(title="Vouchers Ubicados")
     matched_headers = [
-        "Autorización", "Documento", "Huésped", "Habitación",
+        "Fecha", "Cruce Voucher (TBK = ERP)", "Cruce Documento (ERP = OP)",
         "Cajero", "Tarjeta", "Monto TBK USD", "Monto Operador USD",
         "Diferencia USD", "Monto ERP CLP", "Diagnóstico"
     ]
@@ -166,17 +167,17 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
 
     matched_rows = [m for m in cross_matches if m.system_result == "MATCHED"]
     for r_idx, v in enumerate(matched_rows, 2):
-        ws_matched.cell(row=r_idx, column=1, value=v.authorization_code or "")
-        ws_matched.cell(row=r_idx, column=2, value=v.document_number or "")
-        ws_matched.cell(row=r_idx, column=3, value=v.guest_name or "")
-        ws_matched.cell(row=r_idx, column=4, value=v.room_number or "")
-        ws_matched.cell(row=r_idx, column=5, value=v.cashier_username or "")
-        ws_matched.cell(row=r_idx, column=6, value=v.card_type.name if v.card_type else "")
-        ws_matched.cell(row=r_idx, column=7, value=float(v.transbank_amount)).number_format = "$#,##0.00"
-        ws_matched.cell(row=r_idx, column=8, value=float(v.operator_amount_usd)).number_format = "$#,##0.00"
-        ws_matched.cell(row=r_idx, column=9, value=float(v.difference_usd)).number_format = "$#,##0.00"
-        ws_matched.cell(row=r_idx, column=10, value=float(v.erp_amount_clp)).number_format = "$#,##0"
-        ws_matched.cell(row=r_idx, column=11, value=format_observation(v.system_observation or ""))
+        sale_dt = v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—"
+        ws_matched.cell(row=r_idx, column=1, value=sale_dt)
+        ws_matched.cell(row=r_idx, column=2, value=f"TBK: {v.authorization_code} = ERP: {v.authorization_code}" if v.authorization_code else "")
+        ws_matched.cell(row=r_idx, column=3, value=f"ERP: {v.document_number} = OP: {v.document_number}" if v.document_number else "")
+        ws_matched.cell(row=r_idx, column=4, value=v.cashier_username or "")
+        ws_matched.cell(row=r_idx, column=5, value=v.card_type.name if v.card_type else "")
+        ws_matched.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = "$#,##0.00"
+        ws_matched.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = "$#,##0.00"
+        ws_matched.cell(row=r_idx, column=8, value=float(v.difference_usd)).number_format = "$#,##0.00"
+        ws_matched.cell(row=r_idx, column=9, value=float(v.erp_amount_clp)).number_format = "$#,##0"
+        ws_matched.cell(row=r_idx, column=10, value=format_observation(v.system_observation or ""))
 
     # Sheet 3: Discrepancias y No Ubicados
     ws_disc = wb.create_sheet(title="Discrepancias y No Ubicados")
@@ -201,6 +202,112 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
         ws_disc.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = "$#,##0.00"
         ws_disc.cell(row=r_idx, column=8, value=float(v.difference_usd)).number_format = "$#,##0.00"
         ws_disc.cell(row=r_idx, column=9, value=format_observation(v.system_observation or ""))
+
+    # Sheet 4: Sugerencias Asistidas (Nivel 2)
+    ws_sug = wb.create_sheet(title="Sugerencias Asistidas")
+    sug_headers = [
+        "#",
+        "Voucher TBK",
+        "Tipo Discrepancia",
+        "Tarjeta",
+        "Monto TBK (US$)",
+        "Fecha POS",
+        "Cód. ERP Sugerido",
+        "Doc. ERP",
+        "Monto ERP (CLP)",
+        "Cajero ERP",
+        "Huésped / Habitación",
+        "Doc. Operadora",
+        "Monto Op. (US$)",
+        "Saldo Op. (CLP)",
+        "Confianza",
+        "Diagnóstico Sugerido",
+        "Motivos Coincidencia",
+        "Nota de Auditoría",
+    ]
+    for col_idx, h in enumerate(sug_headers, 1):
+        cell = ws_sug.cell(row=1, column=col_idx, value=h)
+        cell.fill = navy_fill
+        cell.font = white_bold
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    sug_count = 0
+    curr_sug_row = 2
+    for v in cross_matches:
+        if not v.auditor_comment:
+            continue
+        try:
+            sug = json.loads(v.auditor_comment)
+            if not isinstance(sug, dict):
+                continue
+        except Exception:
+            continue
+
+        sug_count += 1
+        case_type = "Con Diferencia de Monto" if v.system_result == "AMOUNT_MISMATCH" else "En TBK pero NO en ERP"
+        reasons_str = ", ".join(r.get("label", "") for r in sug.get("reasons", []) if isinstance(r, dict))
+        headline = sug.get("headline", "")
+        confidence = sug.get("confidence", "MEDIA")
+        manual_note = sug.get("manual_check_note", "")
+
+        rows_comp = sug.get("comparison_rows", [])
+        r_auth = rows_comp[0] if len(rows_comp) > 0 else {}
+        r_doc = rows_comp[1] if len(rows_comp) > 1 else {}
+        r_usd = rows_comp[2] if len(rows_comp) > 2 else {}
+        r_clp = rows_comp[3] if len(rows_comp) > 3 else {}
+
+        erp_auth = r_auth.get("erp_value", "—")
+        erp_doc = r_doc.get("erp_value", "—")
+        op_doc = r_doc.get("op_value", "—")
+        op_usd_val = float(v.operator_amount_usd)
+        erp_clp_val = float(v.erp_amount_clp)
+        op_clp_str = r_clp.get("op_value", "")
+        erp_cashier = sug.get("erp_cashier", v.cashier_username or "—")
+        guest_str = f"{v.guest_name} (Hab. {v.room_number})" if v.guest_name and v.guest_name != "—" else "—"
+        sale_date_str = v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—"
+
+        ws_sug.cell(row=curr_sug_row, column=1, value=sug_count).alignment = Alignment(horizontal="center")
+        ws_sug.cell(row=curr_sug_row, column=2, value=v.authorization_code or "").alignment = Alignment(horizontal="center")
+        ws_sug.cell(row=curr_sug_row, column=3, value=case_type)
+        ws_sug.cell(row=curr_sug_row, column=4, value=v.card_type.name if v.card_type else "")
+        c_usd = ws_sug.cell(row=curr_sug_row, column=5, value=float(v.transbank_amount))
+        c_usd.number_format = "$#,##0.00"
+        ws_sug.cell(row=curr_sug_row, column=6, value=sale_date_str).alignment = Alignment(horizontal="center")
+        ws_sug.cell(row=curr_sug_row, column=7, value=erp_auth).alignment = Alignment(horizontal="center")
+        ws_sug.cell(row=curr_sug_row, column=8, value=erp_doc)
+        c_clp = ws_sug.cell(row=curr_sug_row, column=9, value=erp_clp_val)
+        c_clp.number_format = "$#,##0"
+        ws_sug.cell(row=curr_sug_row, column=10, value=erp_cashier)
+        ws_sug.cell(row=curr_sug_row, column=11, value=guest_str)
+        ws_sug.cell(row=curr_sug_row, column=12, value=op_doc)
+        c_op_usd = ws_sug.cell(row=curr_sug_row, column=13, value=op_usd_val)
+        c_op_usd.number_format = "$#,##0.00"
+        ws_sug.cell(row=curr_sug_row, column=14, value=op_clp_str)
+        c_conf = ws_sug.cell(row=curr_sug_row, column=15, value=confidence)
+        c_conf.alignment = Alignment(horizontal="center")
+        c_conf.font = Font(bold=True, color="059669" if confidence == "ALTA" else "D97706")
+        ws_sug.cell(row=curr_sug_row, column=16, value=headline)
+        ws_sug.cell(row=curr_sug_row, column=17, value=reasons_str)
+        ws_sug.cell(row=curr_sug_row, column=18, value=manual_note)
+
+        for col_i in range(1, 19):
+            ws_sug.cell(row=curr_sug_row, column=col_i).border = thin_border
+        curr_sug_row += 1
+
+    if sug_count == 0:
+        c_empty = ws_sug.cell(row=2, column=1, value="No se detectaron sugerencias asistidas secundarias para los vouchers con diferencia o no ubicados.")
+        c_empty.font = Font(italic=True, color="64748B")
+
+    # Auto-adjust column widths for all sheets
+    for ws in [ws_matched, ws_disc, ws_sug]:
+        for col in ws.columns:
+            max_len = 0
+            col_letter = col[0].column_letter
+            for cell in col[:40]:
+                val_str = str(cell.value or "")
+                if len(val_str) > max_len:
+                    max_len = len(val_str)
+            ws.column_dimensions[col_letter].width = max(12, min(max_len + 3, 45))
 
     stream = io.BytesIO()
     wb.save(stream)

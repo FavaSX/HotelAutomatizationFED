@@ -224,6 +224,11 @@ def calculate_usd_preview(
                 erp_index = getattr(erp_item, "_memory_index", None)
                 document_number = matched_erp["document_number"]
                 erp_amount_clp = matched_erp["amount_clp"]
+                operator_doc_number = (
+                    selected_operator["instance"].document_number
+                    if selected_operator and hasattr(selected_operator.get("instance"), "document_number")
+                    else selected_operator.get("document_number", "")
+                ) if selected_operator else ""
                 operator_index = selected_operator["operator_index"] if selected_operator else None
                 if selected_operator and operator_index is not None:
                     card_operator_transactions_data[operator_index]["authorization_code"] = auth_code
@@ -233,6 +238,11 @@ def calculate_usd_preview(
                 erp_item = primary_erp["instance"]
                 erp_index = getattr(erp_item, "_memory_index", None)
                 selected_operator = resolved_candidates[0][1]
+                operator_doc_number = (
+                    selected_operator["instance"].document_number
+                    if selected_operator and hasattr(selected_operator.get("instance"), "document_number")
+                    else selected_operator.get("document_number", "")
+                ) if selected_operator else ""
                 operator_index = selected_operator["operator_index"] if selected_operator else None
 
                 doc_numbers = []
@@ -269,6 +279,7 @@ def calculate_usd_preview(
             guest_name = erp_item.guest_name or "—"
             room_number = erp_item.room_number or "—"
             cashier_username = erp_item.cashier_username or "—"
+            erp_auth_code = erp_item.authorization_code or auth_code
         else:
             erp_index = None
             operator_index = None
@@ -276,6 +287,8 @@ def calculate_usd_preview(
             guest_name = "—"
             room_number = "—"
             cashier_username = "—"
+            erp_auth_code = ""
+            operator_doc_number = ""
             operator_usd = Decimal("0.00")
             erp_amount_clp = Decimal("0.00")
             operator_clp = Decimal("0.00")
@@ -310,7 +323,9 @@ def calculate_usd_preview(
             "erp_index": erp_index,
             "operator_index": operator_index,
             "authorization_code": auth_code,
+            "erp_authorization_code": erp_auth_code,
             "document_number": document_number,
+            "operator_document_number": operator_doc_number or document_number,
             "card_code": raw_card_type,
             "card_name": card_name,
             "masked_card": masked_card,

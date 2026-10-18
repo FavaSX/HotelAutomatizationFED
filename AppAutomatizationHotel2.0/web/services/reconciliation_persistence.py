@@ -6,6 +6,7 @@ Handles atomic persistence across all 8 operational tables with:
   3. Automatic AuditResolutionLog tracking when re-uploaded files resolve discrepancies.
 """
 
+import json
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from django.db import transaction
@@ -407,6 +408,7 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
 
         def _upsert_match(v_dict, sys_result, status_detail, default_mgmt_status):
             tbk_obj = _get_model(tbk_models, v_dict.get("tbk_index"))
+            sug_payload = v_dict.get("suggestion")
             match_fields = {
                 "process": process,
                 "card_type": card_types.get(v_dict["card_code"], card_types.get("VI")),
@@ -427,6 +429,7 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
                 "system_result": sys_result,
                 "system_status_detail": status_detail,
                 "system_observation": format_observation(v_dict["observation"])[:255],
+                "auditor_comment": json.dumps(sug_payload, ensure_ascii=False) if sug_payload else None,
             }
 
             if tbk_obj and tbk_obj.id in existing_matches_by_tbk_id:
@@ -513,6 +516,7 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
                     "system_result",
                     "system_status_detail",
                     "system_observation",
+                    "auditor_comment",
                     "management_status",
                     "resolved_by",
                     "resolution_date",

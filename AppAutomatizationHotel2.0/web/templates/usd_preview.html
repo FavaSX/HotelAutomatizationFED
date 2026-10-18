@@ -22,9 +22,6 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="fw-bold text-uppercase text-muted small mb-0">
       <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abono en Cartola Bancaria
-      {% if bank.bank_name %}
-        ({{ bank.bank_name }}{% if bank.bank_account_number %} · Cta. {{ bank.bank_account_number }}{% endif %})
-      {% endif %}
     </h6>
     {% if bank.is_matched %}
     <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fs-6">
@@ -165,7 +162,7 @@
 <!-- ====================================================================== -->
 <!-- 3. PESTAÑAS DE VOUCHERS Y CRUCE DETALLADO (GUIADO POR ABONO TBK) -->
 <!-- ====================================================================== -->
-<div class="card card-executive mb-4">
+<div class="card card-executive mb-4" id="voucherSectionCard">
   <div class="card-header border-bottom pt-3 pb-0 px-4 d-flex flex-wrap justify-content-between align-items-center">
     <ul class="nav nav-tabs border-bottom-0 gap-2" id="previewTabs" role="tablist">
       <li class="nav-item">
@@ -184,17 +181,22 @@
         </button>
       </li>
     </ul>
-    <span class="badge bg-light text-dark border mb-2">
-      Mostrando: <strong id="visibleTotalBadge">{{ counts.total }}</strong> de <strong>{{ counts.total }} vouchers</strong>
-    </span>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <span class="badge bg-light text-dark border">
+        Mostrando: <strong id="visibleTotalBadge">{{ counts.total }}</strong> de <strong>{{ counts.total }} vouchers</strong>
+      </span>
+      <button type="button" id="btnToggleFullscreen" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold shadow-xs" onclick="toggleFullscreenTable()" title="Modo Pantalla Completa (Maximizar espacio de trabajo)">
+        <i class="bi bi-arrows-fullscreen me-1" id="iconFullscreen"></i><span id="textFullscreen">Pantalla Completa</span>
+      </button>
+    </div>
   </div>
 
-  <!-- Barra de Búsqueda Instantánea y Filtro por Tarjeta (Alineados a la Izquierda) -->
-  <div class="bg-light border-bottom px-4 py-3 d-flex flex-wrap justify-content-start align-items-center gap-3">
+  <!-- Barra de Búsqueda Instantánea y Filtro por Tarjeta y Cajero (Alineados a la Izquierda) -->
+  <div class="bg-light border-bottom px-4 py-3 d-flex flex-wrap justify-content-start align-items-center gap-3" id="voucherToolbar">
     <div class="position-relative flex-grow-1 voucher-search-wrapper">
       <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
       <input type="text" id="voucherSearchInput" class="form-control form-control-sm rounded-pill ps-5 pe-5 py-2 border-secondary-subtle shadow-none"
-             placeholder="Buscar por voucher, doc ERP, huésped, hab., cajero..."
+             placeholder="Buscar por voucher TBK, coincidencia ERP, doc ERP, cajero, tarjeta..."
              oninput="applyVoucherFilters()">
       <button type="button" id="btnClearVoucherSearch" class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-2 py-0 px-2 text-muted d-none"
               onclick="clearVoucherSearch()" title="Limpiar búsqueda">
@@ -222,6 +224,21 @@
         Diners
       </button>
     </div>
+
+    <div class="vr d-none d-lg-block text-secondary opacity-25 my-1"></div>
+
+    <!-- Filtro por Cajero -->
+    <div class="d-flex align-items-center gap-2" id="cashierFilterGroup">
+      <label for="cashierFilterSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
+        <i class="bi bi-person-badge me-1"></i>Cajero:
+      </label>
+      <select id="cashierFilterSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 150px;" onchange="setCashierFilter(this.value)">
+        <option value="ALL" selected>Todos los cajeros</option>
+        {% for c in cashiers %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
   </div>
 
   <div class="card-body p-0 tab-content">
@@ -231,10 +248,9 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4">Voucher</th>
-              <th>Doc ERP</th>
-              <th>Huésped</th>
-              <th>Hab.</th>
+              <th class="ps-4" style="min-width: 285px;">Cruce de Vouchers (TBK ⇄ ERP)</th>
+              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ OP)</th>
+              <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
@@ -256,32 +272,93 @@
             {% for item in matched_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
+                data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}"
                 data-op="{{ item.operator_amount_usd|unlocalize }}"
                 data-diff="{{ item.difference_usd|unlocalize }}"
                 data-clp="{{ item.erp_amount_clp|unlocalize }}">
-              <td class="ps-4 fw-bold font-monospace text-success">{{ item.authorization_code }}</td>
-              <td class="small">{{ item.document_number|default:"—" }}</td>
-              <td class="small fw-semibold">{{ item.guest_name }}</td>
-              <td class="small">{{ item.room_number }}</td>
+              <td class="ps-4">
+                <div class="voucher-dual-pill" title="Voucher Transbank coincide exactamente con Voucher ERP Hotel">
+                  <span class="voucher-dual-tbk">
+                    <small class="text-muted fw-bold">TBK:</small>
+                    <span class="font-monospace fw-bold">{{ item.authorization_code }}</span>
+                  </span>
+                  <span class="voucher-dual-equal">=</span>
+                  <span class="voucher-dual-erp">
+                    <small class="fw-bold">ERP:</small>
+                    <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
+                    <i class="bi bi-check2 voucher-check"></i>
+                  </span>
+                </div>
+              </td>
+              <td>
+                {% if item.document_number %}
+                <div class="doc-dual-pill" title="Documento ERP coincide exactamente con Documento Operadora">
+                  <span class="doc-dual-erp">
+                    <small class="text-muted fw-bold">ERP:</small>
+                    <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                  </span>
+                  <span class="doc-dual-equal">=</span>
+                  <span class="doc-dual-op">
+                    <small class="fw-bold">OP:</small>
+                    <span class="font-monospace fw-bold">{{ item.operator_document_number|default:item.document_number }}</span>
+                    <i class="bi bi-check2 doc-check"></i>
+                  </span>
+                </div>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="small text-nowrap text-muted"><i class="bi bi-calendar3 me-1"></i>{{ item.sale_date|default:"—" }}</td>
               <td><span class="badge bg-light text-dark border">{{ item.cashier_username }}</span></td>
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
               <td class="text-end fw-bold text-success">US$ {{ item.gross_amount_usd|num_usd }}</td>
               <td class="text-end fw-semibold text-primary">US$ {{ item.operator_amount_usd|num_usd }}</td>
-              <td class="text-end small text-muted">US$ {{ item.difference_usd|num_usd }}</td>
+              <td class="text-end small font-monospace">
+                {% if item.difference_usd != 0 %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1" title="Diferencia de centavos dentro de la tolerancia aceptada (±US$ 0.05)">
+                  <i class="bi bi-info-circle me-1"></i>US$ {{ item.difference_usd|num_usd }}
+                </span>
+                {% else %}
+                <span class="text-muted">US$ 0.00</span>
+                {% endif %}
+              </td>
               <td class="text-end">${{ item.erp_amount_clp|num_clp }}</td>
               <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
             </tr>
             {% empty %}
-            <tr class="empty-static-row"><td colspan="11" class="text-center py-4 text-muted">No hay transacciones ubicadas.</td></tr>
+            <tr class="empty-static-row"><td colspan="10" class="text-center py-4 text-muted">No hay transacciones ubicadas.</td></tr>
             {% endfor %}
             <tr id="noMatchRowMatched" class="d-none">
-              <td colspan="11" class="text-center py-4 text-muted">
+              <td colspan="10" class="text-center py-4 text-muted">
                 <i class="bi bi-search me-1"></i> No se encontraron vouchers ubicados con ese criterio de búsqueda.
               </td>
             </tr>
           </tbody>
         </table>
+      </div>
+      <!-- Barra de Paginación para Tab 1 (Ubicadas Exactas) -->
+      <div class="voucher-pagination-bar border-top px-4 py-2 bg-light d-flex flex-wrap justify-content-between align-items-center gap-3" id="paginationBarMatched">
+        <div class="small text-muted" id="pageInfoMatched">
+          Mostrando <strong id="pageRangeMatched">1–20</strong> de <strong id="pageTotalMatched">{{ counts.matched }}</strong> vouchers
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <div class="d-flex align-items-center gap-2">
+            <label for="pageSizeSelectMatched" class="small text-muted fw-semibold mb-0 text-nowrap">
+              <i class="bi bi-card-list me-1"></i>Por página:
+            </label>
+            <select id="pageSizeSelectMatched" class="form-select form-select-sm rounded-pill voucher-page-size-select" style="width: auto; min-width: 90px;" onchange="changeVoucherPageSize(this.value)">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="ALL">Todas</option>
+            </select>
+          </div>
+          <nav aria-label="Paginación Ubicadas Exactas">
+            <ul class="pagination pagination-sm mb-0 rounded-pill" id="paginationListMatched"></ul>
+          </nav>
+        </div>
       </div>
     </div>
 
@@ -332,6 +409,7 @@
             {% for item in discrepancy_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
+                data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}"
                 data-op="{{ item.operator_amount_usd|unlocalize }}"
                 data-diff="{{ item.difference_usd|unlocalize }}">
@@ -372,6 +450,29 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      <!-- Barra de Paginación para Tab 2 (Con Diferencia) -->
+      <div class="voucher-pagination-bar border-top px-4 py-2 bg-light d-flex flex-wrap justify-content-between align-items-center gap-3" id="paginationBarDiscrepancies">
+        <div class="small text-muted" id="pageInfoDiscrepancies">
+          Mostrando <strong id="pageRangeDiscrepancies">1–20</strong> de <strong id="pageTotalDiscrepancies">{{ counts.discrepancies }}</strong> vouchers
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <div class="d-flex align-items-center gap-2">
+            <label for="pageSizeSelectDiscrepancies" class="small text-muted fw-semibold mb-0 text-nowrap">
+              <i class="bi bi-card-list me-1"></i>Por página:
+            </label>
+            <select id="pageSizeSelectDiscrepancies" class="form-select form-select-sm rounded-pill voucher-page-size-select" style="width: auto; min-width: 90px;" onchange="changeVoucherPageSize(this.value)">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="ALL">Todas</option>
+            </select>
+          </div>
+          <nav aria-label="Paginación Con Diferencia">
+            <ul class="pagination pagination-sm mb-0 rounded-pill" id="paginationListDiscrepancies"></ul>
+          </nav>
+        </div>
       </div>
     </div>
 
@@ -414,6 +515,7 @@
             {% for item in orphan_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
+                data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}">
               <td class="ps-4 fw-bold font-monospace text-danger">{{ item.authorization_code }}</td>
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
@@ -445,6 +547,29 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      <!-- Barra de Paginación para Tab 3 (En TBK pero NO en ERP) -->
+      <div class="voucher-pagination-bar border-top px-4 py-2 bg-light d-flex flex-wrap justify-content-between align-items-center gap-3" id="paginationBarOrphans">
+        <div class="small text-muted" id="pageInfoOrphans">
+          Mostrando <strong id="pageRangeOrphans">1–20</strong> de <strong id="pageTotalOrphans">{{ counts.orphans }}</strong> vouchers
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <div class="d-flex align-items-center gap-2">
+            <label for="pageSizeSelectOrphans" class="small text-muted fw-semibold mb-0 text-nowrap">
+              <i class="bi bi-card-list me-1"></i>Por página:
+            </label>
+            <select id="pageSizeSelectOrphans" class="form-select form-select-sm rounded-pill voucher-page-size-select" style="width: auto; min-width: 90px;" onchange="changeVoucherPageSize(this.value)">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="ALL">Todas</option>
+            </select>
+          </div>
+          <nav aria-label="Paginación En TBK pero NO en ERP">
+            <ul class="pagination pagination-sm mb-0 rounded-pill" id="paginationListOrphans"></ul>
+          </nav>
+        </div>
       </div>
     </div>
   </div>
@@ -510,7 +635,8 @@
         </div>
 
         <!-- 2. BARRA DE FILTRO RÁPIDO DENTRO DEL MODAL -->
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 pb-3 border-bottom">
+        <!-- 2. BARRA DE FILTRO RÁPIDO Y PAGINACIÓN DENTRO DEL MODAL -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3 pb-3 border-bottom">
           <div class="d-flex flex-wrap align-items-center gap-2" id="sugModalFilterGroup">
             <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 sug-filter-btn active" onclick="filterModalSuggestions('ALL', this)">
               Todos (<span id="sugCountAll">0</span>)
@@ -522,9 +648,20 @@
               <i class="bi bi-slash-circle me-1"></i>Sin Sugerencia en Archivos (<span id="sugCountWithout">0</span>)
             </button>
           </div>
-          <span class="small text-muted">
-            <i class="bi bi-layout-three-columns me-1"></i>Comparativa lado a lado: <strong>1. Transbank</strong> · <strong>2. ERP Hotel</strong> · <strong>3. Operadora</strong>
-          </span>
+
+          <!-- Selector de elementos por página -->
+          <div class="d-flex align-items-center gap-2 ms-auto">
+            <label for="sugPageSizeSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
+              <i class="bi bi-card-list me-1"></i>Por página:
+            </label>
+            <select id="sugPageSizeSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 95px;" onchange="changeSugPageSize(this.value)">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="ALL">Todas</option>
+            </select>
+          </div>
         </div>
 
         <!-- 3. BLOQUE A: CASOS CON SUGERENCIA ASISTIDA -->
@@ -537,12 +674,22 @@
         </div>
 
         <!-- 4. BLOQUE B: CASOS SIN SUGERENCIA EN ARCHIVOS -->
-        <div id="sugModalWithoutSection">
+        <div id="sugModalWithoutSection" class="mb-3">
           <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
             <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> Sin Sugerencia en Archivos</span>
             <span class="text-muted">Vouchers sin coincidencias secundarias en ERP ni Operadora</span>
           </h6>
           <div id="sugModalWithoutList"></div>
+        </div>
+
+        <!-- 5. BARRA DE PAGINACIÓN INFERIOR -->
+        <div id="sugModalPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-4">
+          <div class="small text-muted" id="sugPaginationInfo">
+            Mostrando 1 - 20 de 0 casos
+          </div>
+          <nav aria-label="Paginación de sugerencias">
+            <ul class="pagination pagination-sm mb-0 rounded-pill" id="sugPaginationList"></ul>
+          </nav>
         </div>
       </div>
 
@@ -720,6 +867,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_preview.js' %}?v=15"></script>
+<script src="{% static 'js/usd_preview.js' %}?v=20"></script>
 {% endblock %}
 
