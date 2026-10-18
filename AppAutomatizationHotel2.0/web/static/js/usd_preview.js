@@ -11,6 +11,7 @@
 
 let isCommitting = false;
 let activeCardBrandFilter = 'ALL';
+let activeModalityFilter = 'ALL';
 let activeCashierFilter = 'ALL';
 const currentSortState = {};
 
@@ -18,7 +19,10 @@ let voucherPageSize = 20;
 const voucherCurrentPages = {
   tabMatched: 1,
   tabDiscrepancies: 1,
-  tabOrphans: 1
+  tabOrphans: 1,
+  tabOutOfPeriod: 1,
+  tabUnmatchedErp: 1,
+  tabExceptions: 1
 };
 
 const VOUCHER_PAGINATION_CONFIG = {
@@ -39,8 +43,27 @@ const VOUCHER_PAGINATION_CONFIG = {
     rangeId: 'pageRangeOrphans',
     totalId: 'pageTotalOrphans',
     listId: 'paginationListOrphans'
+  },
+  tbodyOutOfPeriod: {
+    tabId: 'tabOutOfPeriod',
+    rangeId: 'pageRangeOutOfPeriod',
+    totalId: 'pageTotalOutOfPeriod',
+    listId: 'paginationListOutOfPeriod'
+  },
+  tbodyUnmatchedErp: {
+    tabId: 'tabUnmatchedErp',
+    rangeId: 'pageRangeUnmatchedErp',
+    totalId: 'pageTotalUnmatchedErp',
+    listId: 'paginationListUnmatchedErp'
+  },
+  tbodyExceptions: {
+    tabId: 'tabExceptions',
+    rangeId: 'pageRangeExceptions',
+    totalId: 'pageTotalExceptions',
+    listId: 'paginationListExceptions'
   }
 };
+
 
 function escapeHtmlStr(str) {
   return String(str ?? '')
@@ -251,8 +274,28 @@ function setCardBrandFilter(brandKey, btnElem) {
     btn.classList.remove('btn-dark', 'active');
     btn.classList.add('btn-outline-secondary');
   });
-  btnElem.classList.remove('btn-outline-secondary');
-  btnElem.classList.add('btn-dark', 'active');
+  if (btnElem) {
+    btnElem.classList.remove('btn-outline-secondary');
+    btnElem.classList.add('btn-dark', 'active');
+  }
+  resetVoucherPages();
+  applyVoucherFilters();
+}
+
+function setModalityFilter(modalityKey, btnElem) {
+  activeModalityFilter = (modalityKey || 'ALL').trim().toUpperCase();
+  document.querySelectorAll('#cardModalityFilterGroup .modality-filter-btn').forEach(btn => {
+    btn.classList.remove('btn-dark', 'active');
+    btn.classList.add('btn-outline-secondary');
+  });
+  if (btnElem && btnElem.classList) {
+    btnElem.classList.remove('btn-outline-secondary');
+    btnElem.classList.add('btn-dark', 'active');
+  }
+  const selectElem = document.getElementById('modalityFilterSelect');
+  if (selectElem && selectElem.value !== activeModalityFilter) {
+    selectElem.value = activeModalityFilter;
+  }
   resetVoucherPages();
   applyVoucherFilters();
 }
@@ -283,14 +326,16 @@ function filterSingleTab(tbodyId, noMatchRowId, countBadgeId) {
 
   rows.forEach(row => {
     const cardAttr = (row.getAttribute('data-card') || '').toUpperCase();
+    const modalityAttr = (row.getAttribute('data-modality') || '').toUpperCase();
     const cashierAttr = (row.getAttribute('data-cashier') || '').toUpperCase();
     const rowText = row.textContent.toLowerCase();
 
     const matchesCard = (activeCardBrandFilter === 'ALL') || cardAttr.includes(activeCardBrandFilter);
+    const matchesModality = (activeModalityFilter === 'ALL') || modalityAttr.includes(activeModalityFilter);
     const matchesCashier = (activeCashierFilter === 'ALL') || (cashierAttr === activeCashierFilter);
     const matchesQuery = (!query) || rowText.includes(query);
 
-    if (matchesCard && matchesCashier && matchesQuery) {
+    if (matchesCard && matchesModality && matchesCashier && matchesQuery) {
       row.dataset.filterMatch = 'true';
       visibleCount++;
     } else {

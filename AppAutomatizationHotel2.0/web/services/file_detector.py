@@ -8,7 +8,8 @@ import io
 from typing import Any, Dict, List, Optional
 import pandas as pd
 
-from .column_detector import normalize_text
+from .column_detector import normalize_text, safe_date
+
 
 
 USD_REQUIRED_ROLES: List[Dict[str, str]] = [
@@ -153,8 +154,10 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
             c for c in inspected_files
             if c["file_index"] not in used_file_indices and c["detected_role"] == role_key
         ]
-        # Prefer HIGH confidence over MEDIUM
-        candidates.sort(key=lambda c: 0 if c["confidence"] == "HIGH" else 1)
+        # Prefer HIGH confidence, then most recent period, then largest row count
+        candidates.sort(
+            key=lambda c: (0 if c["confidence"] == "HIGH" else 1, -(c.get("period_end_ord") or 0), -c["row_count"])
+        )
         matched_info = candidates[0] if candidates else None
 
         if matched_info:
@@ -218,12 +221,13 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
     The 3 Transbank settlements share the same layout; only the 'Medio de pago' cell tells them apart.
     """
     file_name = getattr(uploaded_file, "name", f"archivo_{file_index}")
-    result = {
+    result: Dict[str, Any] = {
         "file_index": file_index,
         "file_name": file_name,
         "detected_role": None,
         "confidence": "LOW",
         "row_count": 0,
+        "period_end_ord": 0,
         "evidence": "No se encontró una huella contable reconocida en las primeras filas",
     }
 
@@ -242,16 +246,24 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
 
         # 1. Transbank 'Abonos por día': read the value below the 'Medio de pago:' label
         if "abonos por dia" in normalized_content and "medio de pago" in normalized_content:
+            settlement_date = None
+            for _, r in head.iterrows():
+                cells = [val for val in r.values if pd.notna(val) and str(val).strip()]
+                for pos, val in enumerate(cells):
+                    if normalize_text(val).startswith("periodo de consulta") and pos + 1 < len(cells):
+                        settlement_date = safe_date(cells[pos + 1])
             for row_index in range(len(head) - 1):
                 for col_index, cell in enumerate(head.iloc[row_index].values):
                     if normalize_text(cell).startswith("medio de pago"):
-                        medium = normalize_text(head.iloc[row_index + 1].values[col_index])
-                        role = CLP_TBK_MEDIUM_ROLES.get(medium)
+                        medium_raw = str(head.iloc[row_index + 1].values[col_index]).strip()
+                        role = CLP_TBK_MEDIUM_ROLES.get(normalize_text(medium_raw))
                         if role:
+                            date_suffix = f" ({settlement_date.strftime('%d/%m/%Y')})" if settlement_date else ""
                             result.update(
                                 detected_role=role,
                                 confidence="HIGH",
-                                evidence=f"Huella interna: Transbank 'Abonos por día' · Medio de pago: {str(head.iloc[row_index + 1].values[col_index]).strip()}",
+                                period_end_ord=settlement_date.toordinal() if settlement_date else 0,
+                                evidence=f"Huella interna: Transbank 'Abonos por día' · Medio de pago: {medium_raw}{date_suffix}",
                             )
                             return result
 
@@ -259,7 +271,22 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
         if "cargos de debitos y creditos" in normalized_content or (
             "cod. deb" in normalized_content and "reserva" in normalized_content and "factura" in normalized_content
         ):
-            result.update(detected_role="erp", confidence="HIGH", evidence="Huella interna: Borderó FrontOffice 'Cargos de Débitos y Créditos'")
+            period_dates = []
+            for _, r in head.iloc[:15].iterrows():
+                cells = [val for val in r.values if pd.notna(val) and str(val).strip()]
+                if cells and normalize_text(cells[0]).startswith("periodo de"):
+                    period_dates = [d for d in (safe_date(v) for v in cells[1:]) if d]
+                    break
+            period_label = ""
+            if period_dates:
+                d_start, d_end = min(period_dates), max(period_dates)
+                period_label = f" ({d_start.strftime('%d/%m/%Y')} al {d_end.strftime('%d/%m/%Y')})"
+                result["period_end_ord"] = d_end.toordinal()
+            result.update(
+                detected_role="erp",
+                confidence="HIGH",
+                evidence=f"Huella interna: Borderó FrontOffice 'Cargos de Débitos y Créditos'{period_label}",
+            )
             return result
 
         # 3. Bank statement in pesos
@@ -284,3 +311,4 @@ def detect_and_align_clp_files(uploaded_files: List[Any]) -> Dict[str, Any]:
     """Inspects a batch of uploaded Excel files and aligns them against the 5 required CLP roles."""
     inspected_files = [inspect_single_clp_excel_file(f, idx) for idx, f in enumerate(uploaded_files)]
     return align_inspected_files(inspected_files, CLP_REQUIRED_ROLES)
+

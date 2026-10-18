@@ -1,8 +1,33 @@
 /**
- * CLP Preview Logic (clp_preview.html)
- * Sorting, filters and the 2-step commit come from usd_preview.js (loaded first).
- * This file renders the Level 2 suggestions modal: Transbank voucher vs. Bordero row, side by side.
+ * CLP Preview Level 2 Suggestions Modal Logic (clp_preview.html)
+ * Sorting, pagination, filters and the 2-step commit come from usd_preview.js (loaded first).
+ * Supports opening the Level 2 Assistant modal for:
+ *  - 'orphans' (En TBK pero NO en Borderó)
+ *  - 'discrepancies' (Con Diferencia)
+ *  - 'out_of_period' (Fuera de Período con sugerencia en Borderó histórico)
  */
+
+const CLP_MODAL_SECTIONS = {
+  orphans: {
+    scriptId: 'jsonClpOrphansData',
+    title: 'Sugerencias Asistidas — Vouchers en TBK pero NO en Borderó'
+  },
+  discrepancies: {
+    scriptId: 'jsonClpDiscrepanciesData',
+    title: 'Sugerencias Asistidas — Vouchers con Diferencia (TBK vs. Borderó)'
+  },
+  out_of_period: {
+    scriptId: 'jsonClpOutOfPeriodData',
+    title: 'Sugerencias Asistidas — Vouchers Fuera de Período (Borderó Histórico)'
+  }
+};
+
+let clpModalWithItems = [];
+let clpModalWithoutItems = [];
+let clpModalWithPage = 1;
+let clpModalWithoutPage = 1;
+const CLP_MODAL_WITH_PAGE_SIZE = 5;
+const CLP_MODAL_WITHOUT_PAGE_SIZE = 10;
 
 function formatClpClient(val) {
   const num = Math.round(Number(val) || 0);
@@ -29,24 +54,25 @@ function renderClpSuggestionCard(voucher, idx) {
   const files = sug.files_involved || {};
   const sameAmount = Math.abs(Number(voucher.tbk_amount) - Number(erp.amount)) < 1;
   const sameDate = voucher.sale_date === erp.transaction_date;
+  const sameCode = String(voucher.authorization_code || '').replace(/^0+/, '') === String(erp.authorization_code || '').replace(/^0+/, '');
   const reasons = (Array.isArray(sug.reasons) ? sug.reasons : [])
     .map(r => `<span class="reason-chip reason-${escapeHtmlStr(r.tone)}"><i class="bi ${escapeHtmlStr(r.icon)}"></i> ${escapeHtmlStr(r.label)}</span>`)
     .join(' ');
 
   const colTbk = (
-    renderClpKv('Voucher', voucher.authorization_code, 'diff') +
-    renderClpKv('Monto', formatClpClient(voucher.tbk_amount), sameAmount ? 'match' : 'diff') +
+    renderClpKv('Voucher', voucher.authorization_code, sameCode ? 'match' : 'diff') +
+    renderClpKv('Monto TBK', formatClpClient(voucher.tbk_amount), sameAmount ? 'match' : 'diff') +
     renderClpKv('Fecha venta', voucher.sale_date, sameDate ? 'match' : '') +
-    renderClpKv('Medio', `${voucher.modality_label} · ${voucher.card_name}`, 'match') +
-    renderClpKv('Tarjeta', voucher.masked_card, '') +
+    renderClpKv('Medio / Marca', `${voucher.modality_label} · ${voucher.card_name}`, 'match') +
+    renderClpKv('Tarjeta / Cuota', `${voucher.masked_card || '—'} (${voucher.installment_number || 'S/C'})`, '') +
     renderClpKv('Local', voucher.merchant_location, '')
   );
   const colErp = (
-    renderClpKv('Fila Borderó', erp.excel_row, '') +
-    renderClpKv('Código', erp.authorization_code, 'diff') +
-    renderClpKv('Monto', formatClpClient(erp.amount), sameAmount ? 'match' : 'diff') +
-    renderClpKv('Fecha', `${erp.transaction_date} ${erp.transaction_time || ''}`, sameDate ? 'match' : '') +
-    renderClpKv('Medio', erp.payment_code, 'match') +
+    renderClpKv('Fila Borderó', `Fila ${erp.excel_row || '—'} · Cta. ${erp.account_code || '—'} · Fact. ${erp.invoice_number || '—'}`, '') +
+    renderClpKv('Código ERP', erp.authorization_code, sameCode ? 'match' : 'diff') +
+    renderClpKv('Monto ERP', formatClpClient(erp.amount), sameAmount ? 'match' : 'diff') +
+    renderClpKv('Fecha / Hora', `${erp.transaction_date} ${erp.transaction_time || ''}`, sameDate ? 'match' : '') +
+    renderClpKv('Medio ERP', erp.payment_code, 'match') +
     renderClpKv('Huésped / Hab.', `${erp.guest_name} · Hab. ${erp.room_number}`, '') +
     renderClpKv('Registró', erp.cashier_username, '')
   );
@@ -78,8 +104,91 @@ function renderClpSuggestionCard(voucher, idx) {
   );
 }
 
-function openClpSuggestionsModal() {
-  const scriptEl = document.getElementById('jsonClpOrphansData');
+function renderClpModalWithPage() {
+  const listEl = document.getElementById('clpSugWithList');
+  const pagEl = document.getElementById('clpSugWithPagination');
+  if (!listEl) return;
+
+  if (!clpModalWithItems.length) {
+    listEl.innerHTML = '<div class="p-3 rounded-3 border text-muted small text-center"><i class="bi bi-info-circle me-1"></i>No se detectaron sugerencias asistidas para esta sección.</div>';
+    if (pagEl) pagEl.innerHTML = '';
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(clpModalWithItems.length / CLP_MODAL_WITH_PAGE_SIZE));
+  clpModalWithPage = Math.max(1, Math.min(clpModalWithPage, totalPages));
+  const start = (clpModalWithPage - 1) * CLP_MODAL_WITH_PAGE_SIZE;
+  const slice = clpModalWithItems.slice(start, start + CLP_MODAL_WITH_PAGE_SIZE);
+
+  listEl.innerHTML = slice.map((v, i) => renderClpSuggestionCard(v, start + i)).join('');
+  if (pagEl) {
+    pagEl.innerHTML = totalPages > 1
+      ? `<div class="d-flex justify-content-between align-items-center pt-2">` +
+          `<span class="small text-muted">Mostrando ${start + 1}–${start + slice.length} de ${clpModalWithItems.length} sugerencias</span>` +
+          `<ul class="pagination pagination-sm mb-0">${buildPaginationItemsHtml(clpModalWithPage, totalPages, (p) => `goToClpModalWithPage(${p})`)}</ul>` +
+        `</div>`
+      : '';
+  }
+}
+
+function goToClpModalWithPage(page) {
+  clpModalWithPage = page;
+  renderClpModalWithPage();
+}
+
+function renderClpModalWithoutPage() {
+  const listEl = document.getElementById('clpSugWithoutList');
+  const pagEl = document.getElementById('clpSugWithoutPagination');
+  if (!listEl) return;
+
+  if (!clpModalWithoutItems.length) {
+    listEl.innerHTML = '';
+    if (pagEl) pagEl.innerHTML = '';
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(clpModalWithoutItems.length / CLP_MODAL_WITHOUT_PAGE_SIZE));
+  clpModalWithoutPage = Math.max(1, Math.min(clpModalWithoutPage, totalPages));
+  const start = (clpModalWithoutPage - 1) * CLP_MODAL_WITHOUT_PAGE_SIZE;
+  const slice = clpModalWithoutItems.slice(start, start + CLP_MODAL_WITHOUT_PAGE_SIZE);
+
+  const rows = slice.map((v, idx) => (
+    `<tr>` +
+      `<td class="ps-3 fw-bold font-monospace text-danger">#${start + idx + 1} · ${escapeHtmlStr(v.authorization_code)}</td>` +
+      `<td><span class="badge bg-dark">${escapeHtmlStr(v.modality_label)}</span> <small class="text-muted">${escapeHtmlStr(v.card_name || '')}</small></td>` +
+      `<td>${escapeHtmlStr(v.sale_date || '—')}</td>` +
+      `<td class="text-end fw-bold">${escapeHtmlStr(formatClpClient(v.tbk_amount))}</td>` +
+      `<td class="pe-3 small text-muted"><i class="bi bi-slash-circle text-warning me-1"></i>${escapeHtmlStr(v.action || '')}</td>` +
+    `</tr>`
+  )).join('');
+
+  listEl.innerHTML = (
+    `<h6 class="fw-bold text-uppercase small mb-3"><span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> Sin Sugerencia en el Borderó (${clpModalWithoutItems.length})</span></h6>` +
+    `<div class="table-responsive rounded-3 border"><table class="table table-hover align-middle mb-0">` +
+      `<thead class="table-light small text-uppercase text-muted"><tr>` +
+        `<th class="ps-3">Cód. Autorización</th><th>Medio</th><th>Fecha Venta</th><th class="text-end">Monto TBK</th><th class="pe-3">Acción Sugerida</th>` +
+      `</tr></thead><tbody>${rows}</tbody>` +
+    `</table></div>`
+  );
+
+  if (pagEl) {
+    pagEl.innerHTML = totalPages > 1
+      ? `<div class="d-flex justify-content-between align-items-center pt-2">` +
+          `<span class="small text-muted">Mostrando ${start + 1}–${start + slice.length} de ${clpModalWithoutItems.length} casos sin sugerencia</span>` +
+          `<ul class="pagination pagination-sm mb-0">${buildPaginationItemsHtml(clpModalWithoutPage, totalPages, (p) => `goToClpModalWithoutPage(${p})`)}</ul>` +
+        `</div>`
+      : '';
+  }
+}
+
+function goToClpModalWithoutPage(page) {
+  clpModalWithoutPage = page;
+  renderClpModalWithoutPage();
+}
+
+function openClpSuggestionsModal(sectionKey = 'orphans') {
+  const cfg = CLP_MODAL_SECTIONS[sectionKey] || CLP_MODAL_SECTIONS.orphans;
+  const scriptEl = document.getElementById(cfg.scriptId);
   if (!scriptEl) return;
 
   let vouchers = [];
@@ -89,33 +198,20 @@ function openClpSuggestionsModal() {
     console.error('Error parsing CLP suggestions JSON:', e);
     return;
   }
-  const withSuggestion = vouchers.filter(v => Boolean(v.suggestion));
-  const withoutSuggestion = vouchers.filter(v => !v.suggestion);
+
+  clpModalWithItems = vouchers.filter(v => Boolean(v.suggestion));
+  clpModalWithoutItems = vouchers.filter(v => !v.suggestion);
+  clpModalWithPage = 1;
+  clpModalWithoutPage = 1;
+
+  const titleEl = document.getElementById('clpSugModalTitle');
+  if (titleEl) titleEl.textContent = cfg.title;
 
   document.getElementById('clpSugStatsBadge').textContent =
-    `${withSuggestion.length} con sugerencia · ${withoutSuggestion.length} sin sugerencia`;
+    `${clpModalWithItems.length} con sugerencia · ${clpModalWithoutItems.length} sin sugerencia`;
 
-  document.getElementById('clpSugWithList').innerHTML = withSuggestion.length
-    ? withSuggestion.map(renderClpSuggestionCard).join('')
-    : '<div class="p-3 rounded-3 border text-muted small text-center"><i class="bi bi-info-circle me-1"></i>No se detectaron sugerencias en el Borderó.</div>';
-
-  const rows = withoutSuggestion.map((v, idx) => (
-    `<tr>` +
-      `<td class="ps-3 fw-bold font-monospace text-danger">#${idx + 1} · ${escapeHtmlStr(v.authorization_code)}</td>` +
-      `<td><span class="badge bg-dark">${escapeHtmlStr(v.modality_label)}</span></td>` +
-      `<td>${escapeHtmlStr(v.sale_date || '—')}</td>` +
-      `<td class="text-end fw-bold">${escapeHtmlStr(formatClpClient(v.tbk_amount))}</td>` +
-      `<td class="pe-3 small text-muted"><i class="bi bi-slash-circle text-warning me-1"></i>${escapeHtmlStr(v.action || '')}</td>` +
-    `</tr>`
-  )).join('');
-  document.getElementById('clpSugWithoutList').innerHTML = withoutSuggestion.length ? (
-    `<h6 class="fw-bold text-uppercase small mb-3"><span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> Sin Sugerencia en el Borderó</span></h6>` +
-    `<div class="table-responsive rounded-3 border"><table class="table table-hover align-middle mb-0">` +
-      `<thead class="table-light small text-uppercase text-muted"><tr>` +
-        `<th class="ps-3">Cód. Autorización</th><th>Medio</th><th>Fecha Venta</th><th class="text-end">Monto TBK</th><th class="pe-3">Acción Sugerida</th>` +
-      `</tr></thead><tbody>${rows}</tbody>` +
-    `</table></div>`
-  ) : '';
+  renderClpModalWithPage();
+  renderClpModalWithoutPage();
 
   const modalEl = document.getElementById('clpSuggestionModal');
   if (modalEl && window.bootstrap) {

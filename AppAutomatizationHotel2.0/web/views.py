@@ -22,10 +22,12 @@ from .services import (
     detect_and_align_usd_files,
     enrich_preview_with_suggestions,
     calculate_clp_preview,
+    enrich_clp_preview_with_suggestions,
     commit_clp_preview_to_database,
     generate_committed_clp_excel_bytes,
     detect_and_align_clp_files,
 )
+
 
 USD_SESSION_KEY = "usd_reconciliation_preview"
 CLP_SESSION_KEY = "clp_reconciliation_preview"
@@ -245,8 +247,9 @@ def clp_upload_view(request):
             messages.error(request, "Por favor seleccione los 5 archivos requeridos para la conciliación en Pesos.")
             return redirect("clp_upload")
 
+        extra_erp_files = request.FILES.getlist("clp_extra_erp_files")
         try:
-            request.session[CLP_SESSION_KEY] = calculate_clp_preview(**files)
+            request.session[CLP_SESSION_KEY] = calculate_clp_preview(**files, extra_erp_files=extra_erp_files)
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("clp_preview")
         except Exception as error:
@@ -283,12 +286,28 @@ def clp_preview_view(request):
         messages.warning(request, "No hay ningún proceso preliminar en memoria. Por favor cargue los archivos.")
         return redirect("clp_upload")
 
+    if "suggestion_counts" not in preview:
+        enrich_clp_preview_with_suggestions(preview)
+        request.session[CLP_SESSION_KEY] = preview
+
     # Same order as the official Excel report: most actionable exceptions first.
     exception_vouchers = (
         preview.get("orphan_vouchers", [])
         + preview.get("discrepancy_vouchers", [])
         + preview.get("out_of_period_vouchers", [])
     )
+    all_cashiers = sorted({
+        r.get("cashier_username", "").strip()
+        for r in (
+            preview.get("matched_vouchers", [])
+            + preview.get("discrepancy_vouchers", [])
+            + preview.get("orphan_vouchers", [])
+            + preview.get("out_of_period_vouchers", [])
+            + preview.get("unmatched_erp_rows", [])
+        )
+        if r.get("cashier_username") and r.get("cashier_username") != "—"
+    })
+
     context = {
         "preview": preview,
         "bank_validations": preview.get("bank_validations", []),
@@ -300,6 +319,7 @@ def clp_preview_view(request):
         "out_of_period_vouchers": preview.get("out_of_period_vouchers", []),
         "unmatched_erp_rows": preview.get("unmatched_erp_rows", []),
         "exception_vouchers": exception_vouchers,
+        "cashiers": all_cashiers,
         "counts": preview.get("counts", {}),
         "suggestion_counts": preview.get("suggestion_counts", {}),
         "all_banks_matched": all(b.get("is_matched") for b in preview.get("bank_validations", [])),
@@ -340,7 +360,8 @@ def clp_commit_view(request):
         messages.error(request, f"Error al guardar el proceso en base de datos: {error}")
         return redirect("clp_preview")
 
-    del request.session[CLP_SESSION_KEY]
+    request.session.pop(CLP_SESSION_KEY, None)
+
     if is_ajax:
         return JsonResponse({
             "success": True,

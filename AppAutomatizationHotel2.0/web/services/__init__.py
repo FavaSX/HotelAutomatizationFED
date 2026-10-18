@@ -16,6 +16,7 @@ from .column_detector import resolve_dataframe_columns
 from .file_detector import detect_and_align_usd_files, detect_and_align_clp_files
 from .suggestion_engine import enrich_preview_with_suggestions
 from .clp_reconciliation import calculate_clp_preview
+from .clp_suggestion_engine import enrich_clp_preview_with_suggestions
 from .clp_persistence import commit_clp_preview_to_database
 from .clp_report_exporter import generate_committed_clp_excel_bytes
 
@@ -27,7 +28,9 @@ __all__ = [
     "detect_and_align_usd_files",
     "enrich_preview_with_suggestions",
     "calculate_clp_preview",
+    "enrich_clp_preview_with_suggestions",
     "commit_clp_preview_to_database",
     "generate_committed_clp_excel_bytes",
     "detect_and_align_clp_files",
 ]
+
