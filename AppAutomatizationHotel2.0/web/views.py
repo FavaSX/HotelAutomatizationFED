@@ -207,8 +207,11 @@ def clear_test_database_view(request):
     """
     Temporary testing utility: deletes all ReconciliationProcess records (and cascades
     to all 7 child transaction/summary/validation tables) while keeping catalog tables intact.
+    Restricted to superusers so demo accounts on the public deployment cannot wipe data.
     """
-    if request.method == "POST":
+    if not request.user.is_superuser:
+        messages.error(request, "Solo un administrador puede vaciar la base de datos.")
+    elif request.method == "POST":
         process_count = ReconciliationProcess.objects.count()
         ReconciliationProcess.objects.all().delete()
         for session_key in ("usd_reconciliation_preview", CLP_SESSION_KEY):
