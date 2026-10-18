@@ -105,6 +105,19 @@ async function handleBulkFilesSelected(fileList) {
   }
 }
 
+function getConfidenceBadgeHtml(type) {
+  switch (type) {
+    case 'HIGH':
+      return '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
+    case 'MEDIUM':
+      return '<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
+    case 'MANUAL':
+      return '<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual</span>';
+    default:
+      return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
+  }
+}
+
 function renderAlignmentTable(data) {
   const tbody = document.getElementById('alignmentTableBody');
   tbody.innerHTML = '';
@@ -118,14 +131,7 @@ function renderAlignmentTable(data) {
       optionsHtml += `<option value="${f.file_index}" ${selected}>${f.file_name} (${f.row_count} filas)</option>`;
     });
 
-    let badgeHtml = '';
-    if (role.confidence === 'HIGH') {
-      badgeHtml = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
-    } else if (role.confidence === 'MEDIUM') {
-      badgeHtml = '<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
-    } else {
-      badgeHtml = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
-    }
+    const badgeHtml = getConfidenceBadgeHtml(role.confidence);
 
     tr.innerHTML = `
       <td class="ps-3 py-3">
@@ -224,14 +230,12 @@ function onManualAlignmentChange() {
     if (fileIdx !== null && latestDetectionReport.inspected_files[fileIdx]) {
       const fileInfo = latestDetectionReport.inspected_files[fileIdx];
       evidenceCell.innerHTML = `<i class="bi bi-cpu me-1 text-primary"></i> ${fileInfo.evidence}`;
-      if (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') {
-        confidenceCell.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
-      } else {
-        confidenceCell.innerHTML = '<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual</span>';
-      }
+      confidenceCell.innerHTML = getConfidenceBadgeHtml(
+        (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') ? 'HIGH' : 'MANUAL'
+      );
     } else {
       evidenceCell.innerHTML = '<span class="text-danger">Seleccione un archivo para este rol.</span>';
-      confidenceCell.innerHTML = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
+      confidenceCell.innerHTML = getConfidenceBadgeHtml('MISSING');
     }
   });
 
