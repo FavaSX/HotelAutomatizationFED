@@ -1,0 +1,271 @@
+{% load l10n currency_filters %}
+{% if not clp.has_data %}
+<div class="card card-executive empty-state text-center p-5">
+  <div class="icon-square icon-square-gold mx-auto mb-3" style="width: 64px; height: 64px;">
+    <i class="bi bi-cash-stack fs-3"></i>
+  </div>
+  <h2 class="h5 fw-bold mb-2">Todavía no hay cierres en pesos</h2>
+  <p class="text-muted mx-auto mb-4" style="max-width: 460px;">
+    Cuando guardes tu primer cierre en pesos, aquí verás la conciliación por modalidad (crédito, débito y prepago),
+    los abonos bancarios y las excepciones con su acción sugerida.
+  </p>
+  <a href="{% url 'clp_upload' %}" class="btn btn-primary rounded-pill px-4">
+    <i class="bi bi-cloud-arrow-up me-1"></i> Cargar los 5 archivos
+  </a>
+</div>
+{% else %}
+{% with last=clp.last_process counts=clp.last_counts %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <p class="text-muted mb-0 small">
+    Último cierre: <strong style="color: var(--text);">{{ last.accounting_period|default:"Cierre Pesos (CLP)" }}</strong>
+    · guardado el {{ last.execution_date|date:"d/m/Y H:i" }} por {{ last.user.username }}
+  </p>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="{% url 'clp_export_committed' last.id %}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i> Reporte del último cierre
+    </a>
+    <a href="{% url 'clp_upload' %}" class="btn btn-sm btn-primary rounded-pill px-3">
+      <i class="bi bi-plus-lg me-1"></i> Nueva conciliación en pesos
+    </a>
+  </div>
+</div>
+
+<!-- KPI row -->
+<div class="row g-3 mb-3">
+  <div class="col-sm-6 col-xl-3">
+    {% include "partials/dashboard_match_card.html" with counts=clp.last_counts rate_delta=clp.rate_delta orphan_label="No en Borderó" %}
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="kpi-label">Excepciones pendientes</div>
+        <div class="icon-square icon-square-warning"><i class="bi bi-exclamation-triangle"></i></div>
+      </div>
+      <div class="stat-value" data-countup-to="{{ clp.pending_count|unlocalize }}">{{ clp.pending_count }}</div>
+      <ul class="list-unstyled small mb-0 mt-2">
+        {% for t in clp.pending_by_type %}
+        <li class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom-soft{% endif %}">
+          <span class="text-muted">{{ t.label }}</span>
+          <strong>{{ t.count }}</strong>
+        </li>
+        {% empty %}
+        <li class="text-muted"><i class="bi bi-check2-circle me-1" style="color: var(--success);"></i>Todo revisado</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="kpi-label">Monto en revisión</div>
+        <div class="icon-square icon-square-navy"><i class="bi bi-hourglass-split"></i></div>
+      </div>
+      <div class="stat-value"><span data-countup-to="{{ clp.pending_amount|unlocalize }}" data-countup-prefix="$">${{ clp.pending_amount|num_clp }}</span></div>
+      <div class="small text-muted mt-2">
+        Cobrado en Transbank y aún sin cuadrar en {{ clp.pending_count }} voucher{{ clp.pending_count|pluralize }}.
+        {% if clp.out_of_period_amount %}
+        <span class="d-block mt-1"><strong style="color: var(--text);">${{ clp.out_of_period_amount|num_clp }}</strong> son ventas fuera de período: se buscan en el Borderó de su fecha.</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card-hero-navy p-4 h-100">
+      <div class="kpi-label on-navy">Abonos bancarios · último cierre</div>
+      {% if clp.banks %}
+        <div class="d-flex align-items-center gap-2 mt-2">
+          {% if last.banks_matched == last.bank_list|length %}
+          <i class="bi bi-patch-check-fill fs-4" style="color: #86EFAC;"></i>
+          {% else %}
+          <i class="bi bi-exclamation-octagon-fill fs-4" style="color: #FCA5A5;"></i>
+          {% endif %}
+          <span class="stat-value on-navy" style="font-size: 1.45rem;">{{ last.banks_matched }} de {{ last.bank_list|length }} en cartola</span>
+        </div>
+        <dl class="bank-dl small mt-3 mb-0">
+          {% for m in clp.banks %}
+          <div>
+            <dt>
+              <i class="bi {% if m.bank.is_matched %}bi-check-circle-fill{% else %}bi-x-circle-fill{% endif %} me-1"
+                 style="color: {% if m.bank.is_matched %}#86EFAC{% else %}#FCA5A5{% endif %};"
+                 title="{% if m.bank.is_matched %}Abono encontrado en la cartola{% else %}Abono no encontrado en la cartola{% endif %}"></i>{{ m.label }}
+            </dt>
+            <dd>${{ m.bank.transbank_calculated_deposit|num_clp }}</dd>
+          </div>
+          {% endfor %}
+        </dl>
+      {% else %}
+        <div class="stat-value on-navy mt-2" style="font-size: 1.45rem;">Sin validación</div>
+        <div class="small text-muted mt-1">Este cierre no registró validación de cartola.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Modalities + exception report -->
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Modalidades del último cierre</h2>
+          <p class="panel-sub">Monto cobrado en Transbank, vouchers conciliados y comisión</p>
+        </div>
+        {% if clp.commissions_total %}
+        <div class="text-end">
+          <div class="kpi-label">Comisión total</div>
+          <div class="fw-semibold">${{ clp.commissions_total|num_clp }}</div>
+        </div>
+        {% endif %}
+      </header>
+      <div class="panel-body">
+        {% for m in clp.modalities %}
+        {% if not m.vouchers %}
+        <div class="bar-row d-flex justify-content-between align-items-baseline">
+          <span class="fw-semibold text-muted">{{ m.label }}</span>
+          <span class="text-muted small fst-italic">Sin movimientos en este cierre</span>
+        </div>
+        {% else %}
+        <div class="bar-row" title="{{ m.label }}: ${{ m.amount|num_clp }} · {{ m.matched }}/{{ m.vouchers }} conciliados">
+          <div class="bar-row-head">
+            <span class="fw-semibold">{{ m.label }}</span>
+            <span class="text-muted small">{{ m.matched }}/{{ m.vouchers }} conciliados</span>
+          </div>
+          <div class="d-flex align-items-center gap-3">
+            <div class="bar-track flex-grow-1"><span class="bar-fill" style="width: {{ m.pct|unlocalize }}%;"></span></div>
+            <span class="bar-value">${{ m.amount|num_clp }}</span>
+          </div>
+          {% if m.commissions or m.net_deposit %}
+          <div class="small text-muted mt-1">
+            Comisión Transbank ${{ m.commissions|num_clp }} · Abono neto ${{ m.net_deposit|num_clp }}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-5">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Excepciones por tipo de error</h2>
+          <p class="panel-sub">Con la acción sugerida por el sistema</p>
+        </div>
+      </header>
+      <div class="panel-body">
+        {% for g in clp.pending_by_error %}
+        <div class="bar-row" title="{{ g.label }}: {{ g.count }} · ${{ g.amount|num_clp }}">
+          <div class="bar-row-head">
+            <span class="fw-semibold">{{ g.label }}</span>
+            <span class="small"><strong>{{ g.count }}</strong> <span class="text-muted">· ${{ g.amount|num_clp }}</span></span>
+          </div>
+          <div class="bar-track"><span class="bar-fill bar-fill-navy" style="width: {{ g.pct|unlocalize }}%;"></span></div>
+          {% if g.action %}
+          <div class="small text-muted mt-1">
+            <i class="bi bi-arrow-return-right me-1"></i>{{ g.action }}{% if g.more_actions %} <span class="fst-italic">(y {{ g.more_actions }} acción{{ g.more_actions|pluralize:"es" }} más)</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% empty %}
+        <div class="text-center text-muted small py-4">
+          <i class="bi bi-check2-circle fs-3 d-block mb-2" style="color: var(--success);"></i>
+          No hay excepciones pendientes.
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Largest exceptions + recent closings -->
+<div class="row g-3">
+  <div class="col-lg-7">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Excepciones de mayor monto</h2>
+          <p class="panel-sub">Prioriza estas para cerrar la mayor diferencia</p>
+        </div>
+      </header>
+      {% if clp.largest_exceptions %}
+      <div class="table-responsive">
+        <table class="table table-dash align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Voucher</th>
+              <th>Tipo</th>
+              <th class="text-end">Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in clp.largest_exceptions %}
+            <tr>
+              <td>
+                <div class="fw-semibold font-mono">{{ e.authorization_code }}</div>
+                <div class="text-muted small">
+                  {% if e.modality_label %}{{ e.modality_label }} · {% endif %}{{ e.card_type.name }}{% if e.sale_date %} · <span class="text-nowrap">{{ e.sale_date|date:"d/m/Y" }}</span>{% endif %}
+                </div>
+              </td>
+              <td>
+                <span class="status-chip {% if e.system_result == 'OUT_OF_PERIOD' %}status-neutral{% elif e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}" title="{{ e.action }}">
+                  <i class="bi {% if e.system_result == 'OUT_OF_PERIOD' %}bi-calendar-x{% elif e.system_result == 'NOT_FOUND_IN_ERP' %}bi-search{% else %}bi-plus-slash-minus{% endif %}"></i><span class="d-none d-sm-inline">{{ e.type_label }}</span>
+                </span>
+              </td>
+              <td class="text-end fw-semibold text-nowrap">${{ e.transbank_amount|num_clp }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="panel-body text-center text-muted small py-4">
+        <i class="bi bi-check2-circle fs-3 d-block mb-2" style="color: var(--success);"></i>
+        No hay excepciones pendientes.
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="col-lg-5">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Cierres recientes</h2>
+          <p class="panel-sub">{{ clp.process_count }} cierre{{ clp.process_count|pluralize }} en pesos guardado{{ clp.process_count|pluralize }}</p>
+        </div>
+      </header>
+      <ul class="list-unstyled mb-0">
+        {% for p in clp.recent_processes %}
+        <li class="closing-row">
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-semibold text-truncate" title="{{ p.accounting_period }}">{{ p.accounting_period|default:"Cierre Pesos (CLP)" }}</div>
+            <div class="text-muted small">#{{ p.id }} · {{ p.execution_date|date:"d/m/Y H:i" }} · {{ p.user.username }}</div>
+            <div class="d-flex align-items-center gap-2 mt-2">
+              <div class="bar-track flex-grow-1" style="height: 6px;" title="{{ p.matched_vouchers }} de {{ p.total_vouchers }} conciliados">
+                <span class="bar-fill bar-fill-success" style="width: {{ p.match_rate|unlocalize }}%;"></span>
+              </div>
+              <span class="small fw-semibold">{{ p.match_rate }}%</span>
+              {% if p.bank_list %}
+              <span class="small text-nowrap" style="color: {% if p.banks_matched == p.bank_list|length %}var(--success){% else %}var(--danger){% endif %};"
+                    title="{{ p.banks_matched }} de {{ p.bank_list|length }} abonos encontrados en la cartola">
+                <i class="bi bi-bank2"></i> {{ p.banks_matched }}/{{ p.bank_list|length }}
+              </span>
+              {% endif %}
+            </div>
+          </div>
+          <a href="{% url 'clp_export_committed' p.id %}" class="btn-icon" title="Descargar reporte Excel" aria-label="Descargar reporte del cierre #{{ p.id }}">
+            <i class="bi bi-download"></i>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</div>
+{% endwith %}
+{% endif %}
