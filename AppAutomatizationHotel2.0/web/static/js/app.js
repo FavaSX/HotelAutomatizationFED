@@ -97,16 +97,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const showValue = (num) => {
-    // Count up only the first time the rate is shown in this browser tab, or right after logging in;
-    // moving between pages shows the value directly.
-    let shouldAnimate = false;
+    let justLoggedIn = false;
     try {
-      shouldAnimate = !!sessionStorage.getItem('justLoggedIn') || !sessionStorage.getItem('usdRateAnimated');
+      justLoggedIn = !!sessionStorage.getItem('justLoggedIn');
       sessionStorage.removeItem('justLoggedIn');
-      sessionStorage.setItem('usdRateAnimated', '1');
     } catch (_) {}
 
-    if (!shouldAnimate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (!justLoggedIn) {
       el.textContent = formatClp(num);
       return;
     }

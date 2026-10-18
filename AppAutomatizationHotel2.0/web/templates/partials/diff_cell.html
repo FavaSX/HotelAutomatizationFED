@@ -1,1 +1,0 @@
-{% load currency_filters %}{% if value %}<span class="diff-value diff-off">{% if kind == "clp" %}{% if value < 0 %}-{% endif %}${{ value|num_clp|cut:"-" }}{% else %}{{ value|num_usd }}{% endif %}</span>{% else %}<span class="diff-value diff-ok"><i class="bi bi-check2"></i>{% if kind == "clp" %}$0{% else %}0,00{% endif %}</span>{% endif %}
