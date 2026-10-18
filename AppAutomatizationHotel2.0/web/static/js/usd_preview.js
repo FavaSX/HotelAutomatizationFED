@@ -197,6 +197,8 @@ function paginateVoucherTbody(tbodyId) {
   if (listEl) {
     listEl.innerHTML = buildVoucherPaginationHtml(cfg.tabId, curPage, totalPages);
   }
+
+  initVoucherTooltips();
 }
 
 function sortVoucherTable(tbodyId, dataKey, thElem) {
@@ -833,13 +835,23 @@ function openSectionSuggestionsModal(sectionKey) {
   }
 }
 
-// Auto-initialize voucher tables pagination and filters on page load
+function initVoucherTooltips() {
+  if (window.bootstrap && typeof window.bootstrap.Tooltip === 'function') {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+      window.bootstrap.Tooltip.getOrCreateInstance(el);
+    });
+  }
+}
+
+// Auto-initialize voucher tables pagination, filters, and tooltips on page load
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     applyVoucherFilters();
+    initVoucherTooltips();
   });
 } else {
   applyVoucherFilters();
+  initVoucherTooltips();
 }
 
 

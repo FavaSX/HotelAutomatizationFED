@@ -324,7 +324,39 @@
                 {% endif %}
               </td>
               <td class="text-end">${{ item.erp_amount_clp|num_clp }}</td>
-              <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
+              <td class="pe-4 small">
+                {% if "dividido" in item.observation|lower %}
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 fw-bold d-inline-flex align-items-center gap-1 shadow-xs"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ item.observation|format_observation }}">
+                  <i class="bi bi-diagram-3-fill"></i> Voucher Dividido
+                </span>
+                {% elif "corregido" in item.observation|lower %}
+                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2.5 py-1 fw-semibold d-inline-flex align-items-center gap-1 shadow-xs"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ item.observation|format_observation }}">
+                  <i class="bi bi-pencil-square"></i> Saldo Corregido
+                </span>
+                {% elif item.difference_usd != 0 %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2.5 py-1 fw-medium d-inline-flex align-items-center gap-1 shadow-xs"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ item.observation|format_observation }} · Dif. centavos aceptada (±US$ 0.05)">
+                  <i class="bi bi-check2"></i> Tolerancia (±0.05)
+                </span>
+                {% elif "coincide" in item.observation|lower or not item.observation %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1 fw-medium d-inline-flex align-items-center gap-1 shadow-xs"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ item.observation|format_observation }}">
+                  <i class="bi bi-check2"></i> Cruce 1:1
+                </span>
+                {% else %}
+                <span class="text-muted" title="{{ item.observation|format_observation }}">{{ item.observation|format_observation }}</span>
+                {% endif %}
+              </td>
             </tr>
             {% empty %}
             <tr class="empty-static-row"><td colspan="10" class="text-center py-4 text-muted">No hay transacciones ubicadas.</td></tr>
@@ -388,9 +420,9 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4">Voucher</th>
-              <th>Doc ERP</th>
-              <th>Huésped / Hab.</th>
+              <th class="ps-4" style="min-width: 285px;">Cruce de Vouchers (TBK ⇄ ERP)</th>
+              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ OP)</th>
+              <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
@@ -399,8 +431,11 @@
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
                 Monto Operador <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia (Mayor a Menor / Menor a Mayor)">
-                Diferencia <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia USD (Mayor a Menor / Menor a Mayor)">
+                Dif. USD <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'clp', this)" title="Ordenar por Monto CLP (Mayor a Menor / Menor a Mayor)">
+                Monto CLP <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
               <th class="pe-4">Diagnóstico y Estado Nivel 2</th>
             </tr>
@@ -412,18 +447,68 @@
                 data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}"
                 data-op="{{ item.operator_amount_usd|unlocalize }}"
-                data-diff="{{ item.difference_usd|unlocalize }}">
-              <td class="ps-4 fw-bold font-monospace text-warning-emphasis">{{ item.authorization_code }}</td>
-              <td class="small">{{ item.document_number }}</td>
-              <td class="small">
-                <div class="fw-semibold">{{ item.guest_name }}</div>
-                <span class="text-muted">Hab: {{ item.room_number }}</span>
+                data-diff="{{ item.difference_usd|unlocalize }}"
+                data-clp="{{ item.erp_amount_clp|unlocalize }}">
+              <td class="ps-4">
+                <div class="voucher-dual-pill" title="Voucher Transbank coincide con Voucher ERP Hotel">
+                  <span class="voucher-dual-tbk">
+                    <small class="text-muted fw-bold">TBK:</small>
+                    <span class="font-monospace fw-bold">{{ item.authorization_code }}</span>
+                  </span>
+                  <span class="voucher-dual-equal">=</span>
+                  <span class="voucher-dual-erp">
+                    <small class="fw-bold">ERP:</small>
+                    <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
+                    <i class="bi bi-check2 voucher-check"></i>
+                  </span>
+                </div>
               </td>
+              <td>
+                {% if item.operator_amount_usd > 0 and item.document_number %}
+                  {% if item.document_number == item.operator_document_number %}
+                  <div class="doc-dual-pill" title="Documento ERP coincide con Documento Operadora">
+                    <span class="doc-dual-erp">
+                      <small class="text-muted fw-bold">ERP:</small>
+                      <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                    </span>
+                    <span class="doc-dual-equal">=</span>
+                    <span class="doc-dual-op">
+                      <small class="fw-bold">OP:</small>
+                      <span class="font-monospace fw-bold">{{ item.operator_document_number|default:item.document_number }}</span>
+                      <i class="bi bi-check2 doc-check"></i>
+                    </span>
+                  </div>
+                  {% else %}
+                  <div class="doc-dual-pill" title="Documento ERP difiere del Documento en Operadora">
+                    <span class="doc-dual-erp">
+                      <small class="text-muted fw-bold">ERP:</small>
+                      <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                    </span>
+                    <span class="doc-dual-equal" style="background: #eab308; color: #000;">≠</span>
+                    <span class="doc-dual-op" style="background: rgba(234, 179, 8, 0.15); color: #ca8a04;">
+                      <small class="fw-bold">OP:</small>
+                      <span class="font-monospace fw-bold">{{ item.operator_document_number }}</span>
+                    </span>
+                  </div>
+                  {% endif %}
+                {% elif item.document_number %}
+                <div class="d-inline-flex align-items-center gap-1.5" title="Documento ERP no hallado en archivo Operadora">
+                  <span class="badge bg-light text-dark border font-monospace px-2 py-1">ERP: {{ item.document_number }}</span>
+                  <span class="badge bg-danger-subtle text-danger border border-danger-subtle small px-1.5 py-0.5">
+                    <i class="bi bi-x-circle me-1"></i>Sin Op
+                  </span>
+                </div>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="small text-nowrap text-muted"><i class="bi bi-calendar3 me-1"></i>{{ item.sale_date|default:"—" }}</td>
               <td><span class="badge bg-light text-dark border">{{ item.cashier_username }}</span></td>
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
-              <td class="text-end">US$ {{ item.gross_amount_usd|num_usd }}</td>
-              <td class="text-end">US$ {{ item.operator_amount_usd|num_usd }}</td>
-              <td class="text-end fw-bold text-danger">US$ {{ item.difference_usd|num_usd }}</td>
+              <td class="text-end fw-bold text-dark font-monospace">US$ {{ item.gross_amount_usd|num_usd }}</td>
+              <td class="text-end fw-semibold text-primary font-monospace">US$ {{ item.operator_amount_usd|num_usd }}</td>
+              <td class="text-end fw-bold text-danger font-monospace">US$ {{ item.difference_usd|num_usd }}</td>
+              <td class="text-end font-monospace">${{ item.erp_amount_clp|num_clp }}</td>
               <td class="pe-4 small">
                 <div class="text-muted">{{ item.observation|format_observation }}</div>
                 {% if item.suggestion %}
@@ -441,10 +526,10 @@
               </td>
             </tr>
             {% empty %}
-            <tr class="empty-static-row"><td colspan="9" class="text-center py-4 text-muted">Sin diferencias de monto en este proceso.</td></tr>
+            <tr class="empty-static-row"><td colspan="10" class="text-center py-4 text-muted">Sin diferencias de monto en este proceso.</td></tr>
             {% endfor %}
             <tr id="noMatchRowDiscrepancies" class="d-none">
-              <td colspan="9" class="text-center py-4 text-muted">
+              <td colspan="10" class="text-center py-4 text-muted">
                 <i class="bi bi-search me-1"></i> No se encontraron vouchers con diferencia para ese filtro.
               </td>
             </tr>
@@ -867,6 +952,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_preview.js' %}?v=20"></script>
+<script src="{% static 'js/usd_preview.js' %}?v=21"></script>
 {% endblock %}
 
