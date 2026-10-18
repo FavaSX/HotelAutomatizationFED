@@ -49,8 +49,10 @@ def _compute_code_similarity(tbk_code: Any, erp_code: Any) -> Tuple[float, Optio
     return best_ratio, None
 
 
-def _chip(label: str, tone: str = "cyan") -> Dict[str, str]:
-    return {"label": label, "tone": tone}
+def _chip(label: str, icon_or_tone: str = "cyan", tone: Optional[str] = None) -> Dict[str, str]:
+    if tone is not None:
+        return {"label": label, "icon": icon_or_tone, "tone": tone}
+    return {"label": label, "tone": icon_or_tone}
 
 
 def _comp_row(tbk_val: str, erp_val: str, op_val: str, status_tone: str = "emerald") -> Dict[str, str]:
