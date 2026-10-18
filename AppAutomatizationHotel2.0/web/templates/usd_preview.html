@@ -1,236 +1,193 @@
 {% extends "base.html" %}
 {% load static currency_filters l10n %}
 
+{% block page_title %}Hotel Plaza San Francisco | Previsualización USD{% endblock %}
+
 {% block content %}
-<!-- Top Header -->
-<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 p-3 card-executive">
-  <div>
-    <div class="d-flex align-items-center gap-2 mb-1">
-      <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-1 rounded-pill fw-bold">
-        <i class="bi bi-eye-fill me-1"></i> Previsualización en Memoria (Borrador)
-      </span>
-      <span class="text-muted small">Base de datos intacta — Cero registros creados aún</span>
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div class="min-w-0">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <span class="eyebrow">Conciliación Dólares · Paso 2 de 3</span>
+      <span class="status-chip status-warning"><i class="bi bi-eye"></i>Borrador sin guardar</span>
     </div>
-    <h3 class="fw-bold mb-0">{{ preview.accounting_period }}</h3>
+    <h1 class="h4 fw-bold mb-1">{{ preview.accounting_period }}</h1>
+    <p class="text-muted small mb-0">Revisa el cruce antes de guardarlo. Nada se ha escrito en la base de datos todavía.</p>
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- 1. CARTOLA BANCARIA: VALIDACIÓN DE ABONO CALCULADO TRANSBANK -->
-<!-- ====================================================================== -->
-<div class="card card-executive p-4 mb-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h6 class="fw-bold text-uppercase text-muted small mb-0">
-      <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abono en Cartola Bancaria
-    </h6>
-    {% if bank.is_matched %}
-    <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fs-6">
-      <i class="bi bi-check-circle-fill me-1"></i> Abono Confirmado en Cartola
-    </span>
-    {% else %}
-    <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 rounded-pill fs-6">
-      <i class="bi bi-exclamation-triangle-fill me-1"></i> Abono Pendiente en Cartola
-    </span>
-    {% endif %}
-  </div>
-
-  <div class="row g-3">
-    <div class="col-md-6">
-      <div class="p-3 rounded-3 bg-light border">
-        <small class="text-muted d-block text-uppercase fw-bold">Abono Calculado en Liquidación Transbank</small>
-        <div class="fs-3 fw-bold text-dark mt-1">
-          US$ {{ bank.calculated_deposit|num_usd }} <small class="fs-6 text-muted">USD</small>
+<!-- KPI row -->
+<div class="row g-3 mb-3">
+  <div class="col-lg-5">
+    <div class="card-hero-gold p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start gap-3">
+        <div>
+          <div class="kpi-label">Conciliación automática</div>
+          <div class="stat-value accent mt-1">{{ match_rate }}%</div>
         </div>
-        <small class="text-muted">Proveniente de fila "Abono Calculado (=):" del archivo de liquidación Transbank</small>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="p-3 rounded-3 {% if bank.is_matched %}bg-success-subtle border-success-subtle{% else %}bg-warning-subtle border-warning-subtle{% endif %} border">
-        <small class="text-muted d-block text-uppercase fw-bold">Movimiento Detectado en Cartola Bancaria</small>
-        <div class="fs-3 fw-bold {% if bank.is_matched %}text-success{% else %}text-danger{% endif %} mt-1">
-          US$ {{ bank.bank_deposit_amount|num_usd }} <small class="fs-6">USD</small>
+        <div class="text-end">
+          <div class="kpi-label">Vouchers Transbank</div>
+          <div class="stat-value mt-1">{{ counts.total }}</div>
         </div>
-        <small class="text-muted">
-          Fecha abono: {{ bank.bank_movement_date|default:"No detectado" }}
-          {% if bank.bank_name %} · {{ bank.bank_name }}{% endif %}
-          {% if bank.bank_account_number %} (Cta. {{ bank.bank_account_number }}){% endif %}
-        </small>
       </div>
+      <div class="meter meter-lg mt-3" role="img" aria-label="{{ counts.matched }} ubicadas, {{ counts.discrepancies }} con diferencia, {{ counts.orphans }} no están en ERP">
+        <span class="meter-seg meter-success" style="flex: {{ counts.matched|unlocalize }};" title="{{ counts.matched }} ubicadas"></span>
+        <span class="meter-seg meter-warning" style="flex: {{ counts.discrepancies|unlocalize }};" title="{{ counts.discrepancies }} con diferencia"></span>
+        <span class="meter-seg meter-danger" style="flex: {{ counts.orphans|unlocalize }};" title="{{ counts.orphans }} no están en ERP"></span>
+      </div>
+      <div class="meter-legend mt-3">
+        <button type="button" class="legend-item" data-tab-target="#tabMatched">
+          <span class="legend-dot meter-success"></span>Ubicadas <strong>{{ counts.matched }}</strong>
+        </button>
+        <button type="button" class="legend-item" data-tab-target="#tabDiscrepancies">
+          <span class="legend-dot meter-warning"></span>Con diferencia <strong>{{ counts.discrepancies }}</strong>
+        </button>
+        <button type="button" class="legend-item" data-tab-target="#tabOrphans">
+          <span class="legend-dot meter-danger"></span>No están en ERP <strong>{{ counts.orphans }}</strong>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="kpi-label">Diferencia total</div>
+        <div class="icon-square icon-square-navy"><i class="bi bi-arrow-left-right"></i></div>
+      </div>
+      <div class="stat-value {% if usd_totals.diff %}text-danger-soft{% endif %}" style="font-size: 1.6rem;">
+        <span class="stat-unit">US$</span> {{ usd_totals.diff|num_usd }}
+      </div>
+      <div class="small text-muted mt-1">Operadoras vs. Transbank</div>
+      <div class="small mt-2 pt-2 border-top-soft d-flex justify-content-between">
+        <span class="text-muted">En pesos (ERP vs. operadoras)</span>
+        <strong class="{% if clp_totals.diff %}text-danger-soft{% endif %} text-nowrap">{% if clp_totals.diff < 0 %}-{% endif %}${{ clp_totals.diff|num_clp|cut:"-" }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-4">
+    <div class="card-hero-navy p-4 h-100">
+      <div class="kpi-label on-navy">
+        Abono en cartola{% if bank.bank_name %} · {{ bank.bank_name }}{% endif %}
+      </div>
+      <div class="d-flex align-items-center gap-2 mt-2">
+        {% if bank.is_matched %}
+        <i class="bi bi-patch-check-fill fs-4" style="color: #86EFAC;"></i>
+        <span class="stat-value on-navy" style="font-size: 1.45rem;">Confirmado</span>
+        {% else %}
+        <i class="bi bi-exclamation-octagon-fill fs-4" style="color: #FCA5A5;"></i>
+        <span class="stat-value on-navy" style="font-size: 1.45rem;">No encontrado</span>
+        {% endif %}
+      </div>
+      <dl class="bank-dl small mt-3 mb-0">
+        <div><dt>Calculado Transbank</dt><dd>US$ {{ bank.calculated_deposit|num_usd }}</dd></div>
+        <div><dt>En cartola{% if bank.bank_movement_date %} ({{ bank.bank_movement_date }}){% endif %}</dt><dd>US$ {{ bank.bank_deposit_amount|num_usd }}</dd></div>
+        {% if bank.bank_account_number %}<div><dt>Cuenta</dt><dd class="font-mono">{{ bank.bank_account_number }}</dd></div>{% endif %}
+      </dl>
     </div>
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- 2. RESUMEN FINANCIERO: TABLAS EN DÓLARES (USD) Y EN PESOS (CLP) -->
-<!-- ====================================================================== -->
-<div class="row g-4 mb-4">
-  <!-- Tabla USD -->
-  <div class="col-lg-6">
-    <div class="card card-executive h-100">
-      <div class="card-header border-bottom py-3">
-        <h6 class="fw-bold mb-0">
-          <i class="bi bi-currency-dollar text-primary me-1"></i> 2A. Cuadratura por Operador en Dólares (US$)
-        </h6>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light small text-uppercase text-muted">
-            <tr>
-              <th class="ps-3">Operador</th>
-              <th class="text-end">Total TBK (US$)</th>
-              <th class="text-end">Total Operador (US$)</th>
-              <th class="text-end pe-3">Diferencia (US$)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in usd_table %}
-            <tr>
-              <td class="ps-3 fw-semibold">
-                <i class="bi bi-credit-card-2-front text-muted me-1"></i> {{ row.card_name }}
-              </td>
-              <td class="text-end">US$ {{ row.erp_sales|num_usd }}</td>
-              <td class="text-end">US$ {{ row.tbk_sales|num_usd }}</td>
-              <td class="text-end pe-3 fw-bold {% if row.difference == 0 %}text-success{% else %}text-danger{% endif %}">
-                US$ {{ row.difference|num_usd }}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-          <tfoot class="table-light fw-bold">
-            <tr>
-              <td class="ps-3">TOTAL GENERAL</td>
-              <td class="text-end">US$ {{ usd_totals.erp|num_usd }}</td>
-              <td class="text-end">US$ {{ usd_totals.tbk|num_usd }}</td>
-              <td class="text-end pe-3 {% if usd_totals.diff == 0 %}text-success{% else %}text-danger{% endif %}">
-                US$ {{ usd_totals.diff|num_usd }}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+<!-- Squaring by franchise (USD + CLP in one table) -->
+<section class="card card-executive mb-3">
+  <header class="panel-head">
+    <div>
+      <h2 class="panel-title">Cuadratura por franquicia</h2>
+      <p class="panel-sub">Dólares: Transbank vs. operadora · Pesos: ERP vs. operadora (SALDO / SALDO CORREGIDO)</p>
     </div>
+  </header>
+  <div class="table-responsive">
+    <table class="table table-dash table-numeric align-middle mb-0">
+      <thead>
+        <tr class="group-row">
+          <th></th>
+          <th colspan="3" class="text-center group-head">Dólares (US$)</th>
+          <th colspan="3" class="text-center group-head">Pesos (CLP)</th>
+        </tr>
+        <tr>
+          <th>Franquicia</th>
+          <th class="text-end">Transbank</th>
+          <th class="text-end">Operadora</th>
+          <th class="text-end">Diferencia</th>
+          <th class="text-end group-start">ERP</th>
+          <th class="text-end">Operadora</th>
+          <th class="text-end">Diferencia</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in franchise_rows %}
+        <tr class="{% if not row.has_activity %}row-muted{% endif %}">
+          <td class="fw-semibold">{{ row.card_name }}{% if not row.has_activity %} <span class="small fw-normal fst-italic">· sin movimientos</span>{% endif %}</td>
+          <td class="text-end">{{ row.usd.erp_sales|num_usd }}</td>
+          <td class="text-end">{{ row.usd.tbk_sales|num_usd }}</td>
+          <td class="text-end">{% include "partials/diff_cell.html" with value=row.usd.difference kind="usd" %}</td>
+          <td class="text-end group-start">${{ row.clp.erp_sales|num_clp }}</td>
+          <td class="text-end">${{ row.clp.tbk_sales|num_clp }}</td>
+          <td class="text-end">{% include "partials/diff_cell.html" with value=row.clp.difference kind="clp" %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Total</td>
+          <td class="text-end">{{ usd_totals.erp|num_usd }}</td>
+          <td class="text-end">{{ usd_totals.tbk|num_usd }}</td>
+          <td class="text-end">{% include "partials/diff_cell.html" with value=usd_totals.diff kind="usd" %}</td>
+          <td class="text-end group-start">${{ clp_totals.erp|num_clp }}</td>
+          <td class="text-end">${{ clp_totals.tbk|num_clp }}</td>
+          <td class="text-end">{% include "partials/diff_cell.html" with value=clp_totals.diff kind="clp" %}</td>
+        </tr>
+      </tfoot>
+    </table>
   </div>
+</section>
 
-  <!-- Tabla CLP -->
-  <div class="col-lg-6">
-    <div class="card card-executive h-100">
-      <div class="card-header border-bottom py-3">
-        <h6 class="fw-bold mb-0">
-          <i class="bi bi-cash-stack text-success me-1"></i> 2B. Cuadratura en Moneda Nacional (Pesos CLP)
-        </h6>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light small text-uppercase text-muted">
-            <tr>
-              <th class="ps-3">Operador</th>
-              <th class="text-end">Total ERP (CLP)</th>
-              <th class="text-end">Total Operador (CLP)</th>
-              <th class="text-end pe-3">Diferencia (CLP)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in clp_table %}
-            <tr>
-              <td class="ps-3 fw-semibold">
-                <i class="bi bi-credit-card-2-front text-muted me-1"></i> {{ row.card_name }}
-              </td>
-              <td class="text-end">${{ row.erp_sales|num_clp }}</td>
-              <td class="text-end">${{ row.tbk_sales|num_clp }}</td>
-              <td class="text-end pe-3 fw-bold {% if row.difference == 0 %}text-success{% else %}text-danger{% endif %}">
-                ${{ row.difference|num_clp }}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-          <tfoot class="table-light fw-bold">
-            <tr>
-              <td class="ps-3">TOTAL GENERAL</td>
-              <td class="text-end">${{ clp_totals.erp|num_clp }}</td>
-              <td class="text-end">${{ clp_totals.tbk|num_clp }}</td>
-              <td class="text-end pe-3 {% if clp_totals.diff == 0 %}text-success{% else %}text-danger{% endif %}">
-                ${{ clp_totals.diff|num_clp }}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+<!-- Voucher detail (tables, suggestions and pagination from upstream) -->
+<section class="card card-executive mb-4" id="voucherSectionCard">
+  <div class="card-header panel-head flex-wrap">
+    <div>
+      <h2 class="panel-title">Detalle de vouchers</h2>
+      <p class="panel-sub">Mostrando <strong id="visibleTotalBadge">{{ counts.total }}</strong> de {{ counts.total }} vouchers de Transbank</p>
     </div>
-  </div>
-</div>
-
-<!-- ====================================================================== -->
-<!-- 3. PESTAÑAS DE VOUCHERS Y CRUCE DETALLADO (GUIADO POR ABONO TBK) -->
-<!-- ====================================================================== -->
-<div class="card card-executive mb-4" id="voucherSectionCard">
-  <div class="card-header border-bottom pt-3 pb-0 px-4 d-flex flex-wrap justify-content-between align-items-center">
-    <ul class="nav nav-tabs border-bottom-0 gap-2" id="previewTabs" role="tablist">
-      <li class="nav-item">
-        <button class="nav-link active fw-bold text-success" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button">
-          <i class="bi bi-check2-all me-1"></i> Ubicadas Exactas (<span id="countBadgeMatched">{{ counts.matched }}</span>)
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <div class="segmented" id="previewTabs" role="tablist">
+        <button class="segmented-item active" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button" role="tab">
+          <span class="legend-dot meter-success"></span>Ubicadas <span class="segmented-count" id="countBadgeMatched">{{ counts.matched }}</span>
         </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold text-warning-emphasis" data-bs-toggle="tab" data-bs-target="#tabDiscrepancies" type="button">
-          <i class="bi bi-shuffle me-1"></i> Con Diferencia (<span id="countBadgeDiscrepancies">{{ counts.discrepancies }}</span>)
+        <button class="segmented-item" data-bs-toggle="tab" data-bs-target="#tabDiscrepancies" type="button" role="tab">
+          <span class="legend-dot meter-warning"></span>Con diferencia <span class="segmented-count" id="countBadgeDiscrepancies">{{ counts.discrepancies }}</span>
         </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold text-danger" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button">
-          <i class="bi bi-exclamation-octagon me-1"></i> En TBK pero NO en ERP (<span id="countBadgeOrphans">{{ counts.orphans }}</span>)
+        <button class="segmented-item" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button" role="tab">
+          <span class="legend-dot meter-danger"></span>No están en ERP <span class="segmented-count" id="countBadgeOrphans">{{ counts.orphans }}</span>
         </button>
-      </li>
-    </ul>
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-      <span class="badge bg-light text-dark border">
-        Mostrando: <strong id="visibleTotalBadge">{{ counts.total }}</strong> de <strong>{{ counts.total }} vouchers</strong>
-      </span>
+      </div>
       <button type="button" id="btnToggleFullscreen" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold shadow-xs" onclick="toggleFullscreenTable()" title="Modo Pantalla Completa (Maximizar espacio de trabajo)">
         <i class="bi bi-arrows-fullscreen me-1" id="iconFullscreen"></i><span id="textFullscreen">Pantalla Completa</span>
       </button>
     </div>
   </div>
 
-  <!-- Barra de Búsqueda Instantánea y Filtro por Tarjeta y Cajero (Alineados a la Izquierda) -->
-  <div class="bg-light border-bottom px-4 py-3 d-flex flex-wrap justify-content-start align-items-center gap-3" id="voucherToolbar">
-    <div class="position-relative flex-grow-1 voucher-search-wrapper">
-      <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-      <input type="text" id="voucherSearchInput" class="form-control form-control-sm rounded-pill ps-5 pe-5 py-2 border-secondary-subtle shadow-none"
-             placeholder="Buscar por voucher TBK, coincidencia ERP, doc ERP, cajero, tarjeta..."
-             oninput="applyVoucherFilters()">
-      <button type="button" id="btnClearVoucherSearch" class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-2 py-0 px-2 text-muted d-none"
-              onclick="clearVoucherSearch()" title="Limpiar búsqueda">
+  <div class="toolbar" id="voucherToolbar">
+    <div class="search-field">
+      <i class="bi bi-search"></i>
+      <input type="text" id="voucherSearchInput" class="form-control form-control-sm"
+             placeholder="Buscar voucher, documento, cajero, tarjeta…"
+             oninput="applyVoucherFilters()" aria-label="Buscar vouchers">
+      <button type="button" id="btnClearVoucherSearch" class="search-clear d-none" onclick="clearVoucherSearch()" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">
         <i class="bi bi-x-circle-fill"></i>
       </button>
     </div>
-
-    <div class="vr d-none d-md-block text-secondary opacity-25 my-1"></div>
-
-    <div class="d-flex flex-wrap align-items-center gap-1" id="cardBrandFilterGroup">
-      <span class="text-muted small fw-semibold me-1"><i class="bi bi-funnel me-1"></i>Tarjeta:</span>
-      <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 card-filter-btn active" data-card="ALL" onclick="setCardBrandFilter('ALL', this)">
-        Todas
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="VISA" onclick="setCardBrandFilter('VISA', this)">
-        Visa
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="MASTERCARD" onclick="setCardBrandFilter('MASTERCARD', this)">
-        MasterCard
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="AMERICAN EXPRESS" onclick="setCardBrandFilter('AMERICAN EXPRESS', this)">
-        American Express
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="DINERS" onclick="setCardBrandFilter('DINERS', this)">
-        Diners
-      </button>
+    <div class="chip-group" id="cardBrandFilterGroup" role="group" aria-label="Filtrar por tarjeta">
+      <button type="button" class="filter-chip card-filter-btn active" data-card="ALL" onclick="setCardBrandFilter('ALL', this)">Todas</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="VISA" onclick="setCardBrandFilter('VISA', this)">Visa</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="MASTERCARD" onclick="setCardBrandFilter('MASTERCARD', this)">MasterCard</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="AMERICAN EXPRESS" onclick="setCardBrandFilter('AMERICAN EXPRESS', this)">American Express</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="DINERS" onclick="setCardBrandFilter('DINERS', this)">Diners</button>
     </div>
-
-    <div class="vr d-none d-lg-block text-secondary opacity-25 my-1"></div>
-
-    <!-- Filtro por Cajero -->
     <div class="d-flex align-items-center gap-2" id="cashierFilterGroup">
       <label for="cashierFilterSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
-        <i class="bi bi-person-badge me-1"></i>Cajero:
+        <i class="bi bi-person-badge me-1"></i>Cajero
       </label>
       <select id="cashierFilterSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 150px;" onchange="setCashierFilter(this.value)">
         <option value="ALL" selected>Todos los cajeros</option>
@@ -592,24 +549,24 @@
       {% include "partials/voucher_pagination_bar.html" with suffix="Orphans" total=counts.orphans label="En TBK pero NO en ERP" %}
     </div>
   </div>
-</div>
+</section>
 
 <!-- JSON Data payloads for Level 2 Suggestions Modal -->
 <script type="application/json" id="jsonDiscrepanciesData">{{ discrepancy_vouchers|to_json|safe }}</script>
 <script type="application/json" id="jsonOrphansData">{{ orphan_vouchers|to_json|safe }}</script>
 
-<!-- Bottom Sticky Bar with Action Buttons -->
-<div class="p-3 rounded-4 border shadow-lg d-flex flex-wrap justify-content-between align-items-center gap-3 sticky-action-bar">
-  <div class="d-flex align-items-center gap-2 text-muted small">
-    <i class="bi bi-info-circle-fill text-primary fs-5"></i>
-    <span>Los datos anteriores fueron calculados en memoria. Si todo está conforme, haga clic en <strong>Confirmar y Guardar en BD</strong> para consolidar el cierre.</span>
+<!-- Sticky action bar -->
+<div class="action-bar">
+  <div class="d-none d-md-flex align-items-center gap-2 small text-muted min-w-0">
+    <i class="bi bi-info-circle" style="color: var(--brand);"></i>
+    <span>¿Todo conforme? Guarda el cierre, o descártalo para cargar archivos corregidos.</span>
   </div>
-  <div class="d-flex gap-2">
-    <button type="button" id="btnDiscardPreview" class="btn btn-outline-danger rounded-pill px-4 fw-semibold" data-bs-toggle="modal" data-bs-target="#discardPreviewModal">
-      <i class="bi bi-trash3 me-1"></i> Descartar
+  <div class="d-flex gap-2 flex-shrink-0">
+    <button type="button" id="btnDiscardPreview" class="btn btn-outline-secondary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#discardPreviewModal">
+      Descartar
     </button>
-    <button type="button" id="btnCommitToDb" class="btn btn-brand rounded-pill px-5 py-2 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#commitPreviewModal">
-      <i class="bi bi-check-circle-fill me-1"></i> Confirmar y Guardar en BD
+    <button type="button" id="btnCommitToDb" class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#commitPreviewModal">
+      <i class="bi bi-check2-circle me-1"></i> Guardar cierre
     </button>
   </div>
 </div>
@@ -620,4 +577,15 @@
 {% block extra_js %}
 <script src="{% static 'js/usd_preview.js' %}?v=25"></script>
 <script src="{% static 'js/usd_suggestions.js' %}?v=4"></script>
+<script>
+  // Clicking a legend item under the KPI meter opens that voucher tab
+  document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      const tabBtn = document.querySelector('#previewTabs [data-bs-target="' + item.dataset.tabTarget + '"]');
+      if (!tabBtn) return;
+      bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+      document.getElementById('voucherSectionCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+</script>
 {% endblock %}

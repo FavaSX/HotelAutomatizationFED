@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block page_title %}Hotel Plaza San Francisco | Inicio{% endblock %}
+{% block module_subtitle %}Suite de Conciliación Financiera{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+  <div>
+    <div class="eyebrow mb-1">Inicio</div>
+    <h1 class="h3 fw-bold mb-1">Hola, {{ user.first_name|default:user.username }}</h1>
+    <p class="text-muted mb-0 small">Resumen de los cierres guardados en la base de datos.</p>
+  </div>
+  <div class="segmented currency-switch" id="currencyTabs" role="tablist" aria-label="Moneda del panel">
+    <button class="segmented-item {% if active_currency == 'usd' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#panelUsd"
+            data-currency="usd" type="button" role="tab" aria-controls="panelUsd" aria-selected="{% if active_currency == 'usd' %}true{% else %}false{% endif %}">
+      <i class="bi bi-currency-dollar"></i>Dólares
+      {% if usd.has_data %}<span class="segmented-count">{{ usd.pending_count }}</span>{% endif %}
+    </button>
+    <button class="segmented-item {% if active_currency == 'clp' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#panelClp"
+            data-currency="clp" type="button" role="tab" aria-controls="panelClp" aria-selected="{% if active_currency == 'clp' %}true{% else %}false{% endif %}">
+      <i class="bi bi-cash-stack"></i>Pesos
+      {% if clp.has_data %}<span class="segmented-count">{{ clp.pending_count }}</span>{% endif %}
+    </button>
+  </div>
+</div>
+
+<div class="tab-content">
+  <div class="tab-pane fade {% if active_currency == 'usd' %}show active{% endif %}" id="panelUsd" role="tabpanel" aria-label="Panel de dólares">
+    {% include "partials/dashboard_usd.html" %}
+  </div>
+  <div class="tab-pane fade {% if active_currency == 'clp' %}show active{% endif %}" id="panelClp" role="tabpanel" aria-label="Panel de pesos">
+    {% include "partials/dashboard_clp.html" %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const tabs = document.querySelectorAll('#currencyTabs [data-currency]');
+    const animated = new Set();
+
+    // Count-up for the numbers of a panel, the first time it is shown
+    function countUp(panel) {
+      if (!panel || animated.has(panel.id)) return;
+      animated.add(panel.id);
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const duration = 900;
+      panel.querySelectorAll('[data-countup-to]').forEach((el) => {
+        const target = parseFloat(el.getAttribute('data-countup-to')) || 0;
+        const decimals = parseInt(el.getAttribute('data-countup-decimals') || '0', 10);
+        const prefix = el.getAttribute('data-countup-prefix') || '';
+        const suffix = el.getAttribute('data-countup-suffix') || '';
+        const finalText = el.textContent;  // server-formatted value, shown exactly once the count ends
+        const format = (n) => prefix + n.toLocaleString('es-CL', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
+        const start = performance.now();
+        function tick(now) {
+          const progress = Math.min((now - start) / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          el.textContent = progress < 1 ? format(target * eased) : finalText;
+          if (progress < 1) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      });
+    }
+
+    tabs.forEach((btn) => {
+      btn.addEventListener('shown.bs.tab', () => {
+        countUp(document.querySelector(btn.dataset.bsTarget));
+        try { localStorage.setItem('dashboardCurrency', btn.dataset.currency); } catch (e) {}
+        const url = new URL(window.location.href);
+        url.searchParams.set('moneda', btn.dataset.currency);
+        history.replaceState(null, '', url);
+      });
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Without ?moneda= in the URL, reopen the panel the user looked at last
+      {% if not currency_from_url %}
+      let saved = null;
+      try { saved = localStorage.getItem('dashboardCurrency'); } catch (e) {}
+      const savedTab = saved && document.querySelector('#currencyTabs [data-currency="' + saved + '"]');
+      if (savedTab && !savedTab.classList.contains('active')) {
+        bootstrap.Tab.getOrCreateInstance(savedTab).show();
+        return;
+      }
+      {% endif %}
+      countUp(document.querySelector('#currencyTabs .active') && document.querySelector(document.querySelector('#currencyTabs .active').dataset.bsTarget));
+    });
+  })();
+</script>
+{% endblock %}

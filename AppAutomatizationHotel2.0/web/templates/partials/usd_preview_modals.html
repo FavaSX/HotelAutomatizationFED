@@ -110,158 +110,107 @@
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- MODAL EJECUTIVO: DESCARTAR PREVISUALIZACIÓN                            -->
-<!-- ====================================================================== -->
-<div class="modal fade" id="discardPreviewModal" tabindex="-1" aria-hidden="true">
+<!-- Discard modal -->
+<div class="modal fade" id="discardPreviewModal" tabindex="-1" aria-labelledby="discardPreviewTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
-      <div class="modal-header border-0 pb-0 pt-4 px-4">
-        <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center modal-icon-danger">
-            <i class="bi bi-trash3-fill fs-4"></i>
-          </div>
+    <div class="modal-content rounded-4 overflow-hidden">
+      <div class="modal-body p-4">
+        <div class="d-flex align-items-start gap-3">
+          <div class="icon-square status-danger flex-shrink-0"><i class="bi bi-trash3 fs-5"></i></div>
           <div>
-            <h5 class="modal-title fw-bold mb-0">¿Descartar borrador en memoria?</h5>
-            <small class="text-muted">{{ preview.accounting_period }}</small>
+            <h5 class="fw-bold mb-1" id="discardPreviewTitle">¿Descartar este borrador?</h5>
+            <p class="text-muted small mb-0">
+              Se borra la previsualización de <strong style="color: var(--text);">{{ preview.accounting_period }}</strong>
+              y vuelves a la carga de archivos. La base de datos no cambia.
+            </p>
           </div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
       </div>
-      <div class="modal-body px-4 py-3">
-        <p class="text-muted small mb-0">
-          Se limpiará la previsualización actual de la sesión sin guardar ningún registro en la base de datos y volverá a la pantalla de carga de archivos.
-        </p>
-      </div>
-      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
-        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">
-          Cancelar
-        </button>
-        <form action="{% url 'usd_discard' %}" method="post" class="d-inline">
+      <div class="modal-footer-soft">
+        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+        <form action="{% url 'usd_discard' %}" method="post" class="m-0">
           {% csrf_token %}
-          <button type="submit" class="btn btn-danger rounded-pill px-4 fw-semibold shadow-sm">
-            <i class="bi bi-trash3 me-1"></i> Sí, Descartar Borrador
-          </button>
+          <button type="submit" class="btn btn-danger rounded-pill px-4">Descartar</button>
         </form>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- MODAL EJECUTIVO 2 PASOS:                                               -->
-<!--   PASO 1: CONFIRMAR GUARDADO EN BD                                     -->
-<!--   PASO 2: ÉXITO CONFIRMADO POR BACKEND + DESCARGA EXCEL OFICIAL        -->
-<!-- ====================================================================== -->
-<div class="modal fade" id="commitPreviewModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+<!-- Commit modal: step 1 confirm, step 2 success + Excel download -->
+<div class="modal fade" id="commitPreviewModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="commitPreviewTitle" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+    <div class="modal-content rounded-4 overflow-hidden">
 
-      <!-- PASO 1: CONFIRMACIÓN ANTES DE GUARDAR -->
       <div id="commitStepConfirm">
-        <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy">
-          <div class="d-flex align-items-center gap-3">
-            <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold">
-              <i class="bi bi-database-fill-check fs-4"></i>
-            </div>
-            <div>
-              <h5 class="modal-title fw-bold mb-0">Confirmar y Consolidar en Base de Datos</h5>
-              <small class="text-white-50">{{ preview.accounting_period }}</small>
-            </div>
-          </div>
-          <button type="button" id="btnCloseConfirmModal" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-        </div>
-
         <div class="modal-body p-4">
-          <div class="p-3 rounded-3 bg-light border mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="small text-muted fw-semibold">Abono Calculado Transbank:</span>
-              <span class="fw-bold text-dark">US$ {{ bank.calculated_deposit|num_usd }}</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="small text-muted fw-semibold">Estado en Cartola ({{ bank.bank_name|default:"Banco" }}):</span>
-              {% if bank.is_matched %}
-                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">Confirmado</span>
-              {% else %}
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill">Pendiente</span>
-              {% endif %}
-            </div>
-            <div class="d-flex justify-content-between align-items-center small">
-              <span class="text-muted fw-semibold">Vouchers Procesados ({{ counts.total }}):</span>
-              <div class="d-flex gap-1">
-                <span class="badge bg-success-subtle text-success">{{ counts.matched }} Exactos</span>
-                <span class="badge bg-warning-subtle text-dark">{{ counts.discrepancies }} Dif.</span>
-                <span class="badge bg-danger-subtle text-danger">{{ counts.orphans }} Huérfanos</span>
+          <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+            <div class="d-flex align-items-start gap-3">
+              <div class="icon-square icon-square-gold flex-shrink-0"><i class="bi bi-database-check fs-5"></i></div>
+              <div>
+                <h5 class="fw-bold mb-1" id="commitPreviewTitle">Guardar cierre</h5>
+                <p class="text-muted small mb-0">{{ preview.accounting_period }}</p>
               </div>
             </div>
+            <button type="button" id="btnCloseConfirmModal" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
           </div>
-          <div class="d-flex align-items-start gap-2 text-muted small">
-            <i class="bi bi-shield-lock-fill text-warning mt-1"></i>
-            <span>El motor transaccional verificará las 8 tablas con protección anti-duplicados antes de persistir el cierre contable.</span>
-          </div>
-        </div>
 
-        <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
-          <button type="button" id="btnCancelCommitModal" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">
-            Seguir Revisando
-          </button>
-          <button type="button" id="btnExecuteCommit" class="btn btn-brand rounded-pill px-4 fw-bold shadow-sm" data-commit-url="{% url 'usd_commit' %}" onclick="executeCommitToDatabase()">
-            <i class="bi bi-check-circle-fill me-1"></i> Sí, Guardar Cierre en BD
+          <dl class="summary-dl mb-3">
+            <div>
+              <dt>Vouchers</dt>
+              <dd class="d-flex flex-wrap justify-content-end gap-1">
+                <span class="status-chip status-success"><i class="bi bi-check2"></i>{{ counts.matched }} ubicadas</span>
+                <span class="status-chip status-warning"><i class="bi bi-plus-slash-minus"></i>{{ counts.discrepancies }} con diferencia</span>
+                <span class="status-chip status-danger"><i class="bi bi-search"></i>{{ counts.orphans }} no en ERP</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Abono Transbank</dt>
+              <dd>US$ {{ bank.calculated_deposit|num_usd }}</dd>
+            </div>
+            <div>
+              <dt>Cartola{% if bank.bank_name %} {{ bank.bank_name }}{% endif %}</dt>
+              <dd>
+                {% if bank.is_matched %}
+                <span class="status-chip status-success"><i class="bi bi-patch-check"></i>Confirmado</span>
+                {% else %}
+                <span class="status-chip status-danger"><i class="bi bi-exclamation-octagon"></i>No encontrado</span>
+                {% endif %}
+              </dd>
+            </div>
+          </dl>
+          <p class="text-muted small mb-0">
+            <i class="bi bi-shield-check me-1" style="color: var(--brand);"></i>
+            Si este cierre ya estaba guardado, se actualiza en vez de duplicarse.
+          </p>
+        </div>
+        <div class="modal-footer-soft">
+          <button type="button" id="btnCancelCommitModal" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Seguir revisando</button>
+          <button type="button" id="btnExecuteCommit" class="btn btn-primary rounded-pill px-4" data-commit-url="{% url 'usd_commit' %}" onclick="executeCommitToDatabase()">
+            <i class="bi bi-check2-circle me-1"></i> Guardar cierre
           </button>
         </div>
       </div>
 
-      <!-- PASO 2: ÉXITO CONFIRMADO POR EL BACKEND + DESCARGA DE EXCEL -->
       <div id="commitStepSuccess" class="d-none">
-        <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
-          <div class="d-flex align-items-center gap-3">
-            <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center shadow-sm modal-icon-success">
-              <i class="bi bi-check-lg fs-3"></i>
-            </div>
-            <div>
-              <h5 class="modal-title fw-bold mb-0">¡Cierre Guardado en Base de Datos!</h5>
-              <small class="text-white-50">Confirmación transaccional recibida del servidor</small>
-            </div>
-          </div>
+        <div class="modal-body p-4 text-center">
+          <div class="success-mark mx-auto mb-3"><i class="bi bi-check-lg"></i></div>
+          <h5 class="fw-bold mb-1">Cierre guardado</h5>
+          <p class="text-muted small mb-4" id="modalPeriod">—</p>
+
+          <dl class="summary-dl text-start mb-4">
+            <div><dt>Proceso</dt><dd id="modalProcessId">#—</dd></div>
+            <div><dt>Registrado</dt><dd id="modalExecDate">—</dd></div>
+            <div><dt>Vouchers</dt><dd id="modalVoucherStats">—</dd></div>
+          </dl>
+
+          <a href="#" id="modalExcelDownloadBtn" class="btn btn-primary rounded-pill w-100 py-2">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Descargar reporte Excel
+          </a>
         </div>
-
-        <div class="modal-body p-4">
-          <div class="alert alert-success border-success-subtle rounded-3 py-2 px-3 small d-flex align-items-center gap-2 mb-3">
-            <i class="bi bi-database-fill-check fs-5 text-success"></i>
-            <div>
-              Consolidación exitosa en las 8 tablas contables con verificación anti-duplicados completada.
-            </div>
-          </div>
-
-          <div class="p-3 rounded-3 bg-light border mb-4 small">
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="text-muted fw-semibold">ID de Proceso en BD:</span>
-              <span class="badge bg-dark rounded-pill px-3 py-1 fs-6" id="modalProcessId">#—</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="text-muted fw-semibold">Periodo Contable:</span>
-              <span class="fw-bold text-dark" id="modalPeriod">—</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="text-muted fw-semibold">Fecha y Hora de Registro:</span>
-              <span class="text-dark font-monospace" id="modalExecDate">—</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center">
-              <span class="text-muted fw-semibold">Vouchers Persistidos:</span>
-              <span class="fw-bold text-success" id="modalVoucherStats">—</span>
-            </div>
-          </div>
-
-          <div class="d-grid">
-            <a href="#" id="modalExcelDownloadBtn" class="btn btn-success btn-lg rounded-pill fw-bold shadow-sm py-2">
-              <i class="bi bi-file-earmark-excel-fill me-2"></i> Descargar Reporte Excel Oficial (.xlsx)
-            </a>
-          </div>
-        </div>
-
-        <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end">
-          <a href="{% url 'usd_upload' %}" id="modalFinishBtn" class="btn btn-brand rounded-pill px-4 fw-bold shadow-sm">
-            <i class="bi bi-arrow-left-circle me-1"></i> Finalizar y Volver al Inicio
+        <div class="modal-footer-soft justify-content-center">
+          <a href="{% url 'usd_upload' %}" id="modalFinishBtn" class="btn btn-outline-secondary rounded-pill px-4">
+            Finalizar
           </a>
         </div>
       </div>
@@ -269,4 +218,3 @@
     </div>
   </div>
 </div>
-
