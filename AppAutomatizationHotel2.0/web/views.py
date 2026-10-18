@@ -94,7 +94,14 @@ def usd_preview_view(request):
         messages.warning(request, "No hay ningún proceso preliminar en memoria. Por favor cargue los archivos.")
         return redirect("usd_upload")
 
-    if "suggestion_counts" not in preview:
+    needs_enrichment = (
+        "suggestion_counts" not in preview
+        or any(
+            v.get("suggestion") and "action" not in v.get("suggestion", {})
+            for v in preview.get("discrepancy_vouchers", []) + preview.get("orphan_vouchers", [])
+        )
+    )
+    if needs_enrichment:
         enrich_preview_with_suggestions(preview)
         request.session[USD_SESSION_KEY] = preview
 
@@ -286,7 +293,21 @@ def clp_preview_view(request):
         messages.warning(request, "No hay ningún proceso preliminar en memoria. Por favor cargue los archivos.")
         return redirect("clp_upload")
 
-    if "suggestion_counts" not in preview:
+    needs_enrichment = (
+        "suggestion_counts" not in preview
+        or any(
+            v.get("suggestion") and (
+                "action" not in v.get("suggestion", {})
+                or v.get("suggestion", {}).get("headline", "").startswith("Posible registro")
+            )
+            for v in preview.get("discrepancy_vouchers", []) + preview.get("orphan_vouchers", []) + preview.get("out_of_period_vouchers", [])
+        )
+        or any(
+            "no encontrado en el Borderó" in v.get("observation", "")
+            for v in preview.get("orphan_vouchers", []) + preview.get("out_of_period_vouchers", [])
+        )
+    )
+    if needs_enrichment:
         enrich_clp_preview_with_suggestions(preview)
         request.session[CLP_SESSION_KEY] = preview
 

@@ -309,7 +309,7 @@ def _cross_match_sale(
     else:
         erp_amount = Decimal("0")
         result = "NOT_FOUND_IN_ERP"
-        observation = f"Voucher {sale['authorization_code']} no encontrado en el Borderó"
+        observation = f"Voucher {sale['authorization_code']} no encontrado en ERP Hotel"
 
     if _installment_parts(sale["installment_number"]) and result == "MATCHED":
         observation += f" · Venta en cuotas ({sale['installment_number']})"

@@ -74,6 +74,12 @@
             <span class="text-muted">Coincidencias secundarias detectadas entre archivos</span>
           </h6>
           <div id="sugModalWithList" class="d-flex flex-column gap-3"></div>
+          <div id="sugWithPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-3">
+            <div class="small text-muted" id="sugWithPaginationInfo"></div>
+            <nav aria-label="Paginación de sugerencias asistidas">
+              <ul class="pagination pagination-sm mb-0 rounded-pill" id="sugWithPaginationList"></ul>
+            </nav>
+          </div>
         </div>
 
         <!-- 4. BLOQUE B: CASOS SIN SUGERENCIA EN ARCHIVOS -->
@@ -83,16 +89,12 @@
             <span class="text-muted">Vouchers sin coincidencias secundarias en ERP ni Operadora</span>
           </h6>
           <div id="sugModalWithoutList"></div>
-        </div>
-
-        <!-- 5. BARRA DE PAGINACIÓN INFERIOR -->
-        <div id="sugModalPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-4">
-          <div class="small text-muted" id="sugPaginationInfo">
-            Mostrando 1 - 20 de 0 casos
+          <div id="sugWithoutPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-3">
+            <div class="small text-muted" id="sugWithoutPaginationInfo"></div>
+            <nav aria-label="Paginación de casos sin sugerencia">
+              <ul class="pagination pagination-sm mb-0 rounded-pill" id="sugWithoutPaginationList"></ul>
+            </nav>
           </div>
-          <nav aria-label="Paginación de sugerencias">
-            <ul class="pagination pagination-sm mb-0 rounded-pill" id="sugPaginationList"></ul>
-          </nav>
         </div>
       </div>
 

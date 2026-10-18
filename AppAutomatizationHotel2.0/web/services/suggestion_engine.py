@@ -131,6 +131,7 @@ def _enrich_discrepancy_voucher(
             disc["suggestion"] = {
                 "confidence": "ALTA" if best_score >= 90 else "MEDIA",
                 "headline": f"Registro hallado en Operadora bajo Doc #{op_doc}",
+                "action": f"Validar folio Doc #{op_doc} en archivo Operadora y vincular con Doc #{doc_num} del ERP",
                 "files_involved": files_for_card(card_code),
                 "erp_cashier": cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date_val,
                 "manual_check_note": (
@@ -158,6 +159,7 @@ def _enrich_discrepancy_voucher(
         disc["suggestion"] = {
             "confidence": "ALTA",
             "headline": f"Vinculado por Doc #{doc_num} y Saldo CLP (Col. USD en 0,00 en Operadora)",
+            "action": f"Verificar columna USD en archivo Operadora para Doc #{doc_num}; saldo CLP cuadra exactamente",
             "files_involved": files_for_card(card_code),
             "erp_cashier": cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date_val,
             "manual_check_note": (
@@ -205,6 +207,10 @@ def _enrich_discrepancy_voucher(
             "headline": (
                 f"Cruce confirmado por Doc #{doc_num} y Saldo CLP (Dif. cambiaria {fmt_usd(abs(diff_usd))})"
                 if is_small_diff else f"Cruce parcial en Doc #{doc_num} — Saldo CLP cuadra en {fmt_clp(erp_clp)}"
+            ),
+            "action": (
+                f"Ajustar diferencia cambiaria de {fmt_usd(abs(diff_usd))} entre POS Transbank y Operadora"
+                if is_small_diff else f"Revisar cobro parcial o propina por diferencia de {fmt_usd(abs(diff_usd))} con cajero {cashier}"
             ),
             "files_involved": files_for_card(card_code),
             "erp_cashier": cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date_val,
@@ -283,6 +289,7 @@ def _collect_orphan_erp_op_proposals(
                 suggestion_payload = {
                     "confidence": "ALTA" if score >= 120 else "MEDIA",
                     "headline": f"Coincidencia sugerida en ERP y Operadora (Doc #{erp_doc})",
+                    "action": f"Corregir código de autorización en ERP de '{erp_auth or 'sin código'}' a '{auth_code}' (Doc #{erp_doc})",
                     "files_involved": files_for_card(card_code),
                     "erp_cashier": erp_cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date,
                     "manual_check_note": (
@@ -367,6 +374,7 @@ def _enrich_unassigned_orphan(
                 orph["suggestion"] = {
                     "confidence": "ALTA",
                     "headline": f"Posible voucher dividido en 2 facturas ERP (Docs #{doc1} + #{doc2})",
+                    "action": f"Unir facturas #{doc1} y #{doc2} ({fmt_clp(sum_clp)} CLP) bajo voucher {auth_code} en ERP",
                     "files_involved": files_for_card(card_code),
                     "erp_cashier": split_cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": sale_date,
                     "manual_check_note": (
@@ -404,6 +412,7 @@ def _enrich_unassigned_orphan(
         orph["suggestion"] = {
             "confidence": "MEDIA",
             "headline": f"Ubicado en Operadora (Doc #{op_doc}) — No facturado en ERP",
+            "action": f"Ingresar cobro de Doc #{op_doc} ({fmt_usd(tbk_usd)}) en ERP Hotel o verificar omisión de facturación",
             "files_involved": files_for_card(card_code),
             "manual_check_note": (
                 f"El voucher '{auth_code}' ({fmt_usd(tbk_usd)}) fue localizado en la Operadora bajo el Doc #{op_doc} "

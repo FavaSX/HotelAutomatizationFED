@@ -5,14 +5,57 @@
  *  - buildPaginationItemsHtml(currentPage, totalPages, onClickForPage)
  */
 
-let currentSugSectionVouchers = [];
+let currentSugAllVouchers = [];
+let currentSugWithItems = [];
+let currentSugWithoutItems = [];
 let currentSugFilterMode = 'ALL';
 let currentSugPageSize = 20;
-let currentSugCurrentPage = 1;
+let currentSugWithPage = 1;
+let currentSugWithoutPage = 1;
+const SUG_WITHOUT_PAGE_SIZE = 10;
 
 function formatUsdClient(val) {
   const num = Number(val) || 0;
   return 'US$ ' + num.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function getUsdActionText(sug, v) {
+  if (sug && sug.action) return sug.action;
+  if (v && v.action) return v.action;
+
+  const reasons = Array.isArray(sug?.reasons) ? sug.reasons : [];
+  const goldReason = (reasons.find(r => r.tone === 'gold') || {}).label || '';
+  const rows = Array.isArray(sug?.comparison_rows) ? sug.comparison_rows : [];
+  const [rAuth = {}, rDoc = {}, rUsd = {}, rClp = {}] = rows;
+
+  const docOp = String(rDoc.op_value || '').replace(/\(Sec\..*?\)/, '').trim();
+  const docErp = String(rDoc.erp_value || '').replace(/\(Fact\..*?\)/, '').trim();
+
+  if (goldReason.includes('Doc. Operadora') || (docOp && docErp && docOp !== docErp)) {
+    return `Validar folio ${docOp || 'en Operadora'} y vincular con ${docErp || 'en ERP'}`;
+  }
+  if (goldReason.includes('Col. USD en 0') || String(rUsd.op_value || '').includes('0,00')) {
+    return `Verificar columna USD en archivo Operadora para ${docErp || 'documento ERP'}; el saldo CLP cuadra exactamente`;
+  }
+  if (goldReason.includes('Variación Cambiaria')) {
+    return `Ajustar diferencia cambiaria entre POS Transbank (${formatUsdClient(v.gross_amount_usd)}) y Operadora`;
+  }
+  if (goldReason.includes('Cobro Parcial') || goldReason.includes('Dif:')) {
+    return `Revisar cobro parcial o propina por diferencia de monto con el cajero`;
+  }
+  if (goldReason.includes('error de tipeo') || (rAuth.erp_value && rAuth.tbk_value && rAuth.erp_value !== rAuth.tbk_value)) {
+    return `Corregir código de autorización en ERP de '${rAuth.erp_value || 'sin código'}' a '${v.authorization_code}' (${docErp || 'ERP'})`;
+  }
+  if (goldReason.includes('Dividida') || String(rDoc.erp_value || '').includes('+')) {
+    return `Unir facturas divididas bajo el voucher ${v.authorization_code} en el ERP`;
+  }
+  if (sug?.headline && sug.headline.includes('No facturado')) {
+    return `Ingresar cobro de ${docOp || 'Operadora'} en ERP Hotel o verificar omisión de facturación`;
+  }
+  if (sug?.headline) {
+    return sug.headline;
+  }
+  return 'Revisar antecedentes en archivos originales y conciliar manualmente';
 }
 
 function resetSugFilterButtons(activeBtn) {
@@ -38,12 +81,12 @@ function resetSugFilterButtons(activeBtn) {
 
 function changeSugPageSize(newSize) {
   currentSugPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 20);
-  currentSugCurrentPage = 1;
+  currentSugWithPage = 1;
   renderModalSuggestionsPage();
 }
 
-function goToSugPage(pageNum) {
-  currentSugCurrentPage = pageNum;
+function goToSugWithPage(pageNum) {
+  currentSugWithPage = pageNum;
   renderModalSuggestionsPage();
   const modalBody = document.querySelector('#suggestionDetailModal .modal-body');
   if (modalBody) {
@@ -51,9 +94,15 @@ function goToSugPage(pageNum) {
   }
 }
 
+function goToSugWithoutPage(pageNum) {
+  currentSugWithoutPage = pageNum;
+  renderModalSuggestionsPage();
+}
+
 function filterModalSuggestions(mode, btnElem) {
   currentSugFilterMode = mode || 'ALL';
-  currentSugCurrentPage = 1;
+  currentSugWithPage = 1;
+  currentSugWithoutPage = 1;
   resetSugFilterButtons(btnElem);
   renderModalSuggestionsPage();
 }
@@ -79,48 +128,34 @@ function renderModalSuggestionsPage() {
     );
   };
 
-  // 1. Filtrar vouchers según el modo activo
-  let filtered = currentSugSectionVouchers;
-  if (currentSugFilterMode === 'WITH') {
-    filtered = currentSugSectionVouchers.filter(v => Boolean(v.suggestion));
-  } else if (currentSugFilterMode === 'WITHOUT') {
-    filtered = currentSugSectionVouchers.filter(v => !v.suggestion);
-  }
-
-  const indexedVouchers = filtered.map((v, i) => ({ voucher: v, displayIndex: i + 1 }));
-  const totalCount = indexedVouchers.length;
-
-  // 2. Cálculo de paginación
-  const pageSize = currentSugPageSize;
-  const totalPages = (pageSize === Infinity || totalCount === 0) ? 1 : Math.ceil(totalCount / pageSize);
-  currentSugCurrentPage = Math.max(1, Math.min(currentSugCurrentPage, totalPages));
-
-  const startIndex = (pageSize === Infinity || totalCount === 0) ? 0 : (currentSugCurrentPage - 1) * pageSize;
-  const endIndex = pageSize === Infinity ? totalCount : Math.min(startIndex + pageSize, totalCount);
-
-  const pageItems = indexedVouchers.slice(startIndex, endIndex);
-  const pageWith = pageItems.filter(item => Boolean(item.voucher.suggestion));
-  const pageWithout = pageItems.filter(item => !item.voucher.suggestion);
-
-  // 3. Renderizar Bloque A: Con Sugerencia Asistida
+  // 1. Visibilidad de secciones según modo de filtro
   const withSec = document.getElementById('sugModalWithSection');
   const withListEl = document.getElementById('sugModalWithList');
+  const withoutSec = document.getElementById('sugModalWithoutSection');
+  const withoutListEl = document.getElementById('sugModalWithoutList');
 
+  // =========================================================================
+  // BLOQUE A: CASOS CON SUGERENCIA ASISTIDA (Paginación independiente)
+  // =========================================================================
   if (withSec && withListEl) {
     if (currentSugFilterMode === 'WITHOUT') {
       withSec.classList.add('d-none');
     } else {
       withSec.classList.remove('d-none');
-      if (pageWith.length === 0) {
-        const msg = (currentSugFilterMode === 'WITH' || totalCount === 0)
-          ? 'No se detectaron sugerencias secundarias en esta sección.'
-          : 'Los casos con sugerencia asistida de esta selección se encuentran en otras páginas del listado.';
-        const italic = (currentSugFilterMode === 'WITH' || totalCount === 0) ? '' : ' fst-italic';
-        withListEl.innerHTML = `<div class="p-3 rounded-3 border text-muted small text-center${italic}"><i class="bi bi-info-circle me-1"></i>${msg}</div>`;
+      const totalWith = currentSugWithItems.length;
+      const pageSize = currentSugPageSize;
+      const totalWithPages = (pageSize === Infinity || totalWith === 0) ? 1 : Math.ceil(totalWith / pageSize);
+      currentSugWithPage = Math.max(1, Math.min(currentSugWithPage, totalWithPages));
+
+      const startWith = (pageSize === Infinity || totalWith === 0) ? 0 : (currentSugWithPage - 1) * pageSize;
+      const endWith = pageSize === Infinity ? totalWith : Math.min(startWith + pageSize, totalWith);
+      const pageWith = currentSugWithItems.slice(startWith, endWith);
+
+      if (totalWith === 0) {
+        withListEl.innerHTML = '<div class="p-3 rounded-3 border text-muted small text-center"><i class="bi bi-info-circle me-1"></i>No se detectaron sugerencias secundarias en esta sección.</div>';
       } else {
-        withListEl.innerHTML = pageWith.map(item => {
-          const v = item.voucher;
-          const idx = item.displayIndex;
+        withListEl.innerHTML = pageWith.map((v, i) => {
+          const idx = startWith + i + 1;
           const sug = v.suggestion || {};
           const files = sug.files_involved || {};
           const rows = Array.isArray(sug.comparison_rows) ? sug.comparison_rows : [];
@@ -174,8 +209,7 @@ function renderModalSuggestionsPage() {
             renderKv('Documento', docErpShort || rDoc.erp_value, false, docMatch) +
             renderKv('Monto CLP', rClp.erp_value, clpDiff, clpMatch) +
             renderKv('Tarjeta', erpCardLabel, false, true) +
-            renderKv('Fecha ERP', erpDate, false, isDateMatched) +
-            renderKv('Registró', erpCashier || '—', false, false)
+            renderKv('Fecha ERP', erpDate, false, isDateMatched)
           ) : (
             `<div class="small text-muted py-4 text-center"><i class="bi bi-slash-circle me-1"></i>No facturado en ERP Hotel</div>`
           );
@@ -187,6 +221,17 @@ function renderModalSuggestionsPage() {
             renderKv('Tarjeta', operatorLabel, false, true)
           );
 
+          const cashierBadge = (erpCashier && erpCashier !== '—')
+            ? `<span class="text-muted">·</span><span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-person me-1"></i>Cajero: ${escapeHtmlStr(erpCashier)}</span>`
+            : '';
+
+          const actionText = getUsdActionText(sug, v);
+          const actionHtml = actionText ? (
+            `<div class="px-3 py-2 border-top small fw-semibold text-primary">` +
+              `<i class="bi bi-arrow-right-circle me-1"></i>Acción sugerida: <span class="text-dark">${escapeHtmlStr(actionText)}</span>` +
+            `</div>`
+          ) : '';
+
           return (
             `<div class="rounded-3 border overflow-hidden shadow-sm">` +
               `<div class="px-3 py-2 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2 suggestion-manual-box rounded-0">` +
@@ -196,6 +241,7 @@ function renderModalSuggestionsPage() {
                   `<span class="fw-semibold">${escapeHtmlStr(v.card_name)}</span>` +
                   `<span class="text-muted">·</span>` +
                   `<span class="fw-bold">${escapeHtmlStr(formatUsdClient(v.gross_amount_usd))}</span>` +
+                  cashierBadge +
                 `</div>` +
                 `<div>${causeBadgeHtml}</div>` +
               `</div>` +
@@ -213,42 +259,56 @@ function renderModalSuggestionsPage() {
                   `${colOpHtml}` +
                 `</div>` +
               `</div>` +
+              `${actionHtml}` +
             `</div>`
           );
         }).join('');
       }
+
+      // Paginación independiente de Bloque A
+      const withInfoEl = document.getElementById('sugWithPaginationInfo');
+      if (withInfoEl) {
+        withInfoEl.textContent = totalWith === 0
+          ? '0 sugerencias asistidas'
+          : `Mostrando ${startWith + 1} - ${endWith} de ${totalWith} sugerencias asistidas`;
+      }
+      const withListNav = document.getElementById('sugWithPaginationList');
+      if (withListNav) {
+        withListNav.innerHTML = buildPaginationItemsHtml(currentSugWithPage, totalWithPages, (p) => `goToSugWithPage(${p})`);
+      }
     }
   }
 
-  // 4. Renderizar Bloque B: Sin Sugerencia en Archivos
-  const withoutSec = document.getElementById('sugModalWithoutSection');
-  const withoutListEl = document.getElementById('sugModalWithoutList');
-
+  // =========================================================================
+  // BLOQUE B: CASOS SIN SUGERENCIA EN ARCHIVOS (Paginación independiente)
+  // =========================================================================
   if (withoutSec && withoutListEl) {
     if (currentSugFilterMode === 'WITH') {
       withoutSec.classList.add('d-none');
     } else {
       withoutSec.classList.remove('d-none');
-      if (pageWithout.length === 0) {
-        if (currentSugFilterMode === 'WITHOUT' || totalCount === 0) {
-          withoutListEl.innerHTML = (
-            '<div class="p-3 rounded-3 border text-success small text-center">' +
-            '<i class="bi bi-check-circle-fill me-1"></i>¡Todos los vouchers de esta sección cuentan con una sugerencia asistida detectada!' +
-            '</div>'
-          );
-        } else {
-          withoutListEl.innerHTML = (
-            '<div class="p-3 rounded-3 border text-muted small text-center fst-italic">' +
-            '<i class="bi bi-info-circle me-1"></i>Los vouchers sin sugerencia de esta selección se encuentran en otras páginas del listado.' +
-            '</div>'
-          );
-        }
+      const totalWithout = currentSugWithoutItems.length;
+      const totalWithoutPages = Math.ceil(totalWithout / SUG_WITHOUT_PAGE_SIZE) || 1;
+      currentSugWithoutPage = Math.max(1, Math.min(currentSugWithoutPage, totalWithoutPages));
+
+      const startWithout = (currentSugWithoutPage - 1) * SUG_WITHOUT_PAGE_SIZE;
+      const endWithout = Math.min(startWithout + SUG_WITHOUT_PAGE_SIZE, totalWithout);
+      const pageWithout = currentSugWithoutItems.slice(startWithout, endWithout);
+
+      if (totalWithout === 0) {
+        withoutListEl.innerHTML = (
+          '<div class="p-3 rounded-3 border text-success small text-center">' +
+          '<i class="bi bi-check-circle-fill me-1"></i>¡Todos los vouchers de esta sección cuentan con una sugerencia asistida detectada!' +
+          '</div>'
+        );
+        const withoutBar = document.getElementById('sugWithoutPaginationBar');
+        if (withoutBar) withoutBar.classList.add('d-none');
       } else {
-        const rowsNoSug = pageWithout.map(item => {
-          const v = item.voucher;
+        const rowsNoSug = pageWithout.map((v, i) => {
+          const idx = startWithout + i + 1;
           return (
             `<tr>` +
-              `<td class="ps-3 fw-bold font-monospace text-danger">#${item.displayIndex} · ${escapeHtmlStr(v.authorization_code)}</td>` +
+              `<td class="ps-3 fw-bold font-monospace text-danger">#${idx} · ${escapeHtmlStr(v.authorization_code)}</td>` +
               `<td><span class="badge bg-dark">${escapeHtmlStr(v.card_name)}</span></td>` +
               `<td>${escapeHtmlStr(v.sale_date || '—')}</td>` +
               `<td class="text-end fw-bold">${escapeHtmlStr(formatUsdClient(v.gross_amount_usd))}</td>` +
@@ -276,21 +336,22 @@ function renderModalSuggestionsPage() {
             `</table>` +
           `</div>`
         );
+
+        // Paginación independiente de Bloque B
+        const withoutBar = document.getElementById('sugWithoutPaginationBar');
+        if (withoutBar) withoutBar.classList.remove('d-none');
+        const withoutInfoEl = document.getElementById('sugWithoutPaginationInfo');
+        if (withoutInfoEl) {
+          withoutInfoEl.textContent = `Mostrando ${startWithout + 1} - ${endWithout} de ${totalWithout} casos sin sugerencia`;
+        }
+        const withoutListNav = document.getElementById('sugWithoutPaginationList');
+        if (withoutListNav) {
+          withoutListNav.innerHTML = totalWithoutPages > 1
+            ? buildPaginationItemsHtml(currentSugWithoutPage, totalWithoutPages, (p) => `goToSugWithoutPage(${p})`)
+            : '';
+        }
       }
     }
-  }
-
-  // 5. Actualizar barra de paginación reutilizando el constructor compartido
-  const infoEl = document.getElementById('sugPaginationInfo');
-  if (infoEl) {
-    infoEl.textContent = totalCount === 0
-      ? 'Mostrando 0 de 0 casos'
-      : `Mostrando ${startIndex + 1} - ${endIndex} de ${totalCount} casos`;
-  }
-
-  const listEl = document.getElementById('sugPaginationList');
-  if (listEl) {
-    listEl.innerHTML = buildPaginationItemsHtml(currentSugCurrentPage, totalPages, (p) => `goToSugPage(${p})`);
   }
 }
 
@@ -303,46 +364,52 @@ function openSectionSuggestionsModal(sectionKey) {
   try {
     vouchers = JSON.parse(scriptEl.textContent) || [];
   } catch (e) {
-    console.error('Error parsing section suggestions JSON:', e);
+    console.error('Error parsing suggestions JSON:', e);
     return;
   }
 
-  currentSugSectionVouchers = vouchers;
+  currentSugAllVouchers = vouchers;
+  currentSugWithItems = vouchers.filter(v => Boolean(v.suggestion));
+  currentSugWithoutItems = vouchers.filter(v => !v.suggestion);
+  currentSugWithPage = 1;
+  currentSugWithoutPage = 1;
   currentSugFilterMode = 'ALL';
-  currentSugCurrentPage = 1;
-  currentSugPageSize = 20;
 
-  const sizeSelect = document.getElementById('sugPageSizeSelect');
-  if (sizeSelect) sizeSelect.value = '20';
+  const total = vouchers.length;
+  const countWith = currentSugWithItems.length;
+  const countWithout = currentSugWithoutItems.length;
 
-  const withCount = vouchers.filter(v => Boolean(v.suggestion)).length;
-  const withoutCount = vouchers.length - withCount;
+  const countAllEl = document.getElementById('sugCountAll');
+  if (countAllEl) countAllEl.textContent = total;
+  const countWithEl = document.getElementById('sugCountWith');
+  if (countWithEl) countWithEl.textContent = countWith;
+  const countWithoutEl = document.getElementById('sugCountWithout');
+  if (countWithoutEl) countWithoutEl.textContent = countWithout;
 
-  const sectionBadge = document.getElementById('sugModalSectionBadge');
-  if (sectionBadge) {
-    sectionBadge.textContent = isDisc ? 'Con Diferencia de Monto' : 'En TBK pero NO en ERP';
+  const badgeEl = document.getElementById('sugModalSectionBadge');
+  if (badgeEl) {
+    badgeEl.textContent = isDisc ? 'Con Diferencia' : 'En TBK pero NO en ERP';
   }
 
   const statsBadge = document.getElementById('sugModalStatsBadge');
   if (statsBadge) {
-    statsBadge.textContent = `${withCount} con sugerencia · ${withoutCount} sin sugerencia`;
+    statsBadge.textContent = `${countWith} con sugerencia · ${countWithout} sin sugerencia`;
   }
 
   const headlineEl = document.getElementById('sugModalHeadline');
   if (headlineEl) {
     headlineEl.textContent = isDisc
-      ? 'Listado de Sugerencias Asistidas — Vouchers con Diferencia de Monto'
-      : 'Listado de Sugerencias Asistidas — Vouchers en TBK pero NO en ERP';
+      ? 'Diagnóstico Asistido Nivel 2 — Vouchers con Diferencia de Monto'
+      : 'Búsqueda Secundaria Asistida — Vouchers No Encontrados en ERP';
   }
 
-  const countAll = document.getElementById('sugCountAll');
-  const countWith = document.getElementById('sugCountWith');
-  const countWithout = document.getElementById('sugCountWithout');
-  if (countAll) countAll.textContent = vouchers.length;
-  if (countWith) countWith.textContent = withCount;
-  if (countWithout) countWithout.textContent = withoutCount;
+  // Sincronizar selector de elementos por página con currentSugPageSize
+  const pageSizeSelect = document.getElementById('sugPageSizeSelect');
+  if (pageSizeSelect) {
+    pageSizeSelect.value = String(currentSugPageSize === Infinity ? 'ALL' : currentSugPageSize);
+  }
 
-  resetSugFilterButtons(null);
+  resetSugFilterButtons();
   renderModalSuggestionsPage();
 
   const modalEl = document.getElementById('suggestionDetailModal');
@@ -350,4 +417,3 @@ function openSectionSuggestionsModal(sectionKey) {
     window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
   }
 }
-

@@ -31,10 +31,64 @@
             </div>
           </div>
         </div>
-        <div id="clpSugWithList" class="d-flex flex-column gap-3 mb-2"></div>
-        <div id="clpSugWithPagination" class="mb-4"></div>
-        <div id="clpSugWithoutList"></div>
-        <div id="clpSugWithoutPagination" class="mt-2"></div>
+        <!-- 2. BARRA DE FILTRO RÁPIDO Y PAGINACIÓN DENTRO DEL MODAL -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3 pb-3 border-bottom">
+          <div class="d-flex flex-wrap align-items-center gap-2" id="clpSugModalFilterGroup">
+            <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 clp-sug-filter-btn active" onclick="filterClpModalSuggestions('ALL', this)">
+              Todos (<span id="clpSugCountAll">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 clp-sug-filter-btn" onclick="filterClpModalSuggestions('WITH', this)">
+              <i class="bi bi-stars me-1"></i>Con Sugerencia Asistida (<span id="clpSugCountWith">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 clp-sug-filter-btn" onclick="filterClpModalSuggestions('WITHOUT', this)">
+              <i class="bi bi-slash-circle me-1"></i>Sin Coincidencia en Borderó (<span id="clpSugCountWithout">0</span>)
+            </button>
+          </div>
+
+          <!-- Selector de elementos por página -->
+          <div class="d-flex align-items-center gap-2 ms-auto">
+            <label for="clpSugPageSizeSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
+              <i class="bi bi-card-list me-1"></i>Por página:
+            </label>
+            <select id="clpSugPageSizeSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 95px;" onchange="changeClpSugPageSize(this.value)">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="ALL">Todas</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 3. BLOQUE A: CASOS CON SUGERENCIA ASISTIDA -->
+        <div id="clpSugModalWithSection" class="mb-4">
+          <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
+            <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Con Sugerencia Asistida</span>
+            <span class="text-muted">Coincidencias secundarias detectadas en Borderó ERP</span>
+          </h6>
+          <div id="clpSugModalWithList" class="d-flex flex-column gap-3"></div>
+          <div id="clpWithPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-3">
+            <div class="small text-muted" id="clpWithPaginationInfo"></div>
+            <nav aria-label="Paginación de sugerencias asistidas">
+              <ul class="pagination pagination-sm mb-0 rounded-pill" id="clpWithPaginationList"></ul>
+            </nav>
+          </div>
+        </div>
+
+        <!-- 4. BLOQUE B: CASOS SIN COINCIDENCIA EN BORDERÓ -->
+        <div id="clpSugModalWithoutSection" class="mb-3">
+          <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
+            <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> Sin Coincidencia en Borderó</span>
+            <span class="text-muted">Vouchers sin registro equivalente en el archivo de Borderó ERP</span>
+          </h6>
+          <div id="clpSugModalWithoutList"></div>
+          <div id="clpWithoutPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-3">
+            <div class="small text-muted" id="clpWithoutPaginationInfo"></div>
+            <nav aria-label="Paginación de casos sin coincidencia">
+              <ul class="pagination pagination-sm mb-0 rounded-pill" id="clpWithoutPaginationList"></ul>
+            </nav>
+          </div>
+        </div>
       </div>
       <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-between align-items-center">
         <span class="small text-muted"><i class="bi bi-shield-check me-1"></i> Los datos originales del cierre se mantienen intactos.</span>

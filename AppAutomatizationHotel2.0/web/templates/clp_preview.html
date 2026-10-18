@@ -414,8 +414,10 @@
                 {% if item.suggestion %}
                 <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
                   <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Sugerencia ({{ item.suggestion.confidence }})</span>
-                  <span class="fw-semibold">{{ item.suggestion.headline }}</span>
+                  <span class="small fw-semibold">{{ item.suggestion.headline }}</span>
                 </div>
+                {% else %}
+                <div class="suggestion-empty mt-1"><i class="bi bi-slash-circle me-1"></i>Sin sugerencia secundaria detectada en Borderó.</div>
                 {% endif %}
               </td>
             </tr>
@@ -454,7 +456,7 @@
               <th>Local</th>
               <th>Fecha Venta</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyOrphans', 'tbk', this)">Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i></th>
-              <th class="pe-4">Observación y Sugerencia Nivel 2</th>
+              <th class="pe-4">Observación y Estado Nivel 2</th>
             </tr>
           </thead>
           <tbody id="tbodyOrphans" data-voucher-tab="voucher" data-no-match-row="noMatchRowOrphans" data-count-badge="countBadgeOrphans">
@@ -474,11 +476,10 @@
                 {% if item.suggestion %}
                 <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
                   <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Sugerencia ({{ item.suggestion.confidence }})</span>
-                  <span class="fw-semibold">{{ item.suggestion.headline }}</span>
-                  <span class="text-muted">· {{ item.suggestion.candidate_summary }}</span>
+                  <span class="small fw-semibold">{{ item.suggestion.headline }}</span>
                 </div>
                 {% else %}
-                <div class="suggestion-empty mt-1"><i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en el Borderó.</div>
+                <div class="suggestion-empty mt-1"><i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en Borderó ERP.</div>
                 {% endif %}
               </td>
             </tr>
@@ -522,7 +523,7 @@
               <th>Fecha Venta</th>
               <th>Cuota</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyOutOfPeriod', 'tbk', this)">Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i></th>
-              <th class="pe-4">Observación y Cruce Histórico</th>
+              <th class="pe-4">Observación y Estado Nivel 2</th>
             </tr>
           </thead>
           <tbody id="tbodyOutOfPeriod" data-voucher-tab="voucher" data-no-match-row="noMatchRowOutOfPeriod" data-count-badge="countBadgeOutOfPeriod">
@@ -543,9 +544,10 @@
                 {% if item.suggestion %}
                 <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
                   <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Sugerencia ({{ item.suggestion.confidence }})</span>
-                  <span class="fw-semibold">{{ item.suggestion.headline }}</span>
-                  <span class="text-muted">· {{ item.suggestion.candidate_summary }}</span>
+                  <span class="small fw-semibold">{{ item.suggestion.headline }}</span>
                 </div>
+                {% else %}
+                <div class="suggestion-empty mt-1"><i class="bi bi-slash-circle me-1"></i>Sin coincidencias en Borderó histórico.</div>
                 {% endif %}
               </td>
             </tr>
@@ -688,5 +690,5 @@
 
 {% block extra_js %}
 <script src="{% static 'js/usd_preview.js' %}?v=25"></script>
-<script src="{% static 'js/clp_preview.js' %}?v=2"></script>
+<script src="{% static 'js/clp_preview.js' %}?v=7"></script>
 {% endblock %}

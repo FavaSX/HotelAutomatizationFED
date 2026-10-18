@@ -135,11 +135,20 @@ def _build_candidate_suggestion(
     else:
         action = "Corregir el código de autorización en el ERP"
 
+    account = str(erp_row.get("account_code") or "").strip()
+    invoice = str(erp_row.get("invoice_number") or "").strip()
+    if account and account not in ("—", "0", "None"):
+        doc_ref = f"Doc #{account}"
+    elif invoice and invoice not in ("—", "0", "None"):
+        doc_ref = f"Fact #{invoice}"
+    else:
+        doc_ref = f"Fila {erp_row.get('excel_row')}"
+
     return {
         "confidence": "ALTA" if score >= HIGH_CONFIDENCE_SCORE else "MEDIA",
         "score": score,
         "erp_index": erp_idx,
-        "headline": f"Posible registro en {erp_file} fila {erp_row.get('excel_row')} (código {erp_code})",
+        "headline": f"Coincidencia sugerida en Borderó ERP ({doc_ref})",
         "cause": detail["cause"],
         "missing_code": missing_code,
         "action": action,
@@ -182,6 +191,9 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
         for voucher in preview_data.get(bucket, []):
             claimed.update(voucher.get("erp_indices") or [])
             voucher.pop("suggestion", None)
+            obs = voucher.get("observation", "")
+            if "no encontrado en el Borderó" in obs:
+                voucher["observation"] = f"Voucher {voucher['authorization_code']} no encontrado en ERP Hotel"
 
     # Pre-cancel self-cancelling reversal pairs in the Bordero (+X and -X on same account & code)
     for rev_idx, rev_row in enumerate(erp_rows):
