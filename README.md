@@ -42,21 +42,24 @@ El motor financiero ejecuta la conciliación en **tres niveles de validación si
    * En paralelo, valida la conversión a pesos chilenos en cascada: compara el monto CLP del ERP primero contra la columna **`SALDO`** de la operadora y, si hubo ajuste cambiario, contra la columna **`SALDO CORREGIDO`**.
 3. **Confirmación de Abono en Cartola Bancaria:**
    * Suma la totalidad de las liquidaciones netas del cierre y escanea la cartola bancaria buscando el abono exacto en cuenta corriente, emitiendo un dictamen inmediato de **Abono Bancario Confirmado** o **Alerta de Diferencia Bancaria**.
+4. **Motor de Sugerencia Asistida Nivel 2 (`suggestion_engine.py`):**
+   * Para aquellos vouchers que no logran un cruce automático en el Nivel 1 (pestañas *Con Diferencia* y *En TBK pero NO en ERP*), el sistema ejecuta un segundo motor analítico de carácter **consultivo** (nunca fuerza ni altera la conciliación automática).
+   * Cruza los vouchers pendientes contra la totalidad de filas disponibles del ERP y de los operadores aplicando algoritmos de similitud de texto (`difflib`), normalización de confusiones visuales de lectura POS/OCR (`G↔6`, `O↔0`, `B↔8`, `T/Z↔7`, `S↔5`, `I↔1`), detección de errores humanos de digitación de 1 o 2 caracteres, cercanía de fechas y correlación de montos en USD y CLP.
 
 ---
 
-### 3. Flujo de Trabajo del Contador: Previsualización, Excel y Persistencia
+### 3. Flujo de Trabajo del Contador: Previsualización, Asistente Nivel 2 y Persistencia Oficial
 A diferencia del esquema tradicional a ciegas, el sistema opera bajo una arquitectura de **Dos Fases (Preview & Commit)**:
 
 1. **Dashboard Interactivo de Previsualización (En Memoria):**
-   Al subir los 7 archivos, el contador accede inmediatamente a una vista preliminar con KPIs ejecutivos, tablas de cuadratura por franquicia en **USD** y **CLP**, estado del abono bancario y el desglose línea por línea clasificado en **3 pestañas de auditoría**:
-   * **Ubicadas Exactas:** Transacciones que cuadran tanto en ERP como en la operadora (incluyendo el detalle de Huésped, Habitación, Cajero, Tarjeta, Monto TBK, Monto Operador, Diferencia USD, Monto ERP CLP y Diagnóstico).
-   * **Con Diferencia:** Vouchers ubicados en el ERP pero que presentan diferencias monetarias en dólares o pesos fuera del rango de tolerancia, o que no figuran aún en la liquidación del operador.
-   * **No Ubicadas en ERP:** Cobros reales procesados en la máquina de Transbank cuyo código de autorización no fue ingresado al sistema del hotel por recepción.
-2. **Exportación de Borrador Excel Multi-Hoja:**
-   Desde la previsualización, el contador puede descargar en un clic un reporte Excel estilizado con 3 hojas (*Resumen Dólares*, *Vouchers Ubicados* y *Discrepancias y No Ubicados*) para compartir observaciones con recepción antes de cerrar el periodo.
-3. **Confirmación y Guardado Definitivo en Base de Datos:**
-   Una vez revisados los datos (o tras corregir y volver a subir un archivo con errores), el contador presiona **"Confirmar y Guardar en Base de Datos"**, persistiendo toda la operación de forma atómica con trazabilidad histórica completa.
+   Al subir los 7 archivos, el contador accede inmediatamente a una vista preliminar con KPIs ejecutivos (porcentaje de conciliación automática con barra de progreso interactiva, diferencia total y tarjeta de confirmación del abono en cartola bancaria con número de cuenta detectado), las **dos tablas paralelas de cuadratura** (**2A. Cuadratura por Operador en Dólares US$** y **2B. Cuadratura en Moneda Nacional Pesos CLP**) y el desglose línea por línea clasificado en **3 pestañas de auditoría**:
+   * **Ubicadas Exactas:** Transacciones que cuadran tanto en ERP como en la operadora (incluyendo el detalle de Cruce de Vouchers `TBK ⇄ ERP`, Cruce de Documentos `ERP ⇄ OP`, Fecha, Cajero, Tarjeta, Monto TBK, Monto Operador, Diferencia USD, Monto CLP y Diagnóstico).
+   * **Con Diferencia:** Vouchers ubicados en el ERP pero que presentan diferencias monetarias en dólares o pesos fuera del rango de tolerancia (`±US$ 0,50 USD`), o cuyo documento aún no figura en la liquidación del operador.
+   * **En TBK pero NO en ERP:** Cobros reales procesados en la máquina de Transbank cuyo código de autorización no fue ingresado con coincidencia exacta al sistema del hotel por recepción.
+2. **Asistente de Cruce Secundario (Modal Nivel 2):**
+   En las pestañas *Con Diferencia* y *En TBK pero NO en ERP*, un banner ejecutivo informa cuántos casos cuentan con **sugerencia asistida** y permite abrir un modal interactivo con tablas comparativas lado a lado (`Transbank ⇄ ERP Hotel ⇄ Operadora`), nivel de confianza (`Alta / Media`) y la acción contable sugerida para corregir el dato en recepción.
+3. **Confirmación en Base de Datos y Descarga de Excel Oficial en 2 Pasos:**
+   Una vez revisados los datos, el contador presiona **"Guardar cierre"**. Mediante una petición asíncrona (AJAX), el sistema persiste atómicamente toda la operación en la base de datos y transforma el modal al **Paso 2**, habilitando el botón de descarga del **Reporte Excel Oficial Multi-Hoja** (*Resumen Dólares*, *Vouchers Ubicados* y *Discrepancias y No Ubicados*) respaldado por el registro histórico recién creado.
 
 ---
 
@@ -80,41 +83,104 @@ Durante la auditoría del código original se detectaron fallas críticas que im
 ### 2. Nueva Arquitectura de Base de Datos Relacional y Motor Anti-Duplicados
 Se diseñó e implementó desde cero un modelo relacional normalizado en Django compuesto por **11 modelos (3 catálogos base y 8 tablas operativas de conciliación)**:
 * **Catálogos y Configuración:** `CardType` (franquicias y prefijos BIN), `ReconciliationStatus` (estados de gestión contable) y `SystemConfiguration` (tolerancias de redondeo en USD y CLP editables por administración).
-* **Cabecera y Resúmenes del Cierre:** `ReconciliationProcess` (registro maestro de ejecución), `BankDepositValidation` (validación del abono bancario por modalidad) y `ReconciliationSummary` (cuadraturas consolidadas por tarjeta en tablas USD y CLP).
-* ** Almacén de Transacciones Limpias:** `BankStatementMovement`, `ErpTransaction`, `TransbankTransaction` y `CardOperatorTransaction`.
+* **Cabecera y Resúmenes del Cierre:** `ReconciliationProcess` (registro maestro de ejecución), `BankDepositValidation` (validación del abono bancario por modalidad: `USD_GENERAL`, `CLP_CREDIT`, `CLP_DEBIT`, `CLP_PREPAID`) y `ReconciliationSummary` (cuadraturas consolidadas por tarjeta y modalidad en tablas USD y CLP).
+* **Almacén de Transacciones Limpias:** `BankStatementMovement`, `ErpTransaction`, `TransbankTransaction` y `CardOperatorTransaction`.
 * **Auditoría y Gestión de Discrepancias:** `CrossMatchResult` (resultado individual por cada voucher con diagnóstico del sistema y estado de resolución) y `AuditResolutionLog` (bitácora inmutable de cambios de estado).
 
 #### Blindaje contra Duplicidad (Idempotencia en las 8 Tablas Operativas)
 Para evitar que la base de datos se infle si un contador guarda dos veces el mismo proceso o si vuelve a subir los archivos tras corregir una factura en el ERP, se construyó un **motor de deduplicación inteligente**:
 1. **Llaves Naturales Únicas por Tabla:** Cada movimiento bancario, cobro ERP, voucher Transbank y liquidación de operadora se identifica por su huella contable real (ej. *Tarjeta + Código de Autorización + Monto + Fecha + BIN* en Transbank, o *Cuenta + Factura + Autorización + Monto + Fecha + Hora* en ERP).
-2. **Detección Inteligente del Mismo Cierre Contable:** El sistema evalúa si la mayoría ($\ge 80\%$) de los vouchers del archivo `ABONO TBK` entrante y el monto total de liquidación coinciden con un proceso ya registrado. Si es el mismo cierre, reutiliza y actualiza el proceso existente en lugar de duplicar resúmenes; si es un cierre de otro día que solo comparte 1 o 2 filas por solapamiento de fechas de descarga, crea un proceso nuevo sin sobrescribir el historial del día anterior.
+2. **Detección Inteligente del Mismo Cierre Contable:** El sistema evalúa si la mayoría ($\ge 80\%$) de los vouchers del archivo de abono Transbank entrante y el monto total de liquidación coinciden con un proceso ya registrado de la misma moneda. Si es el mismo cierre, reutiliza y actualiza el proceso existente en lugar de duplicar resúmenes; si es un cierre de otro día que solo comparte 1 o 2 filas por solapamiento de fechas de descarga, crea un proceso nuevo sin sobrescribir el historial del día anterior.
 3. **Consultas SQL Focalizadas (`.filter(...__in=...)`):** En vez de cargar tablas históricas completas en memoria, el motor filtra en SQL únicamente los lotes de fechas, números de documento y códigos de autorización presentes en los archivos subidos, garantizando tiempos de respuesta constantes aunque la base de datos acumule años de operación.
-4. **Resolución y Trazabilidad Automática (`AuditResolutionLog`):** La tabla `CrossMatchResult` mantiene una relación 1 a 1 con cada voucher de Transbank. Si un voucher había quedado como `NOT_FOUND_IN_ERP` o `AMOUNT_MISMATCH` y, al re-subir el archivo ERP corregido, pasa a `MATCHED`, el sistema actualiza el registro existente a conciliado, asigna automáticamente el usuario y fecha de resolución, e inserta una entrada en `AuditResolutionLog` dejando constancia de la corrección.
+4. **Resolución y Trazabilidad Automática (`AuditResolutionLog`):** La tabla `CrossMatchResult` mantiene una relación 1 a 1 con cada voucher de Transbank. Si un voucher había quedado como `NOT_FOUND_IN_ERP`, `AMOUNT_MISMATCH`, `CARD_TYPE_MISMATCH` o `OUT_OF_PERIOD` y, al re-subir el archivo ERP corregido, pasa a `MATCHED`, el sistema actualiza el registro existente a conciliado, asigna automáticamente el usuario y fecha de resolución, e inserta una entrada en `AuditResolutionLog` dejando constancia de la corrección.
 
 ---
 
 ### 3. Motor de Cálculo en Memoria, Auto-Detección y Arquitectura Modular
-* **Auto-Detección de Archivos por Huella Interna (`file_detector.py`):** En versiones anteriores el usuario debía subir manualmente cada uno de los 7 archivos en 7 casilleros separados, con el riesgo de equivocarse de casilla entre las 4 operadoras. En la nueva versión se reemplazó ese esquema por una **Zona Única de Carga Masiva en 2 Pasos**:
-  1. **Paso 1 (Selección Masiva):** El contador arrastra o selecciona los 7 archivos juntos en cualquier orden e incluso con nombres distintos. El sistema abre las primeras 45 filas de cada Excel en memoria e identifica su **huella contable interna** (por ejemplo, leyendo `Cliente: TRANSBANK - TARJETA MASTERCARD US$`, `Código Local: 27941117` o los códigos `AME$ / VIS$`).
-  2. **Paso 2 (Tabla de Alineación y Confirmación):** El sistema presenta los 7 roles alineados junto con la evidencia interna encontrada, el conteo de filas, el nivel de certeza (`100% Seguro`) y un selector desplegable en cada fila que permite cambiar o reasignar manualmente cualquier archivo antes de ejecutar la conciliación, haciendo innecesario mantener el antiguo formulario manual de 7 casilleros.
-* **Previsualización Instantánea (`Zero-Write`):** Toda la lectura y cruce matemático (`calculate_usd_preview`) se ejecuta 100% en memoria RAM en fracciones de segundo y se almacena temporalmente en la sesión del usuario, permitiendo auditar y exportar borradores sin ensuciar la base de datos hasta la confirmación explícita (`commit_usd_preview_to_database`) protegida con `transaction.atomic()`.
+* **Auto-Detección de Archivos por Huella Interna (`file_detector.py`):** En versiones anteriores el usuario debía subir manualmente cada archivo en casilleros separados, con el riesgo de equivocarse de casilla entre operadoras o modalidades de pago. En la nueva versión se reemplazó ese esquema por una **Zona Única de Carga Masiva en 2 Pasos** tanto para Dólares (7 archivos) como para Pesos (5 archivos + Borderós históricos opcionales):
+  1. **Paso 1 (Selección Masiva):** El contador arrastra o selecciona todos los archivos juntos en cualquier orden e incluso con nombres distintos. El sistema abre las primeras 45 filas de cada Excel en memoria e identifica su **huella contable interna** (por ejemplo, leyendo `Cliente: TRANSBANK - TARJETA MASTERCARD US$`, el campo `Medio de pago: Crédito / Débito / Prepago` en liquidaciones CLP, o los encabezados `Cargos de Débitos y Créditos` del Borderó FrontOffice).
+  2. **Paso 2 (Tabla de Alineación y Confirmación):** El sistema presenta los roles requeridos alineados junto con la evidencia interna encontrada, el período de fechas detectado, el conteo de filas, el nivel de certeza (`100% Seguro`) y un selector desplegable en cada fila que permite cambiar o reasignar manualmente cualquier archivo antes de ejecutar la conciliación.
+* **Previsualización Instantánea (`Zero-Write`):** Toda la lectura y cruce matemático (`calculate_usd_preview` y `calculate_clp_preview`) se ejecuta 100% en memoria RAM en fracciones de segundo y se almacena temporalmente en la sesión del usuario, permitiendo auditar sin tocar la base de datos hasta la confirmación explícita (`commit_usd_preview_to_database` / `commit_clp_preview_to_database`) protegida con `transaction.atomic()`.
 * **Detector Híbrido de Columnas (`column_detector.py`) y Precisión `Decimal`:** Escanea las primeras filas de cada Excel buscando coincidencias por nombres de encabezado normalizados (sin tildes ni ruido), utiliza índices posicionales como respaldo secundario y reemplaza los flotantes inexactos por aritmética `Decimal` libre de errores `NaN`.
-* **Arquitectura Modular por Responsabilidad Única (`web/services/`):** El núcleo financiero se estructuró en módulos independientes y desacoplados:
-  * `usd_reconciliation.py`: Motor matemático de cruce triple en memoria para Dólares.
-  * `reconciliation_persistence.py`: Persistencia transaccional, deduplicación en las 8 tablas y registro automático en `AuditResolutionLog`.
-  * `report_exporter.py`: Generación de reportes Excel multi-hoja estilizados con `openpyxl`.
-  * `file_detector.py`: Clasificación y alineación automática de los 7 archivos por estructura interna.
-  * `excel_parsers.py` y `column_detector.py`: Lectura compartida y sanitización de Cartola, ERP y Operadoras.
+* **Arquitectura Modular por Responsabilidad Única (`web/services/`):** El núcleo financiero se estructuró en 11 módulos independientes y desacoplados:
+  * `usd_reconciliation.py` y `clp_reconciliation.py`: Motores matemáticos de conciliación en memoria para Dólares (USD) y Pesos (CLP).
+  * `suggestion_engine.py` y `clp_suggestion_engine.py`: Motores de sugerencia asistida Nivel 2 para análisis de discrepancias, errores tipográficos/OCR y búsqueda en Borderós históricos.
+  * `reconciliation_persistence.py` y `clp_persistence.py`: Persistencia transaccional, deduplicación en las 8 tablas operativas y registro automático en `AuditResolutionLog`.
+  * `report_exporter.py` y `clp_report_exporter.py`: Generación de reportes Excel oficiales multi-hoja estilizados con `openpyxl`.
+  * `file_detector.py`: Clasificación y alineación automática de lotes de archivos USD y CLP por huella estructural interna.
+  * `excel_parsers.py` y `column_detector.py`: Lectura compartida, inferencia de marcas por BIN y sanitización de Cartola, Borderó ERP, Transbank y Operadoras.
 
 ---
 
 ### 4. Rediseño de Interfaz (UI/UX) y Estandarización Contable Chilena
-* **Identidad Visual Corporativa:** Interfaz completamente nueva inspirada en la línea gráfica del **Hotel Plaza San Francisco** (azul marino profundo `#0C0C42` y dorado `#996909`), con barra de navegación unificada, alertas dinámicas y pantalla de bloqueo de carga (*Loading Overlay*) para impedir envíos dobles.
-* **Flujo Guiado de Carga y Confirmación:** La pantalla de carga guía al contador desde el arrastre masivo de los 7 reportes hasta la tabla interactiva de verificación de alineación, validando en vivo que no falten archivos ni existan asignaciones duplicadas antes de habilitar el procesamiento.
-* **Formato Numérico y Diagnósticos Claros:** Se creó una librería de filtros personalizados (`currency_filters.py`) que formatea todos los montos bajo el estándar chileno (**`.`** para separador de miles y **`,`** para decimales, tanto en USD como en CLP), muestra los nombres completos de las franquicias (*MasterCard, Visa, American Express, Diners Club*) y presenta diagnósticos directos como `Coincide con SALDO $107.984` o `Coincide con SALDO CORREGIDO $47.430`.
+* **Sistema de Diseño Corporativo con Modo Claro y Oscuro (`theme.css`):** Interfaz ejecutiva inspirada en la identidad del **Hotel Plaza San Francisco** (azul marino profundo `#0C0C42` y dorado `#996909`), equipada con barra lateral colapsable, selector de **Modo Claro / Modo Oscuro** persistente, alertas dinámicas y pantalla de bloqueo de carga (*Loading Overlay*) para impedir envíos dobles.
+* **Herramientas Avanzadas de Productividad en Tablas (`usd_preview.js`):**
+  * **Filtros Instantáneos Combinables:** Buscador en tiempo real por código de voucher, documento, cuenta, factura o huésped; filtro rápido por franquicia de tarjeta (*Visa, MasterCard, Amex, Diners, Redcompra*); filtro por modalidad (*Crédito, Débito, Prepago*) y selector específico por **Usuario Cajero**.
+  * **Ordenamiento Dinámico y Modo Pantalla Completa:** Ordenamiento ascendente/descendente (`Mayor a Menor / Menor a Mayor`) en columnas de montos y diferencias, junto con un botón de **Pantalla Completa** (`Esc`) que maximiza el área de trabajo para auditorías extensas.
+  * **Paginación Estandarizada (Default 20):** Todas las tablas de vouchers (tanto en Dólares como en Pesos) y todos los listados dentro de los modales de **Sugerencias Asistidas Nivel 2** cuentan con paginación cliente predeterminada en **20 registros por página**, con selector adaptable (`20`, `50`, `100` o `Todos`).
+* **Formato Numérico y Diagnósticos Claros (`currency_filters.py`):** Librería única de formateo bajo el estándar chileno (**`.`** para separador de miles y **`,`** para decimales, tanto en USD como en CLP), píldoras visuales duales de comparación (`TBK = ERP` / `TBK ≠ ERP`) y diagnósticos legibles sin jerga técnica.
 
 ---
 
-## Próximos Pasos: Fase 2 (Conciliación Nacional en Pesos Chilenos - CLP)
-*(En desarrollo: incorporación del cruce para tarjetas de Crédito, Débito y Prepago en moneda nacional CLP aprovechando la misma arquitectura relacional, auto-detección de archivos y previsualización de la plataforma v2.0).*
+## Fase 2: Conciliación de Transacciones Nacionales en Pesos Chilenos (CLP)
+
+La segunda fase del proyecto automatiza el cierre y cuadratura de las transacciones en **moneda nacional (Pesos Chilenos - CLP)** procesadas a través de las tres modalidades de pago de Transbank (**Crédito**, **Débito** y **Prepago**) frente al **Borderó de Cargos de Débitos y Créditos** del ERP del hotel y los depósitos efectivos en la **Cartola Bancaria en Pesos**.
+
+Su objetivo es validar que los **3 abonos diarios independientes** de Transbank hayan ingresado exactamente a la cuenta corriente del hotel (descontando comisiones e IVA), y verificar que cada voucher cobrado en los terminales POS del hotel esté debidamente registrado por recepción en el Borderó con su código de autorización, monto y medio de pago correctos.
+
+### 1. Archivos de Entrada (Los 5 Insumos Diarios + Borderós Históricos Opcionales)
+Para ejecutar un cierre en pesos, el contador arrastra en la zona única de carga un lote base de **5 archivos Excel** (`.xlsx` / `.xls`), con la posibilidad de incluir **archivos Borderó adicionales de períodos anteriores** (6 o más archivos) en la misma operación:
+
+* **A. Borderó ERP del Hotel (`BORDERO.XLS` / `.xlsx`)**
+  * **Origen:** Sistema FrontOffice del hotel (*Reporte de Cargos de Débitos y Créditos*).
+  * **Datos extraídos:** Rango de fechas del período consultado, Código de Medio de Pago (`VI` Visa, `MC` MasterCard, `AX` Amex, `DI` Diners, `RC` Redcompra Débito), Código de Autorización normalizado, Monto en CLP, Fecha y Hora de transacción, N° de Cuenta, N° de Factura, Reserva, Habitación, **Nombre del Huésped**, **Usuario Cajero** y detección automática de **reversas o anulaciones** (montos negativos). El parser filtra y excluye automáticamente los cargos en moneda extranjera (`AME$`, `VIS$`, `MAS$`, `DIN$`) para aislar exclusivamente la operación en pesos.
+
+* **B. Tres Liquidaciones Diarias de Transbank (`CREDITOS TBK.xlsx`, `DEBITOS TBK.xlsx`, `PREPAGO TBK.xlsx`)**
+  * **Origen:** Portal Privado de Transbank (*Reporte de Abonos por día*).
+  * **Datos extraídos:**
+    * **Bloque de Cabecera Financiera:** *Fecha de Liquidación (Período de Consulta)*, *Cuenta Corriente de Destino*, *Medio de Pago* (`Crédito`, `Débito` o `Prepago`), *Total Ventas (+)*, *Comisión Transbank (−)*, *IVA de Comisión (−)*, *Ventas Anuladas (−)*, *Cobros por Servicio (−)* y **Total Abono Neto (=)**.
+    * **Tabla de Detalle de Vouchers:** *Código de Autorización*, *Monto Original de Venta* (en ventas en cuotas, extrae el total original de la compra para cruzar 1:1 con la factura del hotel), *Monto Válido / Cuota del Día*, *Comisión*, *IVA*, *Abono Neto*, *Fecha de Venta*, *Tipo y N° de Cuota* (`1/3`, `2/6`, etc.), *Identificador de Transacción* y *Número de Tarjeta Enmascarado (BIN)*, a partir del cual el motor infiere automáticamente la franquicia (`4→Visa`, `2/5→MasterCard`, `34/37→Amex`, `30/36/38→Diners`).
+
+* **C. Cartola Bancaria en Pesos (`cartola.xlsx` / `.xls`)**
+  * **Origen:** Portal bancario corporativo (Cuenta Corriente en Pesos Chilenos).
+  * **Datos extraídos:** Número de cuenta corriente en el encabezado, Fecha de movimiento, Descripción (`TC TBK` para tarjetas de crédito y `ABONOS REALIZADOS POR TRANSBANK` para débito y prepago), Cargos, **Abonos** y Saldo contable.
+
+* **D. Soporte Automático para Borderós Históricos Adicionales (6° Archivo Opcional, ej. `BORDERO 04-07.XLS`)**
+  * Debido a que una liquidación de Transbank de un día específico (ej. agosto) suele incluir **cuotas posteriores o ventas rezagadas** realizadas en meses previos (ej. julio), el sistema permite arrastrar un 6° archivo correspondiente al Borderó del período anterior junto con los 5 archivos del día.
+  * El detector (`file_detector.py`) compara automáticamente las fechas de cobertura de los Borderós subidos, asigna el más reciente como **Borderó Principal** del cierre e ingiere el Borderó anterior como **Fuente Histórica Auxiliar**, poniéndolo a disposición del motor de sugerencias Nivel 2 para localizar al instante las ventas fuera de período.
+
+---
+
+### 2. Flujo de Cruce en Dos Pasadas, Validación Triple de Cartola y Reglas de Negocio
+El motor financiero de Pesos (`clp_reconciliation.py`) aplica las reglas contables del hotel en **cuatro etapas sucesivas**:
+
+1. **Validación Independiente de los 3 Abonos en Cartola Bancaria:**
+   * Para cada modalidad (**Crédito**, **Débito** y **Prepago**), el motor comprueba primero la integridad interna del archivo de Transbank verificando que la suma del detalle de vouchers cuadre con la cabecera (`Total Ventas − Comisión − IVA = Total Abono`).
+   * A continuación, busca en la cartola bancaria los **3 depósitos independientes** correspondientes a cada medio de pago, aplicando la tolerancia parametrizada en pesos ($\pm \$500$ a $\pm \$1.000\text{ CLP}$) y verificando que un mismo movimiento bancario no sea reclamado dos veces.
+2. **Algoritmo de Cruce Transbank vs. Borderó en Dos Pasadas:**
+   * **Pasada 1 (Prioridad de Monto Exacto):** El motor procesa primero todos los vouchers de Transbank cuyo código de autorización normalizado tiene una fila en el Borderó con **monto exacto** dentro de la tolerancia. Esto impide que códigos cortos o repetidos consuman erróneamente una fila que pertenecía a otra venta exacta.
+   * **Pasada 2 (Neto de Reversas y Discrepancias):** Cuando un mismo código de autorización aparece en múltiples líneas del Borderó (por ejemplo, cuando recepción realiza un cobro, luego ingresa una reversa negativa y vuelve a cargar el monto corregido), el algoritmo calcula primero la **suma neta de todas las filas del código** (cancelando reversas automáticamente) antes de evaluar si existe diferencia monetaria.
+3. **Tipificación Contable de Excepciones (`CARD_TYPE_MISMATCH` y `OUT_OF_PERIOD`):**
+   * **Discrepancia de Medio de Pago (`CARD_TYPE_MISMATCH`):** Si el código de autorización y el monto cuadran exactamente, pero recepción registró la venta bajo un medio de pago incompatible en el ERP (por ejemplo, una tarjeta de *Crédito* digitada como `RC` *Redcompra Débito*), el sistema la separa en la pestaña *Con Diferencia* indicando el código erróneo para su corrección contable.
+   * **Separación de Ventas Fuera de Período (`OUT_OF_PERIOD`):** Si un voucher no se encuentra en el Borderó principal, el motor evalúa su **Fecha de Venta original** y su **Número de Cuota**. Si la fecha de venta está fuera del rango de fechas del Borderó principal o corresponde a una cuota posterior (`2/3`, `3/3`, etc.), no la contamina como extravío del día, sino que la clasifica en una cuarta categoría auditable: **Fuera de Período**.
+4. **Motor de Sugerencia Asistida Nivel 2 para Pesos (`clp_suggestion_engine.py`):**
+   * Inspecciona todos los vouchers clasificados en *Con Diferencia*, *En TBK pero NO en Borderó* y *Fuera de Período* contra las filas no reclamadas del **Borderó principal** y la totalidad del **Borderó histórico adicional**.
+   * Calcula un puntaje ponderado evaluando coincidencia exacta o cercana de monto (comparando tanto el *Monto Original de Compra* como el *Monto Válido de la Cuota*), proximidad de fechas, compatibilidad de tarjeta y similitud tipográfica/OCR del código de autorización (detectando de inmediato casos reales donde recepción digitó un dígito distinto, como `826135` en lugar de `626135`, e indicando la fila exacta del Excel donde se encuentra).
+
+---
+
+### 3. Flujo de Trabajo del Contador en CLP: Previsualización, Asistente Nivel 2 y Cierre Oficial
+
+1. **Dashboard Interactivo de Previsualización CLP (`clp_preview.html`):**
+   * **1. Validación de Abonos en Cartola Bancaria:** Muestra el número de cuenta corriente detectado y **3 tarjetas ejecutivas lado a lado** (*Crédito*, *Débito* y *Prepago*) con la fecha de liquidación, el desglose de `Ventas − Comisión − IVA`, el abono neto esperado de Transbank frente al monto real hallado en la cartola bancaria y su estado individual (`Cuadrado` / `Pendiente`).
+   * **2. Cuadratura por Medio de Pago (Transbank vs. Borderó):** Tabla resumen por modalidad con el conteo total de vouchers, ubicadas exactas, Ventas TBK, Ventas Borderó, Diferencia, Comisión + IVA, Abono Neto y totales generales.
+   * **3. Cuatro Pestañas de Auditoría de Vouchers:**
+     * **Ubicadas Exactas:** Vouchers conciliados 1:1 o por neto de reversas dentro de la tolerancia en pesos.
+     * **Con Diferencia:** Vouchers cuyo código existe en el Borderó pero presentan diferencias de monto (`AMOUNT_MISMATCH`) o error de medio de pago (`CARD_TYPE_MISMATCH`).
+     * **En TBK pero NO en Borderó:** Vouchers del período actual cuyo código de autorización no figura en el Borderó.
+     * **Fuera de Período:** Vouchers correspondientes a fechas de venta anteriores al Borderó principal o cobros de cuotas posteriores.
+2. **Asistente Interactivo Nivel 2 en las 3 Pestañas de Excepción:**
+   * Cada una de las pestañas de excepción (*Con Diferencia*, *En TBK pero NO en Borderó* y *Fuera de Período*) incorpora su propio botón de **Listado de Sugerencias Asistidas Nivel 2**, mostrando el número exacto de sugerencias detectadas y permitiendo auditar la comparación detallada entre el voucher de Transbank y la fila candidata del Borderó (incluyendo el nombre del archivo Borderó de origen y el número de fila en Excel).
+3. **Confirmación Atómica y Descarga de Excel Oficial en 2 Pasos (`clp_persistence.py` y `clp_report_exporter.py`):**
+   * Al hacer clic en **"Confirmar y Guardar en BD"**, el sistema guarda atómicamente el cierre en pesos reutilizando la arquitectura relacional y el motor anti-duplicados de 8 tablas, registra cualquier resolución histórica en `AuditResolutionLog` y habilita en el mismo modal la descarga del **Reporte Excel Oficial de Pesos** estructurado en 3 hojas (*Resumen Pesos*, *Vouchers Cuadrados* y *Excepciones*).
 
