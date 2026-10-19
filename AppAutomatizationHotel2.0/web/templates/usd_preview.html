@@ -1,88 +1,115 @@
 {% extends "base.html" %}
 {% load static currency_filters l10n %}
 
+{% block page_title %}Hotel Plaza San Francisco | Previsualización USD{% endblock %}
+
 {% block content %}
-<!-- Top Header -->
-<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 p-3 card-executive">
-  <div>
-    <div class="d-flex align-items-center gap-2 mb-1">
-      <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-1 rounded-pill fw-bold">
-        <i class="bi bi-eye-fill me-1"></i> Previsualización en Memoria (Borrador)
-      </span>
-      <span class="text-muted small">Base de datos intacta — Cero registros creados aún</span>
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div class="min-w-0">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <span class="eyebrow">Conciliación Dólares · Paso 2 de 3</span>
+      <span class="status-chip status-warning"><i class="bi bi-eye"></i>Borrador sin guardar</span>
+      <span class="status-chip status-neutral"><i class="bi bi-rulers"></i>Tolerancia ±US$ {{ preview.tolerance|num_usd|default:"0,50" }} USD</span>
     </div>
-    <h3 class="fw-bold mb-0">{{ preview.accounting_period }}</h3>
+    <h1 class="h4 fw-bold mb-1">{{ preview.accounting_period }}</h1>
+    <p class="text-muted small mb-0">Revisa el cruce antes de guardarlo. Nada se ha escrito en la base de datos todavía.</p>
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- 1. CARTOLA BANCARIA: VALIDACIÓN DE ABONO CALCULADO TRANSBANK -->
-<!-- ====================================================================== -->
-<div class="card card-executive p-4 mb-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h6 class="fw-bold text-uppercase text-muted small mb-0">
-      <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abono en Cartola Bancaria
-      {% if bank.bank_name %}
-        ({{ bank.bank_name }}{% if bank.bank_account_number %} · Cta. {{ bank.bank_account_number }}{% endif %})
-      {% endif %}
-    </h6>
-    {% if bank.is_matched %}
-    <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fs-6">
-      <i class="bi bi-check-circle-fill me-1"></i> Abono Confirmado en Cartola
-    </span>
-    {% else %}
-    <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 rounded-pill fs-6">
-      <i class="bi bi-exclamation-triangle-fill me-1"></i> Abono Pendiente en Cartola
-    </span>
-    {% endif %}
-  </div>
-
-  <div class="row g-3">
-    <div class="col-md-6">
-      <div class="p-3 rounded-3 bg-light border">
-        <small class="text-muted d-block text-uppercase fw-bold">Abono Calculado en Liquidación Transbank</small>
-        <div class="fs-3 fw-bold text-dark mt-1">
-          US$ {{ bank.calculated_deposit|num_usd }} <small class="fs-6 text-muted">USD</small>
+<!-- KPI row -->
+<div class="row g-3 mb-3">
+  <div class="col-lg-5">
+    <div class="card-hero-gold p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start gap-3">
+        <div>
+          <div class="kpi-label">Conciliación automática</div>
+          <div class="stat-value accent mt-1">{{ match_rate }}%</div>
         </div>
-        <small class="text-muted">Proveniente de fila "Abono Calculado (=):" del archivo de liquidación Transbank</small>
+        <div class="text-end">
+          <div class="kpi-label">Vouchers Transbank</div>
+          <div class="stat-value mt-1">{{ counts.total }}</div>
+        </div>
+      </div>
+      <div class="meter meter-lg mt-3" role="img" aria-label="{{ counts.matched }} ubicadas, {{ counts.discrepancies }} con diferencia, {{ counts.orphans }} no están en ERP">
+        <span class="meter-seg meter-success" style="flex: {{ counts.matched|unlocalize }};" title="{{ counts.matched }} ubicadas"></span>
+        <span class="meter-seg meter-warning" style="flex: {{ counts.discrepancies|unlocalize }};" title="{{ counts.discrepancies }} con diferencia"></span>
+        <span class="meter-seg meter-danger" style="flex: {{ counts.orphans|unlocalize }};" title="{{ counts.orphans }} no están en ERP"></span>
+      </div>
+      <div class="meter-legend mt-3">
+        <button type="button" class="legend-item" data-tab-target="#tabMatched">
+          <span class="legend-dot meter-success"></span>Ubicadas <strong>{{ counts.matched }}</strong>
+        </button>
+        <button type="button" class="legend-item" data-tab-target="#tabDiscrepancies">
+          <span class="legend-dot meter-warning"></span>Con diferencia <strong>{{ counts.discrepancies }}</strong>
+        </button>
+        <button type="button" class="legend-item" data-tab-target="#tabOrphans">
+          <span class="legend-dot meter-danger"></span>No están en ERP <strong>{{ counts.orphans }}</strong>
+        </button>
       </div>
     </div>
-    <div class="col-md-6">
-      <div class="p-3 rounded-3 {% if bank.is_matched %}bg-success-subtle border-success-subtle{% else %}bg-warning-subtle border-warning-subtle{% endif %} border">
-        <small class="text-muted d-block text-uppercase fw-bold">Movimiento Detectado en Cartola Bancaria</small>
-        <div class="fs-3 fw-bold {% if bank.is_matched %}text-success{% else %}text-danger{% endif %} mt-1">
-          US$ {{ bank.bank_deposit_amount|num_usd }} <small class="fs-6">USD</small>
-        </div>
-        <small class="text-muted">
-          Fecha abono: {{ bank.bank_movement_date|default:"No detectado" }}
-          {% if bank.bank_name %} · {{ bank.bank_name }}{% endif %}
-          {% if bank.bank_account_number %} (Cta. {{ bank.bank_account_number }}){% endif %}
-        </small>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="kpi-label">Diferencia total</div>
+        <div class="icon-square icon-square-navy"><i class="bi bi-arrow-left-right"></i></div>
       </div>
+      <div class="stat-value {% if usd_totals.diff %}text-danger-soft{% endif %}" style="font-size: 1.6rem;">
+        <span class="stat-unit">US$</span> {{ usd_totals.diff|num_usd }}
+      </div>
+      <div class="small text-muted mt-1">Operadoras vs. Transbank</div>
+      <div class="small mt-2 pt-2 border-top-soft d-flex justify-content-between">
+        <span class="text-muted">En pesos (ERP vs. operadoras)</span>
+        <strong class="{% if clp_totals.diff %}text-danger-soft{% endif %} text-nowrap">{% if clp_totals.diff < 0 %}-{% endif %}${{ clp_totals.diff|num_clp|cut:"-" }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-4">
+    <div class="card-hero-navy p-4 h-100">
+      <div class="kpi-label on-navy">
+        Abono en cartola{% if bank.bank_name %} · {{ bank.bank_name }}{% endif %}
+      </div>
+      <div class="d-flex align-items-center gap-2 mt-2">
+        {% if bank.is_matched %}
+        <i class="bi bi-patch-check-fill fs-4" style="color: #86EFAC;"></i>
+        <span class="stat-value on-navy" style="font-size: 1.45rem;">Confirmado</span>
+        {% else %}
+        <i class="bi bi-exclamation-octagon-fill fs-4" style="color: #FCA5A5;"></i>
+        <span class="stat-value on-navy" style="font-size: 1.45rem;">No encontrado</span>
+        {% endif %}
+      </div>
+      <dl class="bank-dl small mt-3 mb-0">
+        <div><dt>Calculado Transbank</dt><dd>US$ {{ bank.calculated_deposit|num_usd }}</dd></div>
+        <div><dt>En cartola{% if bank.bank_movement_date %} ({{ bank.bank_movement_date }}){% endif %}</dt><dd>US$ {{ bank.bank_deposit_amount|num_usd }}</dd></div>
+        {% if bank.bank_account_number %}<div><dt>Cuenta</dt><dd class="font-mono">{{ bank.bank_account_number }}</dd></div>{% elif preview.bank_account_number %}<div><dt>Cuenta</dt><dd class="font-mono">{{ preview.bank_account_number }}</dd></div>{% endif %}
+      </dl>
     </div>
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- 2. RESUMEN FINANCIERO: TABLAS EN DÓLARES (USD) Y EN PESOS (CLP) -->
-<!-- ====================================================================== -->
-<div class="row g-4 mb-4">
-  <!-- Tabla USD -->
+<!-- Squaring by Operator (USD + CLP) -->
+<div class="row g-3 mb-3">
+  <!-- 2A. Cuadratura por Operador en Dólares (US$) -->
   <div class="col-lg-6">
-    <div class="card card-executive h-100">
-      <div class="card-header border-bottom py-3">
-        <h6 class="fw-bold mb-0">
-          <i class="bi bi-currency-dollar text-primary me-1"></i> 2A. Cuadratura por Operador en Dólares (US$)
-        </h6>
-      </div>
+    <div class="card card-executive h-100 mb-0">
+      <header class="panel-head py-3">
+        <div>
+          <h2 class="panel-title fs-6 mb-0">
+            <i class="bi bi-currency-dollar text-primary me-1"></i> 2A. Cuadratura por Operador en Dólares (US$)
+          </h2>
+        </div>
+      </header>
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted">
             <tr>
-              <th class="ps-3">Operador</th>
-              <th class="text-end">Total TBK (US$)</th>
-              <th class="text-end">Total Operador (US$)</th>
-              <th class="text-end pe-3">Diferencia (US$)</th>
+              <th class="ps-3">OPERADOR</th>
+              <th class="text-end">TOTAL TBK (US$)</th>
+              <th class="text-end">TOTAL OPERADOR (US$)</th>
+              <th class="text-end pe-3">DIFERENCIA (US$)</th>
             </tr>
           </thead>
           <tbody>
@@ -114,22 +141,24 @@
     </div>
   </div>
 
-  <!-- Tabla CLP -->
+  <!-- 2B. Cuadratura en Moneda Nacional (Pesos CLP) -->
   <div class="col-lg-6">
-    <div class="card card-executive h-100">
-      <div class="card-header border-bottom py-3">
-        <h6 class="fw-bold mb-0">
-          <i class="bi bi-cash-stack text-success me-1"></i> 2B. Cuadratura en Moneda Nacional (Pesos CLP)
-        </h6>
-      </div>
+    <div class="card card-executive h-100 mb-0">
+      <header class="panel-head py-3">
+        <div>
+          <h2 class="panel-title fs-6 mb-0">
+            <i class="bi bi-cash-stack text-success me-1"></i> 2B. Cuadratura en Moneda Nacional (Pesos CLP)
+          </h2>
+        </div>
+      </header>
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted">
             <tr>
-              <th class="ps-3">Operador</th>
-              <th class="text-end">Total ERP (CLP)</th>
-              <th class="text-end">Total Operador (CLP)</th>
-              <th class="text-end pe-3">Diferencia (CLP)</th>
+              <th class="ps-3">OPERADOR</th>
+              <th class="text-end">TOTAL ERP (CLP)</th>
+              <th class="text-end">TOTAL OPERADOR (CLP)</th>
+              <th class="text-end pe-3">DIFERENCIA (CLP)</th>
             </tr>
           </thead>
           <tbody>
@@ -162,65 +191,58 @@
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- 3. PESTAÑAS DE VOUCHERS Y CRUCE DETALLADO (GUIADO POR ABONO TBK) -->
-<!-- ====================================================================== -->
-<div class="card card-executive mb-4">
-  <div class="card-header border-bottom pt-3 pb-0 px-4 d-flex flex-wrap justify-content-between align-items-center">
-    <ul class="nav nav-tabs border-bottom-0 gap-2" id="previewTabs" role="tablist">
-      <li class="nav-item">
-        <button class="nav-link active fw-bold text-success" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button">
-          <i class="bi bi-check2-all me-1"></i> Ubicadas Exactas (<span id="countBadgeMatched">{{ counts.matched }}</span>)
+<!-- Voucher detail (tables, suggestions and pagination from upstream) -->
+<section class="card card-executive mb-4" id="voucherSectionCard">
+  <div class="card-header panel-head flex-wrap">
+    <div>
+      <h2 class="panel-title">Detalle de vouchers</h2>
+      <p class="panel-sub">Mostrando <strong id="visibleTotalBadge">{{ counts.total }}</strong> de {{ counts.total }} vouchers de Transbank</p>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <div class="segmented" id="previewTabs" role="tablist">
+        <button class="segmented-item active" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button" role="tab">
+          <span class="legend-dot meter-success"></span>Ubicadas <span class="segmented-count" id="countBadgeMatched">{{ counts.matched }}</span>
         </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold text-warning-emphasis" data-bs-toggle="tab" data-bs-target="#tabDiscrepancies" type="button">
-          <i class="bi bi-shuffle me-1"></i> Con Diferencia (<span id="countBadgeDiscrepancies">{{ counts.discrepancies }}</span>)
+        <button class="segmented-item" data-bs-toggle="tab" data-bs-target="#tabDiscrepancies" type="button" role="tab">
+          <span class="legend-dot meter-warning"></span>Con diferencia <span class="segmented-count" id="countBadgeDiscrepancies">{{ counts.discrepancies }}</span>
         </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold text-danger" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button">
-          <i class="bi bi-exclamation-octagon me-1"></i> En TBK pero NO en ERP (<span id="countBadgeOrphans">{{ counts.orphans }}</span>)
+        <button class="segmented-item" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button" role="tab">
+          <span class="legend-dot meter-danger"></span>No están en ERP <span class="segmented-count" id="countBadgeOrphans">{{ counts.orphans }}</span>
         </button>
-      </li>
-    </ul>
-    <span class="badge bg-light text-dark border mb-2">
-      Mostrando: <strong id="visibleTotalBadge">{{ counts.total }}</strong> de <strong>{{ counts.total }} vouchers</strong>
-    </span>
+      </div>
+      <button type="button" id="btnToggleFullscreen" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold shadow-xs" onclick="toggleFullscreenTable()" title="Modo Pantalla Completa (Maximizar espacio de trabajo)">
+        <i class="bi bi-arrows-fullscreen me-1" id="iconFullscreen"></i><span id="textFullscreen">Pantalla Completa</span>
+      </button>
+    </div>
   </div>
 
-  <!-- Barra de Búsqueda Instantánea y Filtro por Tarjeta (Alineados a la Izquierda) -->
-  <div class="bg-light border-bottom px-4 py-3 d-flex flex-wrap justify-content-start align-items-center gap-3">
-    <div class="position-relative flex-grow-1 voucher-search-wrapper">
-      <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-      <input type="text" id="voucherSearchInput" class="form-control form-control-sm rounded-pill ps-5 pe-5 py-2 border-secondary-subtle shadow-none"
-             placeholder="Buscar por voucher, doc ERP, huésped, hab., cajero..."
-             oninput="applyVoucherFilters()">
-      <button type="button" id="btnClearVoucherSearch" class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-2 py-0 px-2 text-muted d-none"
-              onclick="clearVoucherSearch()" title="Limpiar búsqueda">
+  <div class="toolbar" id="voucherToolbar">
+    <div class="search-field">
+      <i class="bi bi-search"></i>
+      <input type="text" id="voucherSearchInput" class="form-control form-control-sm"
+             placeholder="Buscar voucher, documento, cajero, tarjeta…"
+             oninput="applyVoucherFilters()" aria-label="Buscar vouchers">
+      <button type="button" id="btnClearVoucherSearch" class="search-clear d-none" onclick="clearVoucherSearch()" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">
         <i class="bi bi-x-circle-fill"></i>
       </button>
     </div>
-
-    <div class="vr d-none d-md-block text-secondary opacity-25 my-1"></div>
-
-    <div class="d-flex flex-wrap align-items-center gap-1" id="cardBrandFilterGroup">
-      <span class="text-muted small fw-semibold me-1"><i class="bi bi-funnel me-1"></i>Tarjeta:</span>
-      <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 card-filter-btn active" data-card="ALL" onclick="setCardBrandFilter('ALL', this)">
-        Todas
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="VISA" onclick="setCardBrandFilter('VISA', this)">
-        Visa
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="MASTERCARD" onclick="setCardBrandFilter('MASTERCARD', this)">
-        MasterCard
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="AMERICAN EXPRESS" onclick="setCardBrandFilter('AMERICAN EXPRESS', this)">
-        American Express
-      </button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="DINERS" onclick="setCardBrandFilter('DINERS', this)">
-        Diners
-      </button>
+    <div class="chip-group" id="cardBrandFilterGroup" role="group" aria-label="Filtrar por tarjeta">
+      <button type="button" class="filter-chip card-filter-btn active" data-card="ALL" onclick="setCardBrandFilter('ALL', this)">Todas</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="VISA" onclick="setCardBrandFilter('VISA', this)">Visa</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="MASTERCARD" onclick="setCardBrandFilter('MASTERCARD', this)">MasterCard</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="AMERICAN EXPRESS" onclick="setCardBrandFilter('AMERICAN EXPRESS', this)">American Express</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="DINERS" onclick="setCardBrandFilter('DINERS', this)">Diners</button>
+    </div>
+    <div class="d-flex align-items-center gap-2" id="cashierFilterGroup">
+      <label for="cashierFilterSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
+        <i class="bi bi-person-badge me-1"></i>Cajero
+      </label>
+      <select id="cashierFilterSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 150px;" onchange="setCashierFilter(this.value)">
+        <option value="ALL" selected>Todos los cajeros</option>
+        {% for c in cashiers %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
     </div>
   </div>
 
@@ -231,10 +253,9 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4">Voucher</th>
-              <th>Doc ERP</th>
-              <th>Huésped</th>
-              <th>Hab.</th>
+              <th class="ps-4" style="min-width: 285px;">Cruce de Vouchers (TBK ⇄ ERP)</th>
+              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ OP)</th>
+              <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
@@ -256,33 +277,104 @@
             {% for item in matched_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
+                data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}"
                 data-op="{{ item.operator_amount_usd|unlocalize }}"
                 data-diff="{{ item.difference_usd|unlocalize }}"
                 data-clp="{{ item.erp_amount_clp|unlocalize }}">
-              <td class="ps-4 fw-bold font-monospace text-success">{{ item.authorization_code }}</td>
-              <td class="small">{{ item.document_number|default:"—" }}</td>
-              <td class="small fw-semibold">{{ item.guest_name }}</td>
-              <td class="small">{{ item.room_number }}</td>
+              <td class="ps-4">
+                <div class="voucher-dual-pill" title="Voucher Transbank coincide exactamente con Voucher ERP Hotel">
+                  <span class="voucher-dual-tbk">
+                    <small class="text-muted fw-bold">TBK:</small>
+                    <span class="font-monospace fw-bold">{{ item.authorization_code }}</span>
+                  </span>
+                  <span class="voucher-dual-equal">=</span>
+                  <span class="voucher-dual-erp">
+                    <small class="fw-bold">ERP:</small>
+                    <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
+                    <i class="bi bi-check2 voucher-check"></i>
+                  </span>
+                </div>
+              </td>
+              <td>
+                {% if item.document_number %}
+                <div class="doc-dual-pill" title="Documento ERP coincide exactamente con Documento Operadora">
+                  <span class="doc-dual-erp">
+                    <small class="text-muted fw-bold">ERP:</small>
+                    <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                  </span>
+                  <span class="doc-dual-equal">=</span>
+                  <span class="doc-dual-op">
+                    <small class="fw-bold">OP:</small>
+                    <span class="font-monospace fw-bold">{{ item.operator_document_number|default:item.document_number }}</span>
+                    <i class="bi bi-check2 doc-check"></i>
+                  </span>
+                </div>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="small text-nowrap text-muted"><i class="bi bi-calendar3 me-1"></i>{{ item.sale_date|default:"—" }}</td>
               <td><span class="badge bg-light text-dark border">{{ item.cashier_username }}</span></td>
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
               <td class="text-end fw-bold text-success">US$ {{ item.gross_amount_usd|num_usd }}</td>
               <td class="text-end fw-semibold text-primary">US$ {{ item.operator_amount_usd|num_usd }}</td>
-              <td class="text-end small text-muted">US$ {{ item.difference_usd|num_usd }}</td>
+              <td class="text-end small font-monospace">
+                {% if item.difference_usd != 0 %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1" title="Diferencia de centavos dentro de la tolerancia aceptada (±US$ 0.05)">
+                  <i class="bi bi-info-circle me-1"></i>US$ {{ item.difference_usd|num_usd }}
+                </span>
+                {% else %}
+                <span class="text-muted">US$ 0.00</span>
+                {% endif %}
+              </td>
               <td class="text-end">${{ item.erp_amount_clp|num_clp }}</td>
-              <td class="pe-4 small text-muted">{{ item.observation|format_observation }}</td>
+              <td class="pe-4 small">
+                {% if "dividido" in item.observation|lower %}
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 fw-bold d-inline-flex align-items-center gap-1 shadow-xs"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ item.observation|format_observation }}">
+                  <i class="bi bi-diagram-3-fill"></i> Voucher Dividido
+                </span>
+                {% elif "corregido" in item.observation|lower %}
+                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2.5 py-1 fw-semibold d-inline-flex align-items-center gap-1 shadow-xs"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ item.observation|format_observation }}">
+                  <i class="bi bi-pencil-square"></i> Saldo Corregido
+                </span>
+                {% elif item.difference_usd != 0 %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2.5 py-1 fw-medium d-inline-flex align-items-center gap-1 shadow-xs"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ item.observation|format_observation }} · Dif. centavos aceptada (±US$ 0.05)">
+                  <i class="bi bi-check2"></i> Tolerancia (±0.05)
+                </span>
+                {% elif "coincide" in item.observation|lower or not item.observation %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1 fw-medium d-inline-flex align-items-center gap-1 shadow-xs"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      title="{{ item.observation|format_observation }}">
+                  <i class="bi bi-check2"></i> Cruce 1:1
+                </span>
+                {% else %}
+                <span class="text-muted" title="{{ item.observation|format_observation }}">{{ item.observation|format_observation }}</span>
+                {% endif %}
+              </td>
             </tr>
             {% empty %}
-            <tr class="empty-static-row"><td colspan="11" class="text-center py-4 text-muted">No hay transacciones ubicadas.</td></tr>
+            <tr class="empty-static-row"><td colspan="10" class="text-center py-4 text-muted">No hay transacciones ubicadas.</td></tr>
             {% endfor %}
             <tr id="noMatchRowMatched" class="d-none">
-              <td colspan="11" class="text-center py-4 text-muted">
+              <td colspan="10" class="text-center py-4 text-muted">
                 <i class="bi bi-search me-1"></i> No se encontraron vouchers ubicados con ese criterio de búsqueda.
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+      {% include "partials/voucher_pagination_bar.html" with suffix="Matched" total=counts.matched label="Ubicadas Exactas" %}
     </div>
 
     <!-- TAB 2: DIFERENCIAS DE MONTO -->
@@ -302,7 +394,7 @@
         <button type="button"
                 class="btn-suggestion-trigger px-3 py-2"
                 onclick="openSectionSuggestionsModal('discrepancies')">
-          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ counts.discrepancies }} casos)
+          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ suggestion_counts.discrepancies_with|default:0 }} casos)
         </button>
       </div>
       {% endif %}
@@ -311,9 +403,9 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4">Voucher</th>
-              <th>Doc ERP</th>
-              <th>Huésped / Hab.</th>
+              <th class="ps-4" style="min-width: 285px;">Cruce de Vouchers (TBK ⇄ ERP)</th>
+              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ OP)</th>
+              <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
@@ -322,8 +414,11 @@
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
                 Monto Operador <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia (Mayor a Menor / Menor a Mayor)">
-                Diferencia <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia USD (Mayor a Menor / Menor a Mayor)">
+                Dif. USD <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              </th>
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'clp', this)" title="Ordenar por Monto CLP (Mayor a Menor / Menor a Mayor)">
+                Monto CLP <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
               <th class="pe-4">Diagnóstico y Estado Nivel 2</th>
             </tr>
@@ -332,20 +427,71 @@
             {% for item in discrepancy_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
+                data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}"
                 data-op="{{ item.operator_amount_usd|unlocalize }}"
-                data-diff="{{ item.difference_usd|unlocalize }}">
-              <td class="ps-4 fw-bold font-monospace text-warning-emphasis">{{ item.authorization_code }}</td>
-              <td class="small">{{ item.document_number }}</td>
-              <td class="small">
-                <div class="fw-semibold">{{ item.guest_name }}</div>
-                <span class="text-muted">Hab: {{ item.room_number }}</span>
+                data-diff="{{ item.difference_usd|unlocalize }}"
+                data-clp="{{ item.erp_amount_clp|unlocalize }}">
+              <td class="ps-4">
+                <div class="voucher-dual-pill" title="Voucher Transbank coincide con Voucher ERP Hotel">
+                  <span class="voucher-dual-tbk">
+                    <small class="text-muted fw-bold">TBK:</small>
+                    <span class="font-monospace fw-bold">{{ item.authorization_code }}</span>
+                  </span>
+                  <span class="voucher-dual-equal">=</span>
+                  <span class="voucher-dual-erp">
+                    <small class="fw-bold">ERP:</small>
+                    <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
+                    <i class="bi bi-check2 voucher-check"></i>
+                  </span>
+                </div>
               </td>
+              <td>
+                {% if item.operator_amount_usd > 0 and item.document_number %}
+                  {% if item.document_number == item.operator_document_number %}
+                  <div class="doc-dual-pill" title="Documento ERP coincide con Documento Operadora">
+                    <span class="doc-dual-erp">
+                      <small class="text-muted fw-bold">ERP:</small>
+                      <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                    </span>
+                    <span class="doc-dual-equal">=</span>
+                    <span class="doc-dual-op">
+                      <small class="fw-bold">OP:</small>
+                      <span class="font-monospace fw-bold">{{ item.operator_document_number|default:item.document_number }}</span>
+                      <i class="bi bi-check2 doc-check"></i>
+                    </span>
+                  </div>
+                  {% else %}
+                  <div class="doc-dual-pill" title="Documento ERP difiere del Documento en Operadora">
+                    <span class="doc-dual-erp">
+                      <small class="text-muted fw-bold">ERP:</small>
+                      <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                    </span>
+                    <span class="doc-dual-equal doc-dual-diff">≠</span>
+                    <span class="doc-dual-op doc-dual-op-diff">
+                      <small class="fw-bold">OP:</small>
+                      <span class="font-monospace fw-bold">{{ item.operator_document_number }}</span>
+                    </span>
+                  </div>
+                  {% endif %}
+                {% elif item.document_number %}
+                <div class="d-inline-flex align-items-center gap-1.5" title="Documento ERP no hallado en archivo Operadora">
+                  <span class="badge bg-light text-dark border font-monospace px-2 py-1">ERP: {{ item.document_number }}</span>
+                  <span class="badge bg-danger-subtle text-danger border border-danger-subtle small px-1.5 py-0.5">
+                    <i class="bi bi-x-circle me-1"></i>Sin Op
+                  </span>
+                </div>
+                {% else %}
+                <span class="text-muted small">—</span>
+                {% endif %}
+              </td>
+              <td class="small text-nowrap text-muted"><i class="bi bi-calendar3 me-1"></i>{{ item.sale_date|default:"—" }}</td>
               <td><span class="badge bg-light text-dark border">{{ item.cashier_username }}</span></td>
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
-              <td class="text-end">US$ {{ item.gross_amount_usd|num_usd }}</td>
-              <td class="text-end">US$ {{ item.operator_amount_usd|num_usd }}</td>
-              <td class="text-end fw-bold text-danger">US$ {{ item.difference_usd|num_usd }}</td>
+              <td class="text-end fw-bold text-dark font-monospace">US$ {{ item.gross_amount_usd|num_usd }}</td>
+              <td class="text-end fw-semibold text-primary font-monospace">US$ {{ item.operator_amount_usd|num_usd }}</td>
+              <td class="text-end fw-bold text-danger font-monospace">US$ {{ item.difference_usd|num_usd }}</td>
+              <td class="text-end font-monospace">${{ item.erp_amount_clp|num_clp }}</td>
               <td class="pe-4 small">
                 <div class="text-muted">{{ item.observation|format_observation }}</div>
                 {% if item.suggestion %}
@@ -363,16 +509,17 @@
               </td>
             </tr>
             {% empty %}
-            <tr class="empty-static-row"><td colspan="9" class="text-center py-4 text-muted">Sin diferencias de monto en este proceso.</td></tr>
+            <tr class="empty-static-row"><td colspan="10" class="text-center py-4 text-muted">Sin diferencias de monto en este proceso.</td></tr>
             {% endfor %}
             <tr id="noMatchRowDiscrepancies" class="d-none">
-              <td colspan="9" class="text-center py-4 text-muted">
+              <td colspan="10" class="text-center py-4 text-muted">
                 <i class="bi bi-search me-1"></i> No se encontraron vouchers con diferencia para ese filtro.
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+      {% include "partials/voucher_pagination_bar.html" with suffix="Discrepancies" total=counts.discrepancies label="Con Diferencia" %}
     </div>
 
     <!-- TAB 3: EN TRANSBANK PERO NO EN ERP -->
@@ -392,7 +539,7 @@
         <button type="button"
                 class="btn-suggestion-trigger px-3 py-2"
                 onclick="openSectionSuggestionsModal('orphans')">
-          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ counts.orphans }} casos)
+          <i class="bi bi-stars"></i> Ver Listado de Sugerencias Asistidas ({{ suggestion_counts.orphans_with|default:0 }} casos)
         </button>
       </div>
       {% endif %}
@@ -414,6 +561,7 @@
             {% for item in orphan_vouchers %}
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
+                data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}">
               <td class="ps-4 fw-bold font-monospace text-danger">{{ item.authorization_code }}</td>
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
@@ -446,280 +594,46 @@
           </tbody>
         </table>
       </div>
+      {% include "partials/voucher_pagination_bar.html" with suffix="Orphans" total=counts.orphans label="En TBK pero NO en ERP" %}
     </div>
   </div>
-</div>
+</section>
 
 <!-- JSON Data payloads for Level 2 Suggestions Modal -->
 <script type="application/json" id="jsonDiscrepanciesData">{{ discrepancy_vouchers|to_json|safe }}</script>
 <script type="application/json" id="jsonOrphansData">{{ orphan_vouchers|to_json|safe }}</script>
 
-<!-- Bottom Sticky Bar with Action Buttons -->
-<div class="p-3 rounded-4 border shadow-lg d-flex flex-wrap justify-content-between align-items-center gap-3 sticky-action-bar">
-  <div class="d-flex align-items-center gap-2 text-muted small">
-    <i class="bi bi-info-circle-fill text-primary fs-5"></i>
-    <span>Los datos anteriores fueron calculados en memoria. Si todo está conforme, haga clic en <strong>Confirmar y Guardar en BD</strong> para consolidar el cierre.</span>
+<!-- Sticky action bar -->
+<div class="action-bar">
+  <div class="d-none d-md-flex align-items-center gap-2 small text-muted min-w-0">
+    <i class="bi bi-info-circle" style="color: var(--brand);"></i>
+    <span>¿Todo conforme? Guarda el cierre, o descártalo para cargar archivos corregidos.</span>
   </div>
-  <div class="d-flex gap-2">
-    <button type="button" id="btnDiscardPreview" class="btn btn-outline-danger rounded-pill px-4 fw-semibold" data-bs-toggle="modal" data-bs-target="#discardPreviewModal">
-      <i class="bi bi-trash3 me-1"></i> Descartar
+  <div class="d-flex gap-2 flex-shrink-0">
+    <button type="button" id="btnDiscardPreview" class="btn btn-outline-secondary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#discardPreviewModal">
+      Descartar
     </button>
-    <button type="button" id="btnCommitToDb" class="btn btn-brand rounded-pill px-5 py-2 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#commitPreviewModal">
-      <i class="bi bi-check-circle-fill me-1"></i> Confirmar y Guardar en BD
+    <button type="button" id="btnCommitToDb" class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#commitPreviewModal">
+      <i class="bi bi-check2-circle me-1"></i> Guardar cierre
     </button>
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- MODAL GRANDE (XL): LISTADO CONSOLIDADO DE SUGERENCIAS ASISTIDAS        -->
-<!-- ====================================================================== -->
-<div class="modal fade" id="suggestionDetailModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
-      <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
-        <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold">
-            <i class="bi bi-stars fs-4"></i>
-          </div>
-          <div>
-            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-              <span class="suggestion-badge-tag">Asistencia Nivel 2</span>
-              <span class="badge bg-dark border rounded-pill" id="sugModalSectionBadge">—</span>
-              <span class="suggestion-confidence suggestion-confidence-alta" id="sugModalStatsBadge">—</span>
-            </div>
-            <h5 class="modal-title fw-bold mb-0" id="sugModalHeadline">Listado de Sugerencias Asistidas y Casos Sin Coincidencia</h5>
-          </div>
-        </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-
-      <div class="modal-body p-4">
-        <!-- 1. AVISO DE PRECAUCIÓN / REVISIÓN MANUAL -->
-        <div class="suggestion-caution-banner mb-3 d-flex align-items-start gap-3">
-          <i class="bi bi-exclamation-triangle-fill text-warning fs-3 mt-1"></i>
-          <div class="small">
-            <div class="fw-bold text-uppercase mb-1">
-              Precaución — Herramienta de Ayuda Referencial (Requiere Revisión Manual)
-            </div>
-            <div>
-              Este listado muestra todos los casos de la sección divididos entre aquellos que <strong>sí encontraron una sugerencia secundaria</strong> (cruzando montos en dólares, saldos en pesos, fechas y similitud de códigos de autorización) y aquellos que <strong>no tienen coincidencia en los archivos cargados</strong>.
-              <strong>Es únicamente una guía de asistencia y NO concilia ni modifica los datos automáticamente.</strong>
-              El auditor debe verificar a mano los archivos originales antes de tomar una decisión contable.
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. BARRA DE FILTRO RÁPIDO DENTRO DEL MODAL -->
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 pb-3 border-bottom">
-          <div class="d-flex flex-wrap align-items-center gap-2" id="sugModalFilterGroup">
-            <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 sug-filter-btn active" onclick="filterModalSuggestions('ALL', this)">
-              Todos (<span id="sugCountAll">0</span>)
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 sug-filter-btn" onclick="filterModalSuggestions('WITH', this)">
-              <i class="bi bi-stars me-1"></i>Con Sugerencia Asistida (<span id="sugCountWith">0</span>)
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 sug-filter-btn" onclick="filterModalSuggestions('WITHOUT', this)">
-              <i class="bi bi-slash-circle me-1"></i>Sin Sugerencia en Archivos (<span id="sugCountWithout">0</span>)
-            </button>
-          </div>
-          <span class="small text-muted">
-            <i class="bi bi-layout-three-columns me-1"></i>Comparativa lado a lado: <strong>1. Transbank</strong> · <strong>2. ERP Hotel</strong> · <strong>3. Operadora</strong>
-          </span>
-        </div>
-
-        <!-- 3. BLOQUE A: CASOS CON SUGERENCIA ASISTIDA -->
-        <div id="sugModalWithSection" class="mb-4">
-          <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
-            <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Con Sugerencia Asistida</span>
-            <span class="text-muted">Coincidencias secundarias detectadas entre archivos</span>
-          </h6>
-          <div id="sugModalWithList" class="d-flex flex-column gap-3"></div>
-        </div>
-
-        <!-- 4. BLOQUE B: CASOS SIN SUGERENCIA EN ARCHIVOS -->
-        <div id="sugModalWithoutSection">
-          <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
-            <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> Sin Sugerencia en Archivos</span>
-            <span class="text-muted">Vouchers sin coincidencias secundarias en ERP ni Operadora</span>
-          </h6>
-          <div id="sugModalWithoutList"></div>
-        </div>
-      </div>
-
-      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-between align-items-center">
-        <span class="small text-muted">
-          <i class="bi bi-shield-check me-1"></i> Los datos originales del cierre se mantienen intactos.
-        </span>
-        <button type="button" class="btn btn-brand rounded-pill px-4 fw-bold shadow-sm" data-bs-dismiss="modal">
-          <i class="bi bi-check2 me-1"></i> Entendido, Cerrar Asistente
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ====================================================================== -->
-<!-- MODAL EJECUTIVO: DESCARTAR PREVISUALIZACIÓN                            -->
-<!-- ====================================================================== -->
-<div class="modal fade" id="discardPreviewModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
-      <div class="modal-header border-0 pb-0 pt-4 px-4">
-        <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center modal-icon-danger">
-            <i class="bi bi-trash3-fill fs-4"></i>
-          </div>
-          <div>
-            <h5 class="modal-title fw-bold mb-0">¿Descartar borrador en memoria?</h5>
-            <small class="text-muted">{{ preview.accounting_period }}</small>
-          </div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body px-4 py-3">
-        <p class="text-muted small mb-0">
-          Se limpiará la previsualización actual de la sesión sin guardar ningún registro en la base de datos y volverá a la pantalla de carga de archivos.
-        </p>
-      </div>
-      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
-        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">
-          Cancelar
-        </button>
-        <form action="{% url 'usd_discard' %}" method="post" class="d-inline">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-danger rounded-pill px-4 fw-semibold shadow-sm">
-            <i class="bi bi-trash3 me-1"></i> Sí, Descartar Borrador
-          </button>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ====================================================================== -->
-<!-- MODAL EJECUTIVO 2 PASOS:                                               -->
-<!--   PASO 1: CONFIRMAR GUARDADO EN BD                                     -->
-<!--   PASO 2: ÉXITO CONFIRMADO POR BACKEND + DESCARGA EXCEL OFICIAL        -->
-<!-- ====================================================================== -->
-<div class="modal fade" id="commitPreviewModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
-
-      <!-- PASO 1: CONFIRMACIÓN ANTES DE GUARDAR -->
-      <div id="commitStepConfirm">
-        <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy">
-          <div class="d-flex align-items-center gap-3">
-            <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold">
-              <i class="bi bi-database-fill-check fs-4"></i>
-            </div>
-            <div>
-              <h5 class="modal-title fw-bold mb-0">Confirmar y Consolidar en Base de Datos</h5>
-              <small class="text-white-50">{{ preview.accounting_period }}</small>
-            </div>
-          </div>
-          <button type="button" id="btnCloseConfirmModal" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-        </div>
-
-        <div class="modal-body p-4">
-          <div class="p-3 rounded-3 bg-light border mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="small text-muted fw-semibold">Abono Calculado Transbank:</span>
-              <span class="fw-bold text-dark">US$ {{ bank.calculated_deposit|num_usd }}</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="small text-muted fw-semibold">Estado en Cartola ({{ bank.bank_name|default:"Banco" }}):</span>
-              {% if bank.is_matched %}
-                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">Confirmado</span>
-              {% else %}
-                <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill">Pendiente</span>
-              {% endif %}
-            </div>
-            <div class="d-flex justify-content-between align-items-center small">
-              <span class="text-muted fw-semibold">Vouchers Procesados ({{ counts.total }}):</span>
-              <div class="d-flex gap-1">
-                <span class="badge bg-success-subtle text-success">{{ counts.matched }} Exactos</span>
-                <span class="badge bg-warning-subtle text-dark">{{ counts.discrepancies }} Dif.</span>
-                <span class="badge bg-danger-subtle text-danger">{{ counts.orphans }} Huérfanos</span>
-              </div>
-            </div>
-          </div>
-          <div class="d-flex align-items-start gap-2 text-muted small">
-            <i class="bi bi-shield-lock-fill text-warning mt-1"></i>
-            <span>El motor transaccional verificará las 8 tablas con protección anti-duplicados antes de persistir el cierre contable.</span>
-          </div>
-        </div>
-
-        <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
-          <button type="button" id="btnCancelCommitModal" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">
-            Seguir Revisando
-          </button>
-          <button type="button" id="btnExecuteCommit" class="btn btn-brand rounded-pill px-4 fw-bold shadow-sm" data-commit-url="{% url 'usd_commit' %}" onclick="executeCommitToDatabase()">
-            <i class="bi bi-check-circle-fill me-1"></i> Sí, Guardar Cierre en BD
-          </button>
-        </div>
-      </div>
-
-      <!-- PASO 2: ÉXITO CONFIRMADO POR EL BACKEND + DESCARGA DE EXCEL -->
-      <div id="commitStepSuccess" class="d-none">
-        <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
-          <div class="d-flex align-items-center gap-3">
-            <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center shadow-sm modal-icon-success">
-              <i class="bi bi-check-lg fs-3"></i>
-            </div>
-            <div>
-              <h5 class="modal-title fw-bold mb-0">¡Cierre Guardado en Base de Datos!</h5>
-              <small class="text-white-50">Confirmación transaccional recibida del servidor</small>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-body p-4">
-          <div class="alert alert-success border-success-subtle rounded-3 py-2 px-3 small d-flex align-items-center gap-2 mb-3">
-            <i class="bi bi-database-fill-check fs-5 text-success"></i>
-            <div>
-              Consolidación exitosa en las 8 tablas contables con verificación anti-duplicados completada.
-            </div>
-          </div>
-
-          <div class="p-3 rounded-3 bg-light border mb-4 small">
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="text-muted fw-semibold">ID de Proceso en BD:</span>
-              <span class="badge bg-dark rounded-pill px-3 py-1 fs-6" id="modalProcessId">#—</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="text-muted fw-semibold">Periodo Contable:</span>
-              <span class="fw-bold text-dark" id="modalPeriod">—</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
-              <span class="text-muted fw-semibold">Fecha y Hora de Registro:</span>
-              <span class="text-dark font-monospace" id="modalExecDate">—</span>
-            </div>
-            <div class="d-flex justify-content-between align-items-center">
-              <span class="text-muted fw-semibold">Vouchers Persistidos:</span>
-              <span class="fw-bold text-success" id="modalVoucherStats">—</span>
-            </div>
-          </div>
-
-          <div class="d-grid">
-            <a href="#" id="modalExcelDownloadBtn" class="btn btn-success btn-lg rounded-pill fw-bold shadow-sm py-2">
-              <i class="bi bi-file-earmark-excel-fill me-2"></i> Descargar Reporte Excel Oficial (.xlsx)
-            </a>
-          </div>
-        </div>
-
-        <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end">
-          <a href="{% url 'usd_upload' %}" id="modalFinishBtn" class="btn btn-brand rounded-pill px-4 fw-bold shadow-sm">
-            <i class="bi bi-arrow-left-circle me-1"></i> Finalizar y Volver al Inicio
-          </a>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</div>
+{% include "partials/usd_preview_modals.html" %}
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_preview.js' %}?v=15"></script>
+<script src="{% static 'js/usd_preview.js' %}?v=25"></script>
+<script src="{% static 'js/usd_suggestions.js' %}?v=4"></script>
+<script>
+  // Clicking a legend item under the KPI meter opens that voucher tab
+  document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      const tabBtn = document.querySelector('#previewTabs [data-bs-target="' + item.dataset.tabTarget + '"]');
+      if (!tabBtn) return;
+      bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+      document.getElementById('voucherSectionCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+</script>
 {% endblock %}
-

@@ -309,7 +309,7 @@ def _cross_match_sale(
     else:
         erp_amount = Decimal("0")
         result = "NOT_FOUND_IN_ERP"
-        observation = f"Voucher {sale['authorization_code']} no encontrado en el Borderó"
+        observation = f"Voucher {sale['authorization_code']} no encontrado en ERP Hotel"
 
     if _installment_parts(sale["installment_number"]) and result == "MATCHED":
         observation += f" · Venta en cuotas ({sale['installment_number']})"
@@ -328,6 +328,7 @@ def calculate_clp_preview(
     transbank_credit_file,
     transbank_debit_file,
     transbank_prepaid_file,
+    extra_erp_files: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """
     Executes the complete Chilean Pesos reconciliation workflow purely in memory.
@@ -348,12 +349,29 @@ def calculate_clp_preview(
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(0)
 
+    import os
+    erp_file_name = os.path.basename(getattr(erp_file, "name", "BORDERO.xlsx"))
     bordero_dataframe = pd.read_excel(erp_file, header=None)
     bank_dataframe = pd.read_excel(bank_statement_file, header=None)
     settlements = {
         modality: parse_transbank_clp_settlement(pd.read_excel(uploaded[modality], header=None), modality)
         for modality, _, _, _ in CLP_MODALITIES
     }
+
+    # Optional auxiliary/historical Bordero files (e.g. BORDERO 04-07.XLS for earlier installment sales)
+    auxiliary_erp_rows: List[Dict[str, Any]] = []
+    extra_erp_names: List[str] = []
+    for extra_file in (extra_erp_files or []):
+        if not extra_file:
+            continue
+        if hasattr(extra_file, "seek"):
+            extra_file.seek(0)
+        extra_name = os.path.basename(getattr(extra_file, "name", "BORDERO_ADICIONAL.xlsx"))
+        extra_erp_names.append(extra_name)
+        extra_df = pd.read_excel(extra_file, header=None)
+        parsed_extra, _ = parse_bordero_clp_transactions(extra_df, source_file=extra_name)
+        auxiliary_erp_rows.extend(parsed_extra)
+
 
     # 1. Bank deposits of the 3 settlements
     bank_movements = parse_bank_statement_movements(bank_dataframe)
@@ -369,7 +387,7 @@ def calculate_clp_preview(
                 detected_account = cells[idx + 1]
 
     # 2. Bordero peso card payments
-    erp_rows, rows_by_auth_code = parse_bordero_clp_transactions(bordero_dataframe)
+    erp_rows, rows_by_auth_code = parse_bordero_clp_transactions(bordero_dataframe, source_file=erp_file_name)
     period = parse_bordero_period(bordero_dataframe)
     if not all(period):
         row_dates = sorted({safe_date(r["transaction_date"]) for r in erp_rows} - {None})
@@ -400,7 +418,19 @@ def calculate_clp_preview(
     for sale_idx, sale in enumerate(all_sales):
         match = match_results[sale_idx]
         linked = match["linked"]
-        primary_erp = erp_rows[linked[0]] if linked else None
+        primary_idx = (
+            min(
+                linked,
+                key=lambda i: (
+                    erp_rows[i].get("is_reversal", False) or erp_rows[i]["amount"] <= 0,
+                    abs(sale["gross_amount"] - Decimal(str(erp_rows[i]["amount"]))),
+                    not bool(erp_rows[i].get("invoice_number")),
+                ),
+            )
+            if linked
+            else None
+        )
+        primary_erp = erp_rows[primary_idx] if primary_idx is not None else None
         sale_date_str = sale["sale_date"].strftime("%d/%m/%Y") if sale["sale_date"] else ""
         card_code = sale["card_code"] or (primary_erp["card_code"] if primary_erp else "")
         tbk_index = len(transbank_transactions_data)
@@ -428,7 +458,7 @@ def calculate_clp_preview(
         difference = sale["gross_amount"] - match["erp_amount"] if linked else sale["gross_amount"]
         voucher = {
             "tbk_index": tbk_index,
-            "erp_index": linked[0] if linked else None,
+            "erp_index": primary_idx,
             "erp_indices": linked,
             "tbk_excel_row": sale["excel_row"],
             "erp_excel_rows": [erp_rows[i]["excel_row"] for i in linked],
@@ -441,6 +471,7 @@ def calculate_clp_preview(
             "document_number": primary_erp["account_code"] if primary_erp else "",
             "card_code": card_code,
             "card_name": card_names.get(card_code, card_code or "—"),
+
             "masked_card": sale["masked_card"],
             "sale_date": sale_date_str,
             "merchant_location": sale["merchant_location"],
@@ -543,7 +574,8 @@ def calculate_clp_preview(
             "end": period_end.strftime("%d/%m/%Y") if period_end else None,
         },
         "file_names": {
-            "erp": getattr(erp_file, "name", "BORDERO.xlsx"),
+            "erp": erp_file_name,
+            "extra_erp": extra_erp_names,
             "bank": getattr(bank_statement_file, "name", "cartola.xlsx"),
             "tbk_credit": getattr(transbank_credit_file, "name", "CREDITOS TBK.xlsx"),
             "tbk_debit": getattr(transbank_debit_file, "name", "DEBITOS TBK.xlsx"),
@@ -553,6 +585,7 @@ def calculate_clp_preview(
         "bank_validations": bank_validations,
         "bank_movements": bank_movements_data,
         "erp_transactions": erp_rows,
+        "auxiliary_erp_transactions": auxiliary_erp_rows,
         "transbank_transactions": transbank_transactions_data,
         "modality_table": modality_table,
         "clp_table": clp_table,
@@ -572,3 +605,4 @@ def calculate_clp_preview(
     }
     from .clp_suggestion_engine import enrich_clp_preview_with_suggestions
     return enrich_clp_preview_with_suggestions(preview_payload)
+

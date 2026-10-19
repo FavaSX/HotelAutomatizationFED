@@ -105,6 +105,19 @@ async function handleBulkFilesSelected(fileList) {
   }
 }
 
+function getConfidenceBadgeHtml(type) {
+  switch (type) {
+    case 'HIGH':
+      return '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
+    case 'MEDIUM':
+      return '<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
+    case 'MANUAL':
+      return '<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual</span>';
+    default:
+      return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
+  }
+}
+
 function renderAlignmentTable(data) {
   const tbody = document.getElementById('alignmentTableBody');
   tbody.innerHTML = '';
@@ -118,14 +131,7 @@ function renderAlignmentTable(data) {
       optionsHtml += `<option value="${f.file_index}" ${selected}>${f.file_name} (${f.row_count} filas)</option>`;
     });
 
-    let badgeHtml = '';
-    if (role.confidence === 'HIGH') {
-      badgeHtml = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
-    } else if (role.confidence === 'MEDIUM') {
-      badgeHtml = '<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
-    } else {
-      badgeHtml = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
-    }
+    const badgeHtml = getConfidenceBadgeHtml(role.confidence);
 
     tr.innerHTML = `
       <td class="ps-3 py-3">
@@ -224,18 +230,23 @@ function onManualAlignmentChange() {
     if (fileIdx !== null && latestDetectionReport.inspected_files[fileIdx]) {
       const fileInfo = latestDetectionReport.inspected_files[fileIdx];
       evidenceCell.innerHTML = `<i class="bi bi-cpu me-1 text-primary"></i> ${fileInfo.evidence}`;
-      if (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') {
-        confidenceCell.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
-      } else {
-        confidenceCell.innerHTML = '<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual</span>';
-      }
+      confidenceCell.innerHTML = getConfidenceBadgeHtml(
+        (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') ? 'HIGH' : 'MANUAL'
+      );
     } else {
       evidenceCell.innerHTML = '<span class="text-danger">Seleccione un archivo para este rol.</span>';
-      confidenceCell.innerHTML = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
+      confidenceCell.innerHTML = getConfidenceBadgeHtml('MISSING');
     }
   });
 
   validateCurrentAlignmentSelection();
+}
+
+function getExtraErpFiles(chosenSet) {
+  if (!latestDetectionReport || !document.getElementById('input_clp_extra_erp')) return [];
+  return (latestDetectionReport.inspected_files || []).filter(
+    f => !chosenSet.has(String(f.file_index)) && f.detected_role === 'erp'
+  );
 }
 
 function validateCurrentAlignmentSelection() {
@@ -247,9 +258,16 @@ function validateCurrentAlignmentSelection() {
   const required = getRequiredFileCount();
 
   if (chosenIndices.length === required && uniqueIndices.size === required) {
+    const extraErp = getExtraErpFiles(uniqueIndices);
+    const extraNote = extraErp.length > 0
+      ? `<div class="mt-1 text-dark"><i class="bi bi-journal-plus text-primary me-1"></i><strong>Borderó histórico adicional incluido automáticamente para cruce fuera de período:</strong> ${extraErp.map(f => f.file_name).join(', ')}</div>`
+      : '';
     alertBox.className = 'alert alert-success rounded-4 mb-3 py-2 px-3 small d-flex align-items-center justify-content-between';
     alertBox.innerHTML = `
-      <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡${required} de ${required} archivos alineados sin conflictos!</strong> Revise la tabla y confirme para iniciar el cruce financiero.</div>
+      <div>
+        <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡${required} de ${required} archivos alineados sin conflictos!</strong> Revise la tabla y confirme para iniciar el cruce financiero.</div>
+        ${extraNote}
+      </div>
       <span class="badge bg-success rounded-pill">${bulkUploadedFiles.length} archivo(s) analizado(s)</span>
     `;
     confirmBtn.disabled = false;
@@ -276,6 +294,7 @@ function resetExperimentalFiles() {
 
 function confirmAlignmentAndSubmit() {
   const selects = document.querySelectorAll('.role-file-select');
+  const chosenSet = new Set();
   for (const sel of selects) {
     const roleKey = sel.getAttribute('data-role-key');
     const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
@@ -283,6 +302,7 @@ function confirmAlignmentAndSubmit() {
       alert(`Por favor asegúrese de que los ${getRequiredFileCount()} roles tengan un archivo asignado.`);
       return;
     }
+    chosenSet.add(String(fileIdx));
     const inputId = getRoleInputMap()[roleKey];
     const fileInput = document.getElementById(inputId);
     const dt = new DataTransfer();
@@ -290,7 +310,19 @@ function confirmAlignmentAndSubmit() {
     fileInput.files = dt.files;
   }
 
+  const extraErpInput = document.getElementById('input_clp_extra_erp');
+  if (extraErpInput) {
+    const extraDt = new DataTransfer();
+    getExtraErpFiles(chosenSet).forEach(f => {
+      if (bulkUploadedFiles[f.file_index]) {
+        extraDt.items.add(bulkUploadedFiles[f.file_index]);
+      }
+    });
+    extraErpInput.files = extraDt.files;
+  }
+
   showProcessingOverlay();
   getUploadForm().submit();
 }
+
 

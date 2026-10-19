@@ -1,0 +1,220 @@
+{% load currency_filters %}
+<!-- ====================================================================== -->
+<!-- MODAL GRANDE (XL): LISTADO CONSOLIDADO DE SUGERENCIAS ASISTIDAS        -->
+<!-- ====================================================================== -->
+<div class="modal fade" id="suggestionDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold">
+            <i class="bi bi-stars fs-4"></i>
+          </div>
+          <div>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <span class="suggestion-badge-tag">Asistencia Nivel 2</span>
+              <span class="badge bg-dark border rounded-pill" id="sugModalSectionBadge">—</span>
+              <span class="suggestion-confidence" id="sugModalStatsBadge">—</span>
+            </div>
+            <h5 class="modal-title fw-bold mb-0" id="sugModalHeadline">Listado de Sugerencias Asistidas y Casos Sin Coincidencia</h5>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+
+      <div class="modal-body p-4">
+        <!-- 1. AVISO DE PRECAUCIÓN / REVISIÓN MANUAL -->
+        <div class="suggestion-caution-banner mb-3 d-flex align-items-start gap-3">
+          <i class="bi bi-exclamation-triangle-fill text-warning fs-3 mt-1"></i>
+          <div class="small">
+            <div class="fw-bold text-uppercase mb-1">
+              Precaución — Herramienta de Ayuda Referencial (Requiere Revisión Manual)
+            </div>
+            <div>
+              Este listado muestra todos los casos de la sección divididos entre aquellos que <strong>sí encontraron una sugerencia secundaria</strong> (cruzando montos en dólares, saldos en pesos, fechas y similitud de códigos de autorización) y aquellos que <strong>no tienen coincidencia en los archivos cargados</strong>.
+              <strong>Es únicamente una guía de asistencia y NO concilia ni modifica los datos automáticamente.</strong>
+              El auditor debe verificar a mano los archivos originales antes de tomar una decisión contable.
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. BARRA DE FILTRO RÁPIDO Y PAGINACIÓN DENTRO DEL MODAL -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3 pb-3 border-bottom">
+          <div class="d-flex flex-wrap align-items-center gap-2" id="sugModalFilterGroup">
+            <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 sug-filter-btn active" onclick="filterModalSuggestions('ALL', this)">
+              Todos (<span id="sugCountAll">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 sug-filter-btn" onclick="filterModalSuggestions('WITH', this)">
+              <i class="bi bi-stars me-1"></i>Con Sugerencia Asistida (<span id="sugCountWith">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 sug-filter-btn" onclick="filterModalSuggestions('WITHOUT', this)">
+              <i class="bi bi-slash-circle me-1"></i>Sin Sugerencia en Archivos (<span id="sugCountWithout">0</span>)
+            </button>
+          </div>
+
+          <!-- Selector de elementos por página -->
+          <div class="d-flex align-items-center gap-2 ms-auto">
+            <label for="sugPageSizeSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
+              <i class="bi bi-card-list me-1"></i>Por página:
+            </label>
+            <select id="sugPageSizeSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 95px;" onchange="changeSugPageSize(this.value)">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="ALL">Todas</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 3. BLOQUE A: CASOS CON SUGERENCIA ASISTIDA -->
+        <div id="sugModalWithSection" class="mb-4">
+          <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
+            <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Con Sugerencia Asistida</span>
+            <span class="text-muted">Coincidencias secundarias detectadas entre archivos</span>
+          </h6>
+          <div id="sugModalWithList" class="d-flex flex-column gap-3"></div>
+          <div id="sugWithPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-3">
+            <div class="small text-muted" id="sugWithPaginationInfo"></div>
+            <nav aria-label="Paginación de sugerencias asistidas">
+              <ul class="pagination pagination-sm mb-0 rounded-pill" id="sugWithPaginationList"></ul>
+            </nav>
+          </div>
+        </div>
+
+        <!-- 4. BLOQUE B: CASOS SIN SUGERENCIA EN ARCHIVOS -->
+        <div id="sugModalWithoutSection" class="mb-3">
+          <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
+            <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> Sin Sugerencia en Archivos</span>
+            <span class="text-muted">Vouchers sin coincidencias secundarias en ERP ni Operadora</span>
+          </h6>
+          <div id="sugModalWithoutList"></div>
+          <div id="sugWithoutPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-3">
+            <div class="small text-muted" id="sugWithoutPaginationInfo"></div>
+            <nav aria-label="Paginación de casos sin sugerencia">
+              <ul class="pagination pagination-sm mb-0 rounded-pill" id="sugWithoutPaginationList"></ul>
+            </nav>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-between align-items-center">
+        <span class="small text-muted">
+          <i class="bi bi-shield-check me-1"></i> Los datos originales del cierre se mantienen intactos.
+        </span>
+        <button type="button" class="btn btn-brand rounded-pill px-4 fw-bold shadow-sm" data-bs-dismiss="modal">
+          <i class="bi bi-check2 me-1"></i> Entendido, Cerrar Asistente
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Discard modal -->
+<div class="modal fade" id="discardPreviewModal" tabindex="-1" aria-labelledby="discardPreviewTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 overflow-hidden">
+      <div class="modal-body p-4">
+        <div class="d-flex align-items-start gap-3">
+          <div class="icon-square status-danger flex-shrink-0"><i class="bi bi-trash3 fs-5"></i></div>
+          <div>
+            <h5 class="fw-bold mb-1" id="discardPreviewTitle">¿Descartar este borrador?</h5>
+            <p class="text-muted small mb-0">
+              Se borra la previsualización de <strong style="color: var(--text);">{{ preview.accounting_period }}</strong>
+              y vuelves a la carga de archivos. La base de datos no cambia.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer-soft">
+        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+        <form action="{% url 'usd_discard' %}" method="post" class="m-0">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger rounded-pill px-4">Descartar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Commit modal: step 1 confirm, step 2 success + Excel download -->
+<div class="modal fade" id="commitPreviewModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="commitPreviewTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 overflow-hidden">
+
+      <div id="commitStepConfirm">
+        <div class="modal-body p-4">
+          <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+            <div class="d-flex align-items-start gap-3">
+              <div class="icon-square icon-square-gold flex-shrink-0"><i class="bi bi-database-check fs-5"></i></div>
+              <div>
+                <h5 class="fw-bold mb-1" id="commitPreviewTitle">Guardar cierre</h5>
+                <p class="text-muted small mb-0">{{ preview.accounting_period }}</p>
+              </div>
+            </div>
+            <button type="button" id="btnCloseConfirmModal" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+
+          <dl class="summary-dl mb-3">
+            <div>
+              <dt>Vouchers</dt>
+              <dd class="d-flex flex-wrap justify-content-end gap-1">
+                <span class="status-chip status-success"><i class="bi bi-check2"></i>{{ counts.matched }} ubicadas</span>
+                <span class="status-chip status-warning"><i class="bi bi-plus-slash-minus"></i>{{ counts.discrepancies }} con diferencia</span>
+                <span class="status-chip status-danger"><i class="bi bi-search"></i>{{ counts.orphans }} no en ERP</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Abono Transbank</dt>
+              <dd>US$ {{ bank.calculated_deposit|num_usd }}</dd>
+            </div>
+            <div>
+              <dt>Cartola{% if bank.bank_name %} {{ bank.bank_name }}{% endif %}</dt>
+              <dd>
+                {% if bank.is_matched %}
+                <span class="status-chip status-success"><i class="bi bi-patch-check"></i>Confirmado</span>
+                {% else %}
+                <span class="status-chip status-danger"><i class="bi bi-exclamation-octagon"></i>No encontrado</span>
+                {% endif %}
+              </dd>
+            </div>
+          </dl>
+          <p class="text-muted small mb-0">
+            <i class="bi bi-shield-check me-1" style="color: var(--brand);"></i>
+            Si este cierre ya estaba guardado, se actualiza en vez de duplicarse.
+          </p>
+        </div>
+        <div class="modal-footer-soft">
+          <button type="button" id="btnCancelCommitModal" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Seguir revisando</button>
+          <button type="button" id="btnExecuteCommit" class="btn btn-primary rounded-pill px-4" data-commit-url="{% url 'usd_commit' %}" onclick="executeCommitToDatabase()">
+            <i class="bi bi-check2-circle me-1"></i> Guardar cierre
+          </button>
+        </div>
+      </div>
+
+      <div id="commitStepSuccess" class="d-none">
+        <div class="modal-body p-4 text-center">
+          <div class="success-mark mx-auto mb-3"><i class="bi bi-check-lg"></i></div>
+          <h5 class="fw-bold mb-1">Cierre guardado</h5>
+          <p class="text-muted small mb-4" id="modalPeriod">—</p>
+
+          <dl class="summary-dl text-start mb-4">
+            <div><dt>Proceso</dt><dd id="modalProcessId">#—</dd></div>
+            <div><dt>Registrado</dt><dd id="modalExecDate">—</dd></div>
+            <div><dt>Vouchers</dt><dd id="modalVoucherStats">—</dd></div>
+          </dl>
+
+          <a href="#" id="modalExcelDownloadBtn" class="btn btn-primary rounded-pill w-100 py-2">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Descargar reporte Excel
+          </a>
+        </div>
+        <div class="modal-footer-soft justify-content-center">
+          <a href="{% url 'usd_upload' %}" id="modalFinishBtn" class="btn btn-outline-secondary rounded-pill px-4">
+            Finalizar
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>

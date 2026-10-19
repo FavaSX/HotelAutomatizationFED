@@ -223,8 +223,10 @@ def safe_time(raw_value: Any):
 
 
 def safe_cell(row: pd.Series, column_index: int) -> Any:
-    """Safely retrieves a cell by index without raising IndexError."""
+    """Safely retrieves a cell by index without raising IndexError, returning None for NaN/NaT."""
     if 0 <= column_index < len(row):
-        return row.iloc[column_index]
+        value = row.iloc[column_index]
+        return None if pd.isna(value) else value
     return None
+
 

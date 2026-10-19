@@ -217,6 +217,7 @@ def parse_card_operator_statements(
             )
 
             card_operator_index[card_code].setdefault(document_number, []).append({
+                "document_number": document_number,
                 "sequence_number": sequence_number,
                 "foreign_currency_usd": foreign_currency,
                 "balance_clp": balance_clp,
@@ -257,6 +258,7 @@ def classify_bordero_clp_payment(description: str):
 
 def parse_bordero_clp_transactions(
     bordero_dataframe: pd.DataFrame,
+    source_file: str = "",
 ) -> Tuple[List[Dict[str, Any]], Dict[str, List[int]]]:
     """
     Parses the Hotel Bordero ("Cargos de Débitos y Créditos") in memory, keeping only peso card
@@ -290,6 +292,7 @@ def parse_bordero_clp_transactions(
         position = len(rows)
         rows.append({
             "excel_row": excel_row_number,
+            "source_file": source_file,
             "card_code": card_code or "",
             "payment_group": payment_group,
             "payment_code": str(safe_cell(row, columns["payment_code"]) or "").strip().upper(),
@@ -306,6 +309,7 @@ def parse_bordero_clp_transactions(
             "guest_name": " ".join(str(safe_cell(row, columns["guest_name"]) or "").split()),
             # Payments are negative in the Bordero; reversals come as positive values.
             "amount": float(-raw_amount),
+            "is_reversal": bool(raw_amount > 0),
             "reconciled": False,
         })
 
@@ -314,3 +318,4 @@ def parse_bordero_clp_transactions(
             rows_by_auth_code.setdefault(normalized_code, []).append(position)
 
     return rows, rows_by_auth_code
+

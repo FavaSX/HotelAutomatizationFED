@@ -1,0 +1,259 @@
+{% load l10n currency_filters %}
+{% if not usd.has_data %}
+<div class="card card-executive empty-state text-center p-5">
+  <div class="icon-square icon-square-gold mx-auto mb-3" style="width: 64px; height: 64px;">
+    <i class="bi bi-currency-dollar fs-3"></i>
+  </div>
+  <h2 class="h5 fw-bold mb-2">Todavía no hay cierres en dólares</h2>
+  <p class="text-muted mx-auto mb-4" style="max-width: 460px;">
+    Cuando guardes tu primer cierre en dólares, aquí verás la tasa de conciliación, las excepciones
+    pendientes, el estado del abono bancario y el detalle por franquicia y cajero.
+  </p>
+  <a href="{% url 'usd_upload' %}" class="btn btn-primary rounded-pill px-4">
+    <i class="bi bi-cloud-arrow-up me-1"></i> Cargar los 7 archivos
+  </a>
+</div>
+{% else %}
+{% with last=usd.last_process %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <p class="text-muted mb-0 small">
+    Último cierre: <strong style="color: var(--text);">{{ last.accounting_period|default:"Cierre Dólares (USD)" }}</strong>
+    · guardado el {{ last.execution_date|date:"d/m/Y H:i" }} por {{ last.user.username }}
+  </p>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="{% url 'usd_export_committed' last.id %}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i> Reporte del último cierre
+    </a>
+    <a href="{% url 'usd_upload' %}" class="btn btn-sm btn-primary rounded-pill px-3">
+      <i class="bi bi-plus-lg me-1"></i> Nueva conciliación en dólares
+    </a>
+  </div>
+</div>
+
+<!-- KPI row -->
+<div class="row g-3 mb-3">
+  <div class="col-sm-6 col-xl-3">
+    {% include "partials/dashboard_match_card.html" with counts=usd.last_counts rate_delta=usd.rate_delta orphan_label="No ubicadas en ERP" %}
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="kpi-label">Excepciones pendientes</div>
+        <div class="icon-square icon-square-warning"><i class="bi bi-exclamation-triangle"></i></div>
+      </div>
+      <div class="stat-value" data-countup-to="{{ usd.pending_count|unlocalize }}">{{ usd.pending_count }}</div>
+      <ul class="list-unstyled small mb-0 mt-2">
+        {% for t in usd.pending_by_type %}
+        <li class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom-soft{% endif %}">
+          <span class="text-muted">{{ t.label }}</span>
+          <strong>{{ t.count }}</strong>
+        </li>
+        {% empty %}
+        <li class="text-muted"><i class="bi bi-check2-circle me-1" style="color: var(--success);"></i>Todo revisado</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="kpi-label">Monto en revisión</div>
+        <div class="icon-square icon-square-navy"><i class="bi bi-hourglass-split"></i></div>
+      </div>
+      <div class="stat-value"><span class="stat-unit">US$</span> <span data-countup-to="{{ usd.pending_amount|unlocalize }}" data-countup-decimals="2">{{ usd.pending_amount|num_usd }}</span></div>
+      <div class="small text-muted mt-2">
+        Cobrado en Transbank y aún sin cuadrar en {{ usd.pending_count }} voucher{{ usd.pending_count|pluralize }} pendiente{{ usd.pending_count|pluralize }}.
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-xl-3">
+    <div class="card-hero-navy p-4 h-100">
+      <div class="kpi-label on-navy">Abono bancario · último cierre</div>
+      {% if usd.bank %}
+        <div class="d-flex align-items-center gap-2 mt-2">
+          {% if usd.bank.is_matched %}
+          <i class="bi bi-patch-check-fill fs-4" style="color: #86EFAC;"></i>
+          <span class="stat-value on-navy" style="font-size: 1.45rem;">Confirmado</span>
+          {% else %}
+          <i class="bi bi-exclamation-octagon-fill fs-4" style="color: #FCA5A5;"></i>
+          <span class="stat-value on-navy" style="font-size: 1.45rem;">Sin abono</span>
+          {% endif %}
+        </div>
+        <dl class="bank-dl small mt-3 mb-0">
+          <div><dt>Calculado Transbank</dt><dd>US$ {{ usd.bank.transbank_calculated_deposit|num_usd }}</dd></div>
+          <div><dt>En cartola{% if usd.bank.deposit_date %} ({{ usd.bank.deposit_date|date:"d/m" }}){% endif %}</dt><dd>US$ {{ usd.bank.bank_statement_deposit|default:0|num_usd }}</dd></div>
+        </dl>
+      {% else %}
+        <div class="stat-value on-navy mt-2" style="font-size: 1.45rem;">Sin validación</div>
+        <div class="small text-muted mt-1">Este cierre no registró validación de cartola.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Franchises + cashiers -->
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Franquicias del último cierre</h2>
+          <p class="panel-sub">Monto cobrado en Transbank (US$) y vouchers conciliados</p>
+        </div>
+      </header>
+      <div class="panel-body">
+        {% for f in usd.franchises %}
+        {% if not f.vouchers %}
+        <div class="bar-row d-flex justify-content-between align-items-baseline">
+          <span class="fw-semibold text-muted">{{ f.name }}</span>
+          <span class="text-muted small fst-italic">Sin movimientos en este cierre</span>
+        </div>
+        {% else %}
+        <div class="bar-row" title="{{ f.name }}: US$ {{ f.amount|num_usd }} · {{ f.matched }}/{{ f.vouchers }} conciliados">
+          <div class="bar-row-head">
+            <span class="fw-semibold">{{ f.name }}</span>
+            <span class="text-muted small">{{ f.matched }}/{{ f.vouchers }} conciliados</span>
+          </div>
+          <div class="d-flex align-items-center gap-3">
+            <div class="bar-track flex-grow-1"><span class="bar-fill" style="width: {{ f.pct|unlocalize }}%;"></span></div>
+            <span class="bar-value">US$ {{ f.amount|num_usd }}</span>
+          </div>
+          {% if f.difference %}
+          <div class="small mt-1 {% if f.difference < 0 %}text-danger-soft{% else %}text-muted{% endif %}">
+            <i class="bi bi-arrow-left-right me-1"></i>Diferencia vs. operadora: US$ {{ f.difference|num_usd }}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% empty %}
+        <p class="text-muted small mb-0">Sin vouchers registrados en este cierre.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-5">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Excepciones por cajero</h2>
+          <p class="panel-sub">Quién registró los cobros pendientes de revisión</p>
+        </div>
+      </header>
+      <div class="panel-body">
+        {% for c in usd.pending_by_cashier %}
+        <div class="bar-row" title="{{ c.name }}: {{ c.count }} excepción{{ c.count|pluralize:'es' }}">
+          <div class="bar-row-head">
+            <span class="{% if c.is_unassigned %}text-muted fst-italic{% else %}fw-semibold{% endif %}">
+              <i class="bi {% if c.is_unassigned %}bi-question-circle{% else %}bi-person{% endif %} me-1"></i>{{ c.name }}
+            </span>
+            <strong>{{ c.count }}</strong>
+          </div>
+          <div class="bar-track"><span class="bar-fill {% if c.is_unassigned %}bar-fill-muted{% else %}bar-fill-navy{% endif %}" style="width: {{ c.pct|unlocalize }}%;"></span></div>
+        </div>
+        {% empty %}
+        <div class="text-center text-muted small py-4">
+          <i class="bi bi-check2-circle fs-3 d-block mb-2" style="color: var(--success);"></i>
+          No hay excepciones pendientes.
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Largest exceptions + recent closings -->
+<div class="row g-3">
+  <div class="col-lg-7">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Excepciones de mayor monto</h2>
+          <p class="panel-sub">Prioriza estas para cerrar la mayor diferencia</p>
+        </div>
+      </header>
+      {% if usd.largest_exceptions %}
+      <div class="table-responsive">
+        <table class="table table-dash align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Voucher</th>
+              <th class="d-none d-md-table-cell">Huésped</th>
+              <th>Tipo</th>
+              <th class="text-end">Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in usd.largest_exceptions %}
+            <tr>
+              <td>
+                <div class="fw-semibold font-mono">{{ e.authorization_code }}</div>
+                <div class="text-muted small">{{ e.card_type.name }}{% if e.sale_date %} · <span class="text-nowrap">{{ e.sale_date|date:"d/m/Y" }}</span>{% endif %}</div>
+              </td>
+              <td class="d-none d-md-table-cell">
+                {% if e.guest_name and e.guest_name != "—" %}
+                <div class="text-truncate" style="max-width: 180px;">{{ e.guest_name }}</div>
+                <div class="text-muted small">{% if e.room_number and e.room_number != "—" %}Hab. {{ e.room_number }}{% endif %}</div>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}">
+                  <i class="bi {% if e.system_result == 'NOT_FOUND_IN_ERP' %}bi-search{% else %}bi-plus-slash-minus{% endif %}" title="{{ e.type_label }}"></i><span class="d-none d-sm-inline">{{ e.type_label }}</span>
+                </span>
+              </td>
+              <td class="text-end fw-semibold text-nowrap">US$ {{ e.transbank_amount|num_usd }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="panel-body text-center text-muted small py-4">
+        <i class="bi bi-check2-circle fs-3 d-block mb-2" style="color: var(--success);"></i>
+        No hay excepciones pendientes.
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="col-lg-5">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Cierres recientes</h2>
+          <p class="panel-sub">{{ usd.process_count }} cierre{{ usd.process_count|pluralize }} en dólares guardado{{ usd.process_count|pluralize }}</p>
+        </div>
+      </header>
+      <ul class="list-unstyled mb-0">
+        {% for p in usd.recent_processes %}
+        <li class="closing-row">
+          <div class="flex-grow-1 min-w-0">
+            <div class="fw-semibold text-truncate" title="{{ p.accounting_period }}">{{ p.accounting_period|default:"Cierre Dólares (USD)" }}</div>
+            <div class="text-muted small">#{{ p.id }} · {{ p.execution_date|date:"d/m/Y H:i" }} · {{ p.user.username }}</div>
+            <div class="d-flex align-items-center gap-2 mt-2">
+              <div class="bar-track flex-grow-1" style="height: 6px;" title="{{ p.matched_vouchers }} de {{ p.total_vouchers }} conciliados">
+                <span class="bar-fill bar-fill-success" style="width: {{ p.match_rate|unlocalize }}%;"></span>
+              </div>
+              <span class="small fw-semibold">{{ p.match_rate }}%</span>
+              {% if p.bank_list %}
+              <i class="bi bi-bank2" style="color: {% if p.banks_matched == p.bank_list|length %}var(--success){% else %}var(--danger){% endif %};"
+                 title="{% if p.banks_matched == p.bank_list|length %}Abono bancario confirmado{% else %}Abono bancario no encontrado{% endif %}"></i>
+              {% endif %}
+            </div>
+          </div>
+          <a href="{% url 'usd_export_committed' p.id %}" class="btn-icon" title="Descargar reporte Excel" aria-label="Descargar reporte del cierre #{{ p.id }}">
+            <i class="bi bi-download"></i>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</div>
+{% endwith %}
+{% endif %}

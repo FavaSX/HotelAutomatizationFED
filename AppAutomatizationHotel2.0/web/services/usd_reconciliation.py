@@ -2,120 +2,205 @@
 Phase 1: US Dollars (USD) Financial Reconciliation Calculation Service.
 Executes the in-memory triple cross-match (Transbank vs. ERP vs. Card Operators + Bank Statement)
 without writing to the database.
-Database persistence lives in `reconciliation_persistence.py` and Excel generation in `report_exporter.py`.
 """
 
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
-from ..models import (
-    CardType,
-    SystemConfiguration,
-)
+from ..models import CardType, SystemConfiguration
 from .column_detector import (
     TRANSBANK_USD_COLUMN_RULES,
-    resolve_dataframe_columns,
     clean_code_string,
-    safe_decimal,
-    safe_date,
+    resolve_dataframe_columns,
     safe_cell,
+    safe_date,
+    safe_decimal,
 )
 from .excel_parsers import (
     parse_and_validate_bank_deposits,
-    parse_erp_transactions,
     parse_card_operator_statements,
+    parse_erp_transactions,
+)
+from .suggestion_engine import enrich_preview_with_suggestions
+
+CARD_CODES = ("AX", "DI", "MC", "VI")
+BANK_KEYWORDS = (
+    "banco de chile", "banco santander", "banco bci",
+    "scotiabank", "banco estado", "itau", "itaú",
 )
 
 
-def calculate_usd_preview(
-    erp_file,
-    transbank_file,
-    bank_statement_file,
-    amex_file,
-    diners_file,
-    visa_file,
-    mastercard_file,
-    accounting_period: str = "",
-) -> Dict[str, Any]:
-    """
-    Executes the complete US Dollars reconciliation workflow purely in memory.
-    Returns a JSON-serializable dictionary with all summary tables, bank validation,
-    extracted source rows, and classified vouchers without touching the database.
-    """
-    config = SystemConfiguration.objects.first()
-    usd_tolerance = config.usd_rounding_tolerance if config else Decimal("0.50")
-    card_types = {card.code: card for card in CardType.objects.all()}
+def _extract_bank_and_settlement_metadata(
+    tbk_df: pd.DataFrame, bank_df: pd.DataFrame
+) -> Tuple[Decimal, str, str, Any]:
+    """Extracts calculated deposit, bank name, account number, and settlement date from header rows."""
+    calc_deposit, bank_name, account_num, settlement_date = Decimal("0.00"), "", "", None
 
-    for uploaded_file in [erp_file, transbank_file, bank_statement_file, amex_file, diners_file, visa_file, mastercard_file]:
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-
-    erp_dataframe = pd.read_excel(erp_file)
-    transbank_dataframe = pd.read_excel(transbank_file)
-    bank_dataframe = pd.read_excel(bank_statement_file)
-    operator_dataframes = {
-        "AX": pd.read_excel(amex_file),
-        "DI": pd.read_excel(diners_file),
-        "VI": pd.read_excel(visa_file),
-        "MC": pd.read_excel(mastercard_file),
-    }
-
-    # 1. Parse Bank Statement Abono & Dynamic Bank Metadata
-    calculated_transbank_deposit = Decimal("0.00")
-    detected_bank_name = ""
-    detected_account_number = ""
-    detected_settlement_date = None
-
-    for _, row in transbank_dataframe.iloc[:38].iterrows():
+    for _, row in tbk_df.iloc[:38].iterrows():
         label_col = str(safe_cell(row, 1) or "").strip().lower()
         val_col = str(safe_cell(row, 2) or "").strip()
         if "abono calculado" in label_col:
-            calculated_transbank_deposit = safe_decimal(safe_cell(row, 2))
+            calc_deposit = safe_decimal(safe_cell(row, 2))
         elif label_col.startswith("banco") and val_col and val_col.lower() != "nan":
-            detected_bank_name = val_col.title().replace("De ", "de ")
-        elif ("numero" in label_col or "número" in label_col) and val_col and not detected_account_number:
-            detected_account_number = clean_code_string(val_col)
-        elif "fecha abono" in label_col and not detected_settlement_date:
-            detected_settlement_date = safe_date(safe_cell(row, 2))
+            bank_name = val_col.title().replace("De ", "de ")
+        elif ("numero" in label_col or "número" in label_col) and val_col and not account_num:
+            account_num = clean_code_string(val_col)
+        elif "fecha abono" in label_col and not settlement_date:
+            settlement_date = safe_date(safe_cell(row, 2))
 
-    for _, row in bank_dataframe.iloc[:15].iterrows():
+    for _, row in bank_df.iloc[:15].iterrows():
         non_empty = [str(c).strip() for c in row if pd.notna(c) and str(c).strip()]
         for idx, cell_text in enumerate(non_empty):
             lower_text = cell_text.lower()
             if "cuenta" in lower_text and idx + 1 < len(non_empty):
-                detected_account_number = non_empty[idx + 1]
-            if not detected_bank_name:
-                for bank_kw in ("banco de chile", "banco santander", "banco bci", "scotiabank", "banco estado", "itau", "itaú"):
-                    if bank_kw in lower_text:
-                        detected_bank_name = bank_kw.title().replace("De ", "de ")
+                account_num = non_empty[idx + 1]
+            if not bank_name:
+                for kw in BANK_KEYWORDS:
+                    if kw in lower_text:
+                        bank_name = kw.title().replace("De ", "de ")
                         break
 
+    return calc_deposit, bank_name, account_num, settlement_date
+
+
+def _resolve_operator_for_erp(
+    erp_entry: Dict[str, Any],
+    card_code: str,
+    card_operator_index: Dict[str, Dict[str, List[Dict[str, Any]]]],
+) -> Tuple[Optional[Dict[str, Any]], Decimal, Decimal, str]:
+    """Finds the matching Card Operator record for an ERP entry by document number and CLP balance."""
+    erp_clp = erp_entry["amount_clp"]
+    candidates = card_operator_index.get(card_code, {}).get(erp_entry["document_number"], [])
+
+    chosen_op, obs = None, "No encontrado en archivo Operadora"
+    for cand in candidates:
+        if cand["balance_clp"] == erp_clp:
+            chosen_op, obs = cand, f"Coincide con SALDO {cand['balance_clp']}"
+            break
+        if cand["corrected_balance_clp"] == erp_clp:
+            chosen_op, obs = cand, f"Coincide con SALDO CORREGIDO {cand['corrected_balance_clp']}"
+            break
+
+    if not chosen_op and candidates:
+        chosen_op = candidates[0]
+
+    op_usd = chosen_op["foreign_currency_usd"] if chosen_op else Decimal("0.00")
+    op_clp = (
+        chosen_op["balance_clp"]
+        if chosen_op and chosen_op["balance_clp"] > 0
+        else (chosen_op["corrected_balance_clp"] if chosen_op else Decimal("0.00"))
+    )
+    return chosen_op, op_usd, op_clp, obs
+
+
+def _build_summary_tables(
+    summary_accumulators: Dict[str, Dict[str, Decimal]], card_types: Dict[str, CardType]
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, float], Dict[str, float]]:
+    """Builds the USD and CLP summary tables and their grand totals."""
+    usd_table, clp_table = [], []
+    tot_usd_erp = tot_usd_tbk = tot_clp_erp = tot_clp_tbk = Decimal("0.00")
+
+    for code in CARD_CODES:
+        card_model = card_types.get(code)
+        card_name = card_model.name if card_model else code
+        acc = summary_accumulators[code]
+        diff_usd = round(acc["usd_tbk_total"] - acc["usd_erp_total"], 2)
+        diff_clp = round(acc["clp_tbk_total"] - acc["clp_erp_total"], 0)
+
+        usd_table.append({
+            "card_code": code, "card_name": f"{card_name} US$",
+            "erp_sales": float(round(acc["usd_erp_total"], 2)),
+            "tbk_sales": float(round(acc["usd_tbk_total"], 2)),
+            "difference": float(diff_usd),
+        })
+        clp_table.append({
+            "card_code": code, "card_name": f"{card_name} (CLP)",
+            "erp_sales": float(round(acc["clp_erp_total"], 0)),
+            "tbk_sales": float(round(acc["clp_tbk_total"], 0)),
+            "difference": float(diff_clp),
+        })
+        tot_usd_erp += acc["usd_erp_total"]
+        tot_usd_tbk += acc["usd_tbk_total"]
+        tot_clp_erp += acc["clp_erp_total"]
+        tot_clp_tbk += acc["clp_tbk_total"]
+
+    usd_totals = {
+        "erp": float(round(tot_usd_erp, 2)),
+        "tbk": float(round(tot_usd_tbk, 2)),
+        "diff": float(round(tot_usd_tbk - tot_usd_erp, 2)),
+    }
+    clp_totals = {
+        "erp": float(round(tot_clp_erp, 0)),
+        "tbk": float(round(tot_clp_tbk, 0)),
+        "diff": float(round(tot_clp_tbk - tot_clp_erp, 0)),
+    }
+    return usd_table, clp_table, usd_totals, clp_totals
+
+
+def _format_accounting_period(
+    accounting_period: str, settlement_date: Any, bank_movement_date: Any, tbk_txs: List[Dict[str, Any]]
+) -> str:
+    """Generates a descriptive accounting period title when none is explicitly provided."""
+    if accounting_period:
+        return accounting_period
+    settlement_dt = settlement_date or bank_movement_date
+    valid_dates = sorted({safe_date(tx["sale_date"]) for tx in tbk_txs if tx.get("sale_date")} - {None})
+    range_str = ""
+    if valid_dates:
+        min_s, max_s = valid_dates[0].strftime("%d/%m/%Y"), valid_dates[-1].strftime("%d/%m/%Y")
+        range_str = min_s if min_s == max_s else f"{min_s} al {max_s}"
+
+    if settlement_dt and range_str:
+        return f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')} (Ventas {range_str})"
+    if settlement_dt:
+        return f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')}"
+    return f"Cierre Dólares — Ventas {range_str}" if range_str else "Cierre Dólares (USD)"
+
+
+def calculate_usd_preview(
+    erp_file, transbank_file, bank_statement_file,
+    amex_file, diners_file, visa_file, mastercard_file,
+    accounting_period: str = "",
+) -> Dict[str, Any]:
+    """Executes the complete US Dollars reconciliation workflow purely in memory."""
+    config = SystemConfiguration.objects.first()
+    usd_tolerance = config.usd_rounding_tolerance if config else Decimal("0.50")
+    card_types = {card.code: card for card in CardType.objects.all()}
+
+    for f in (erp_file, transbank_file, bank_statement_file, amex_file, diners_file, visa_file, mastercard_file):
+        if hasattr(f, "seek"):
+            f.seek(0)
+
+    erp_df = pd.read_excel(erp_file)
+    tbk_df = pd.read_excel(transbank_file)
+    bank_df = pd.read_excel(bank_statement_file)
+    operator_dfs = {
+        "AX": pd.read_excel(amex_file), "DI": pd.read_excel(diners_file),
+        "VI": pd.read_excel(visa_file), "MC": pd.read_excel(mastercard_file),
+    }
+
+    # 1. Bank Statement Abono & Metadata
+    calc_deposit, bank_name, account_num, settlement_date = _extract_bank_and_settlement_metadata(tbk_df, bank_df)
     bank_validations = parse_and_validate_bank_deposits(
-        bank_dataframe=bank_dataframe,
-        expected_deposits=[("USD_GENERAL", calculated_transbank_deposit)],
+        bank_dataframe=bank_df,
+        expected_deposits=[("USD_GENERAL", calc_deposit)],
         tolerance=usd_tolerance,
     )
-    bank_matched = bank_validations[0]["is_matched"] if bank_validations else False
-    bank_deposit_amount = bank_validations[0].get("bank_deposit", 0.0) if bank_validations else 0.0
-    bank_movement_date = bank_validations[0].get("movement_date") if bank_validations else None
-    bank_movements_data = bank_validations[0].get("movements_data", []) if bank_validations else []
+    first_bv = bank_validations[0] if bank_validations else {}
+    bank_movement_date = first_bv.get("movement_date")
 
-    # 2. Parse Card Operator Statements & ERP Transactions in Memory
-    card_operator_index = parse_card_operator_statements(operator_dataframes, card_types)
-    erp_instances, erp_by_auth_code = parse_erp_transactions(erp_dataframe, card_types)
-
-    # Index ERP instances so CrossMatchResult can link to the exact ErpTransaction on commit
+    # 2. Parse Card Operator Statements & ERP Transactions
+    card_operator_index = parse_card_operator_statements(operator_dfs, card_types)
+    erp_instances, erp_by_auth_code = parse_erp_transactions(erp_df, card_types)
     for idx, erp_item in enumerate(erp_instances):
         erp_item._memory_index = idx
 
-    # Flatten and index CardOperatorTransaction instances for serialization and FK linking
     card_operator_transactions_data: List[Dict[str, Any]] = []
     for card_code, doc_dict in card_operator_index.items():
-        for doc_num, candidates in doc_dict.items():
+        for candidates in doc_dict.values():
             for candidate in candidates:
-                op_idx = len(card_operator_transactions_data)
-                candidate["operator_index"] = op_idx
+                candidate["operator_index"] = len(card_operator_transactions_data)
                 op_inst = candidate["instance"]
                 card_operator_transactions_data.append({
                     "card_code": card_code,
@@ -127,96 +212,49 @@ def calculate_usd_preview(
                     "corrected_balance_amount": float(op_inst.corrected_balance_amount),
                 })
 
-    # 3. Cross-Match Transbank (Source of Truth) -> ERP -> Card Operator
-    tbk_columns = resolve_dataframe_columns(transbank_dataframe, TRANSBANK_USD_COLUMN_RULES)
-    matched_vouchers: List[Dict[str, Any]] = []
-    discrepancy_vouchers: List[Dict[str, Any]] = []
-    orphan_vouchers: List[Dict[str, Any]] = []
-    transbank_transactions_data: List[Dict[str, Any]] = []
-
+    # 3. Cross-Match Transbank -> ERP -> Card Operator
+    tbk_cols = resolve_dataframe_columns(tbk_df, TRANSBANK_USD_COLUMN_RULES)
+    matched_vouchers, discrepancy_vouchers, orphan_vouchers, tbk_txs_data = [], [], [], []
     summary_accumulators = {
-        code: {
-            "usd_erp_total": Decimal("0.00"),
-            "usd_tbk_total": Decimal("0.00"),
-            "clp_erp_total": Decimal("0.00"),
-            "clp_tbk_total": Decimal("0.00"),
-        }
-        for code in ["AX", "DI", "MC", "VI"]
+        code: {k: Decimal("0.00") for k in ("usd_erp_total", "usd_tbk_total", "clp_erp_total", "clp_tbk_total")}
+        for code in CARD_CODES
     }
 
-    for _, row in transbank_dataframe.iterrows():
-        raw_card_type = str(safe_cell(row, tbk_columns["card_type"]) or "").strip().upper()
+    for _, row in tbk_df.iterrows():
+        raw_card_type = str(safe_cell(row, tbk_cols["card_type"]) or "").strip().upper()
         if raw_card_type not in summary_accumulators:
             continue
 
-        auth_code = clean_code_string(safe_cell(row, tbk_columns["authorization_code"]))
-        gross_amount_usd = safe_decimal(safe_cell(row, tbk_columns["gross_amount"]))
+        auth_code = clean_code_string(safe_cell(row, tbk_cols["authorization_code"]))
+        gross_amount_usd = safe_decimal(safe_cell(row, tbk_cols["gross_amount"]))
         if not auth_code or gross_amount_usd <= 0:
             continue
 
-        sale_date = safe_date(safe_cell(row, tbk_columns["sale_date"]))
-        masked_card = str(safe_cell(row, tbk_columns["masked_card_number"]) or "").strip()
-        merchant_code = clean_code_string(safe_cell(row, tbk_columns.get("merchant_code", 1)))
-        installment_type = str(safe_cell(row, tbk_columns.get("installment_type", 5)) or "").strip()
-        installment_number = clean_code_string(safe_cell(row, tbk_columns.get("installment_number", 8)))
+        sale_date = safe_date(safe_cell(row, tbk_cols["sale_date"]))
+        masked_card = str(safe_cell(row, tbk_cols["masked_card_number"]) or "").strip()
         card_model = card_types.get(raw_card_type)
         card_name = card_model.name if card_model else raw_card_type
-
-        tbk_index = len(transbank_transactions_data)
+        tbk_index = len(tbk_txs_data)
 
         matching_erp_records = erp_by_auth_code.get(auth_code, [])
         if not matching_erp_records:
-            for erp_key, records in erp_by_auth_code.items():
-                if auth_code in erp_key:
-                    matching_erp_records = records
-                    break
+            matching_erp_records = next(
+                (recs for erp_key, recs in erp_by_auth_code.items() if auth_code in erp_key), []
+            )
 
         if matching_erp_records:
-            invoiced_erp_records = [
-                r for r in matching_erp_records if getattr(r["instance"], "invoice_number", "")
-            ]
-            active_erp_records = invoiced_erp_records if invoiced_erp_records else matching_erp_records
-
-            def _resolve_operator_for_erp(erp_entry):
-                doc_num = erp_entry["document_number"]
-                erp_clp = erp_entry["amount_clp"]
-                candidates = card_operator_index.get(raw_card_type, {}).get(doc_num, [])
-                chosen_op = None
-                obs = "No encontrado en archivo Operadora"
-                for cand in candidates:
-                    if cand["balance_clp"] == erp_clp:
-                        chosen_op = cand
-                        obs = f"Coincide con SALDO {cand['balance_clp']}"
-                        break
-                    if cand["corrected_balance_clp"] == erp_clp:
-                        chosen_op = cand
-                        obs = f"Coincide con SALDO CORREGIDO {cand['corrected_balance_clp']}"
-                        break
-                if not chosen_op and candidates:
-                    chosen_op = candidates[0]
-                op_usd = chosen_op["foreign_currency_usd"] if chosen_op else Decimal("0.00")
-                op_clp = (
-                    chosen_op["balance_clp"]
-                    if chosen_op and chosen_op["balance_clp"] > 0
-                    else chosen_op["corrected_balance_clp"]
-                    if chosen_op
-                    else Decimal("0.00")
-                )
-                return chosen_op, op_usd, op_clp, obs
-
+            active_erp_records = [r for r in matching_erp_records if getattr(r["instance"], "invoice_number", "")] or matching_erp_records
             resolved_candidates = [
-                (erp_rec, *_resolve_operator_for_erp(erp_rec)) for erp_rec in active_erp_records
+                (erp_rec, *_resolve_operator_for_erp(erp_rec, raw_card_type, card_operator_index))
+                for erp_rec in active_erp_records
             ]
-
-            single_match = None
-            for item in resolved_candidates:
-                erp_rec, chosen_op, op_usd, op_clp, obs = item
-                if chosen_op is not None and abs(round(gross_amount_usd - op_usd, 2)) <= usd_tolerance:
-                    single_match = item
-                    break
+            single_match = next(
+                (c for c in resolved_candidates if c[1] is not None and abs(round(gross_amount_usd - c[2], 2)) <= usd_tolerance),
+                None,
+            )
 
             if single_match is not None or len(resolved_candidates) == 1:
-                matched_erp, selected_operator, operator_usd, operator_clp, observation_text = (
+                matched_erp, selected_op, operator_usd, operator_clp, observation_text = (
                     single_match if single_match is not None else resolved_candidates[0]
                 )
                 erp_item = matched_erp["instance"]
@@ -224,21 +262,19 @@ def calculate_usd_preview(
                 erp_index = getattr(erp_item, "_memory_index", None)
                 document_number = matched_erp["document_number"]
                 erp_amount_clp = matched_erp["amount_clp"]
-                operator_index = selected_operator["operator_index"] if selected_operator else None
-                if selected_operator and operator_index is not None:
+                operator_doc_number = selected_op["instance"].document_number if selected_op and selected_op.get("instance") else ""
+                operator_index = selected_op["operator_index"] if selected_op else None
+                if selected_op and operator_index is not None:
                     card_operator_transactions_data[operator_index]["authorization_code"] = auth_code
             else:
-                # Multiple ERP invoices sharing a single Transbank voucher (split invoice)
-                primary_erp = resolved_candidates[0][0]
+                primary_erp, selected_op, _, _, _ = resolved_candidates[0]
                 erp_item = primary_erp["instance"]
                 erp_index = getattr(erp_item, "_memory_index", None)
-                selected_operator = resolved_candidates[0][1]
-                operator_index = selected_operator["operator_index"] if selected_operator else None
+                operator_doc_number = selected_op["instance"].document_number if selected_op and selected_op.get("instance") else ""
+                operator_index = selected_op["operator_index"] if selected_op else None
 
-                doc_numbers = []
-                erp_amount_clp = Decimal("0.00")
-                operator_usd = Decimal("0.00")
-                operator_clp = Decimal("0.00")
+                doc_numbers: List[str] = []
+                erp_amount_clp = operator_usd = operator_clp = Decimal("0.00")
                 all_ops_found = True
 
                 for erp_rec, chosen_op, op_usd, op_clp, _ in resolved_candidates:
@@ -254,81 +290,56 @@ def calculate_usd_preview(
                         all_ops_found = False
 
                 document_number = " / ".join(doc_numbers)[:50]
-                if all_ops_found:
-                    observation_text = (
-                        f"Voucher dividido en {len(resolved_candidates)} facturas "
-                        f"({document_number}) | Suma SALDO {operator_clp}"
-                    )
-                else:
-                    observation_text = "No encontrado en archivo Operadora"
+                observation_text = (
+                    f"Voucher dividido en {len(resolved_candidates)} facturas ({document_number}) | Suma SALDO {operator_clp}"
+                    if all_ops_found else "No encontrado en archivo Operadora"
+                )
 
             difference_usd = round(gross_amount_usd - operator_usd, 2)
             difference_clp = round(operator_clp - erp_amount_clp, 2)
-            is_within_tolerance = abs(difference_usd) <= usd_tolerance and selected_operator is not None
+            is_within_tolerance = abs(difference_usd) <= usd_tolerance and selected_op is not None
             sys_result = "MATCHED" if is_within_tolerance else "AMOUNT_MISMATCH"
-            guest_name = erp_item.guest_name or "—"
-            room_number = erp_item.room_number or "—"
-            cashier_username = erp_item.cashier_username or "—"
+            guest_name, room_number = erp_item.guest_name or "—", erp_item.room_number or "—"
+            cashier_username, erp_auth_code = erp_item.cashier_username or "—", erp_item.authorization_code or auth_code
         else:
-            erp_index = None
-            operator_index = None
-            document_number = ""
-            guest_name = "—"
-            room_number = "—"
-            cashier_username = "—"
-            operator_usd = Decimal("0.00")
-            erp_amount_clp = Decimal("0.00")
-            operator_clp = Decimal("0.00")
-            difference_usd = gross_amount_usd
-            difference_clp = Decimal("0.00")
-            is_within_tolerance = False
+            erp_index = operator_index = None
+            document_number = erp_auth_code = operator_doc_number = ""
+            guest_name = room_number = cashier_username = "—"
+            operator_usd = erp_amount_clp = operator_clp = difference_clp = Decimal("0.00")
+            difference_usd, is_within_tolerance = gross_amount_usd, False
             sys_result = "NOT_FOUND_IN_ERP"
             observation_text = f"Voucher {auth_code} no encontrado en ERP Hotel"
 
-        summary_accumulators[raw_card_type]["usd_erp_total"] += gross_amount_usd
-        summary_accumulators[raw_card_type]["usd_tbk_total"] += operator_usd
-        summary_accumulators[raw_card_type]["clp_erp_total"] += erp_amount_clp
-        summary_accumulators[raw_card_type]["clp_tbk_total"] += operator_clp
+        acc = summary_accumulators[raw_card_type]
+        acc["usd_erp_total"] += gross_amount_usd
+        acc["usd_tbk_total"] += operator_usd
+        acc["clp_erp_total"] += erp_amount_clp
+        acc["clp_tbk_total"] += operator_clp
 
         sale_date_str = sale_date.strftime("%d/%m/%Y") if sale_date else None
-        transbank_transactions_data.append({
-            "card_code": raw_card_type,
-            "payment_modality": "CREDIT",
-            "merchant_code": merchant_code,
+        tbk_txs_data.append({
+            "card_code": raw_card_type, "payment_modality": "CREDIT",
+            "merchant_code": clean_code_string(safe_cell(row, tbk_cols.get("merchant_code", 1))),
             "merchant_location_name": "HOTEL PLAZA SAN FRANCISCO",
             "masked_card_number": masked_card,
-            "installment_type": installment_type,
-            "installment_number": installment_number,
-            "authorization_code": auth_code,
-            "sale_date": sale_date_str,
-            "original_sale_amount": float(gross_amount_usd),
-            "reconciled": is_within_tolerance,
+            "installment_type": str(safe_cell(row, tbk_cols.get("installment_type", 5)) or "").strip(),
+            "installment_number": clean_code_string(safe_cell(row, tbk_cols.get("installment_number", 8))),
+            "authorization_code": auth_code, "sale_date": sale_date_str,
+            "original_sale_amount": float(gross_amount_usd), "reconciled": is_within_tolerance,
         })
 
         voucher_dict = {
-            "tbk_index": tbk_index,
-            "erp_index": erp_index,
-            "operator_index": operator_index,
-            "authorization_code": auth_code,
-            "document_number": document_number,
-            "card_code": raw_card_type,
-            "card_name": card_name,
-            "masked_card": masked_card,
-            "sale_date": sale_date_str or "",
-            "merchant_location": "HOTEL PLAZA SAN FRANCISCO",
-            "guest_name": guest_name,
-            "room_number": room_number,
-            "cashier_username": cashier_username,
-            "gross_amount_usd": float(gross_amount_usd),
-            "operator_amount_usd": float(operator_usd),
-            "erp_amount_clp": float(erp_amount_clp),
-            "operator_amount_clp": float(operator_clp),
-            "difference_usd": float(difference_usd),
-            "difference_clp": float(difference_clp),
-            "system_result": sys_result,
-            "observation": observation_text,
+            "tbk_index": tbk_index, "erp_index": erp_index, "operator_index": operator_index,
+            "authorization_code": auth_code, "erp_authorization_code": erp_auth_code,
+            "document_number": document_number, "operator_document_number": operator_doc_number or document_number,
+            "card_code": raw_card_type, "card_name": card_name, "masked_card": masked_card,
+            "sale_date": sale_date_str or "", "merchant_location": "HOTEL PLAZA SAN FRANCISCO",
+            "guest_name": guest_name, "room_number": room_number, "cashier_username": cashier_username,
+            "gross_amount_usd": float(gross_amount_usd), "operator_amount_usd": float(operator_usd),
+            "erp_amount_clp": float(erp_amount_clp), "operator_amount_clp": float(operator_clp),
+            "difference_usd": float(difference_usd), "difference_clp": float(difference_clp),
+            "system_result": sys_result, "observation": observation_text,
         }
-
         if sys_result == "MATCHED":
             matched_vouchers.append(voucher_dict)
         elif sys_result == "AMOUNT_MISMATCH":
@@ -336,95 +347,25 @@ def calculate_usd_preview(
         else:
             orphan_vouchers.append(voucher_dict)
 
-    # 4. Serialize ERP transactions (with transaction_time for natural key deduplication)
-    erp_transactions_data: List[Dict[str, Any]] = []
-    for erp_item in erp_instances:
-        card_code = erp_item.card_type.code if erp_item.card_type else "VI"
-        erp_transactions_data.append({
-            "card_code": card_code,
-            "room_number": erp_item.room_number,
-            "room_type": erp_item.room_type,
-            "reservation_number": erp_item.reservation_number,
-            "account_code": erp_item.account_code,
-            "payment_code": erp_item.payment_code,
-            "invoice_number": erp_item.invoice_number,
-            "document_number": erp_item.document_number,
-            "authorization_code": erp_item.authorization_code,
-            "transaction_date": erp_item.transaction_date.strftime("%d/%m/%Y") if erp_item.transaction_date else None,
-            "transaction_time": erp_item.transaction_time.strftime("%H:%M:%S") if erp_item.transaction_time else None,
-            "cashier_username": erp_item.cashier_username,
-            "guest_name": erp_item.guest_name,
-            "amount": float(erp_item.amount),
-            "source_currency": erp_item.source_currency,
-            "reconciled": erp_item.reconciled,
-        })
+    erp_transactions_data = [
+        {
+            "card_code": e.card_type.code if e.card_type else "VI",
+            "room_number": e.room_number, "room_type": e.room_type,
+            "reservation_number": e.reservation_number, "account_code": e.account_code,
+            "payment_code": e.payment_code, "invoice_number": e.invoice_number,
+            "document_number": e.document_number, "authorization_code": e.authorization_code,
+            "transaction_date": e.transaction_date.strftime("%d/%m/%Y") if e.transaction_date else None,
+            "transaction_time": e.transaction_time.strftime("%H:%M:%S") if e.transaction_time else None,
+            "cashier_username": e.cashier_username, "guest_name": e.guest_name,
+            "amount": float(e.amount), "source_currency": e.source_currency, "reconciled": e.reconciled,
+        }
+        for e in erp_instances
+    ]
 
-    # 5. Build Summary Tables
-    usd_table = []
-    clp_table = []
-    tot_usd_erp, tot_usd_tbk = Decimal("0.00"), Decimal("0.00")
-    tot_clp_erp, tot_clp_tbk = Decimal("0.00"), Decimal("0.00")
-
-    for code in ["AX", "DI", "MC", "VI"]:
-        card_model = card_types.get(code)
-        card_name = card_model.name if card_model else code
-        data = summary_accumulators[code]
-
-        diff_usd = round(data["usd_tbk_total"] - data["usd_erp_total"], 2)
-        diff_clp = round(data["clp_tbk_total"] - data["clp_erp_total"], 2)
-
-        usd_table.append({
-            "card_code": code,
-            "card_name": f"{card_name} US$",
-            "erp_sales": float(round(data["usd_erp_total"], 2)),
-            "tbk_sales": float(round(data["usd_tbk_total"], 2)),
-            "difference": float(diff_usd),
-        })
-        clp_table.append({
-            "card_code": code,
-            "card_name": f"{card_name} (CLP)",
-            "erp_sales": float(round(data["clp_erp_total"], 0)),
-            "tbk_sales": float(round(data["clp_tbk_total"], 0)),
-            "difference": float(round(diff_clp, 0)),
-        })
-
-        tot_usd_erp += data["usd_erp_total"]
-        tot_usd_tbk += data["usd_tbk_total"]
-        tot_clp_erp += data["clp_erp_total"]
-        tot_clp_tbk += data["clp_tbk_total"]
-
-    usd_totals = {
-        "erp": float(round(tot_usd_erp, 2)),
-        "tbk": float(round(tot_usd_tbk, 2)),
-        "diff": float(round(tot_usd_tbk - tot_usd_erp, 2)),
-    }
-    clp_totals = {
-        "erp": float(round(tot_clp_erp, 0)),
-        "tbk": float(round(tot_clp_tbk, 0)),
-        "diff": float(round(tot_clp_tbk - tot_clp_erp, 0)),
-    }
-
-    if not accounting_period:
-        settlement_dt = detected_settlement_date or bank_movement_date
-        valid_sale_dates = sorted({
-            safe_date(tx["sale_date"])
-            for tx in transbank_transactions_data
-            if tx.get("sale_date")
-        } - {None})
-        range_str = ""
-        if valid_sale_dates:
-            min_str = valid_sale_dates[0].strftime("%d/%m/%Y")
-            max_str = valid_sale_dates[-1].strftime("%d/%m/%Y")
-            range_str = min_str if min_str == max_str else f"{min_str} al {max_str}"
-
-        if settlement_dt and range_str:
-            accounting_period = f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')} (Ventas {range_str})"
-        elif settlement_dt:
-            accounting_period = f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')}"
-        elif range_str:
-            accounting_period = f"Cierre Dólares — Ventas {range_str}"
-        else:
-            accounting_period = "Cierre Dólares (USD)"
+    usd_table, clp_table, usd_totals, clp_totals = _build_summary_tables(summary_accumulators, card_types)
+    accounting_period = _format_accounting_period(
+        accounting_period, settlement_date, bank_movement_date, tbk_txs_data
+    )
 
     preview_payload = {
         "accounting_period": accounting_period,
@@ -439,24 +380,23 @@ def calculate_usd_preview(
         },
         "bank_validation": {
             "deposit_modality": "USD_GENERAL",
-            "bank_name": detected_bank_name or "Banco Cuenta Corriente",
-            "bank_account_number": detected_account_number,
-            "calculated_deposit": float(calculated_transbank_deposit),
-            "bank_deposit_amount": float(bank_deposit_amount),
+            "bank_name": bank_name or "Banco Cuenta Corriente",
+            "bank_account_number": account_num,
+            "calculated_deposit": float(calc_deposit),
+            "bank_deposit_amount": float(first_bv.get("bank_deposit", 0.0)),
             "bank_movement_date": bank_movement_date.strftime("%d/%m/%Y") if bank_movement_date else None,
-            "is_matched": bank_matched,
+            "is_matched": first_bv.get("is_matched", False),
         },
-        "bank_movements": bank_movements_data,
+        "bank_movements": first_bv.get("movements_data", []),
         "erp_transactions": erp_transactions_data,
-        "transbank_transactions": transbank_transactions_data,
+        "transbank_transactions": tbk_txs_data,
         "card_operator_transactions": card_operator_transactions_data,
-        "usd_table": usd_table,
-        "clp_table": clp_table,
-        "usd_totals": usd_totals,
-        "clp_totals": clp_totals,
+        "usd_table": usd_table, "clp_table": clp_table,
+        "usd_totals": usd_totals, "clp_totals": clp_totals,
         "matched_vouchers": matched_vouchers,
         "discrepancy_vouchers": discrepancy_vouchers,
         "orphan_vouchers": orphan_vouchers,
+        "tolerance": float(usd_tolerance),
         "counts": {
             "matched": len(matched_vouchers),
             "discrepancies": len(discrepancy_vouchers),
@@ -464,6 +404,4 @@ def calculate_usd_preview(
             "total": len(matched_vouchers) + len(discrepancy_vouchers) + len(orphan_vouchers),
         },
     }
-    from .suggestion_engine import enrich_preview_with_suggestions
     return enrich_preview_with_suggestions(preview_payload)
-
