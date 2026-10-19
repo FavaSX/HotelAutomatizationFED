@@ -90,59 +90,106 @@
   </div>
 </div>
 
-<!-- Squaring by franchise (USD + CLP in one table) -->
-<section class="card card-executive mb-3">
-  <header class="panel-head">
-    <div>
-      <h2 class="panel-title">Cuadratura por franquicia</h2>
-      <p class="panel-sub">Dólares: Transbank vs. operadora · Pesos: ERP vs. operadora (SALDO / SALDO CORREGIDO)</p>
+<!-- Squaring by Operator (USD + CLP) -->
+<div class="row g-3 mb-3">
+  <!-- 2A. Cuadratura por Operador en Dólares (US$) -->
+  <div class="col-lg-6">
+    <div class="card card-executive h-100 mb-0">
+      <header class="panel-head py-3">
+        <div>
+          <h2 class="panel-title fs-6 mb-0">
+            <i class="bi bi-currency-dollar text-primary me-1"></i> 2A. Cuadratura por Operador en Dólares (US$)
+          </h2>
+        </div>
+      </header>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-uppercase text-muted">
+            <tr>
+              <th class="ps-3">OPERADOR</th>
+              <th class="text-end">TOTAL TBK (US$)</th>
+              <th class="text-end">TOTAL OPERADOR (US$)</th>
+              <th class="text-end pe-3">DIFERENCIA (US$)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in usd_table %}
+            <tr>
+              <td class="ps-3 fw-semibold">
+                <i class="bi bi-credit-card-2-front text-muted me-1"></i> {{ row.card_name }}
+              </td>
+              <td class="text-end">US$ {{ row.erp_sales|num_usd }}</td>
+              <td class="text-end">US$ {{ row.tbk_sales|num_usd }}</td>
+              <td class="text-end pe-3 fw-bold {% if row.difference == 0 %}text-success{% else %}text-danger{% endif %}">
+                US$ {{ row.difference|num_usd }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td class="ps-3">TOTAL GENERAL</td>
+              <td class="text-end">US$ {{ usd_totals.erp|num_usd }}</td>
+              <td class="text-end">US$ {{ usd_totals.tbk|num_usd }}</td>
+              <td class="text-end pe-3 {% if usd_totals.diff == 0 %}text-success{% else %}text-danger{% endif %}">
+                US$ {{ usd_totals.diff|num_usd }}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
-  </header>
-  <div class="table-responsive">
-    <table class="table table-dash table-numeric align-middle mb-0">
-      <thead>
-        <tr class="group-row">
-          <th></th>
-          <th colspan="3" class="text-center group-head">Dólares (US$)</th>
-          <th colspan="3" class="text-center group-head">Pesos (CLP)</th>
-        </tr>
-        <tr>
-          <th>Franquicia</th>
-          <th class="text-end">Transbank</th>
-          <th class="text-end">Operadora</th>
-          <th class="text-end">Diferencia</th>
-          <th class="text-end group-start">ERP</th>
-          <th class="text-end">Operadora</th>
-          <th class="text-end">Diferencia</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in franchise_rows %}
-        <tr class="{% if not row.has_activity %}row-muted{% endif %}">
-          <td class="fw-semibold">{{ row.card_name }}{% if not row.has_activity %} <span class="small fw-normal fst-italic">· sin movimientos</span>{% endif %}</td>
-          <td class="text-end">{{ row.usd.erp_sales|num_usd }}</td>
-          <td class="text-end">{{ row.usd.tbk_sales|num_usd }}</td>
-          <td class="text-end">{% include "partials/diff_cell.html" with value=row.usd.difference kind="usd" %}</td>
-          <td class="text-end group-start">${{ row.clp.erp_sales|num_clp }}</td>
-          <td class="text-end">${{ row.clp.tbk_sales|num_clp }}</td>
-          <td class="text-end">{% include "partials/diff_cell.html" with value=row.clp.difference kind="clp" %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-      <tfoot>
-        <tr>
-          <td>Total</td>
-          <td class="text-end">{{ usd_totals.erp|num_usd }}</td>
-          <td class="text-end">{{ usd_totals.tbk|num_usd }}</td>
-          <td class="text-end">{% include "partials/diff_cell.html" with value=usd_totals.diff kind="usd" %}</td>
-          <td class="text-end group-start">${{ clp_totals.erp|num_clp }}</td>
-          <td class="text-end">${{ clp_totals.tbk|num_clp }}</td>
-          <td class="text-end">{% include "partials/diff_cell.html" with value=clp_totals.diff kind="clp" %}</td>
-        </tr>
-      </tfoot>
-    </table>
   </div>
-</section>
+
+  <!-- 2B. Cuadratura en Moneda Nacional (Pesos CLP) -->
+  <div class="col-lg-6">
+    <div class="card card-executive h-100 mb-0">
+      <header class="panel-head py-3">
+        <div>
+          <h2 class="panel-title fs-6 mb-0">
+            <i class="bi bi-cash-stack text-success me-1"></i> 2B. Cuadratura en Moneda Nacional (Pesos CLP)
+          </h2>
+        </div>
+      </header>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-uppercase text-muted">
+            <tr>
+              <th class="ps-3">OPERADOR</th>
+              <th class="text-end">TOTAL ERP (CLP)</th>
+              <th class="text-end">TOTAL OPERADOR (CLP)</th>
+              <th class="text-end pe-3">DIFERENCIA (CLP)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in clp_table %}
+            <tr>
+              <td class="ps-3 fw-semibold">
+                <i class="bi bi-credit-card-2-front text-muted me-1"></i> {{ row.card_name }}
+              </td>
+              <td class="text-end">${{ row.erp_sales|num_clp }}</td>
+              <td class="text-end">${{ row.tbk_sales|num_clp }}</td>
+              <td class="text-end pe-3 fw-bold {% if row.difference == 0 %}text-success{% else %}text-danger{% endif %}">
+                ${{ row.difference|num_clp }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td class="ps-3">TOTAL GENERAL</td>
+              <td class="text-end">${{ clp_totals.erp|num_clp }}</td>
+              <td class="text-end">${{ clp_totals.tbk|num_clp }}</td>
+              <td class="text-end pe-3 {% if clp_totals.diff == 0 %}text-success{% else %}text-danger{% endif %}">
+                ${{ clp_totals.diff|num_clp }}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Voucher detail (tables, suggestions and pagination from upstream) -->
 <section class="card card-executive mb-4" id="voucherSectionCard">
