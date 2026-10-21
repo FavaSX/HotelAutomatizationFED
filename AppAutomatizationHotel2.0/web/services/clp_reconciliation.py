@@ -28,10 +28,6 @@ from .excel_parsers import (
     parse_bordero_clp_transactions,
 )
 
-# Business rule from the requirements survey: the CLP tolerance is a parameter between 500 and 1.000 pesos.
-CLP_TOLERANCE_MIN = Decimal("500")
-CLP_TOLERANCE_MAX = Decimal("1000")
-
 # (modality, label, deposit modality, bank statement description hint)
 CLP_MODALITIES: List[Tuple[str, str, str, str]] = [
     ("CREDIT", "Crédito", "CLP_CREDIT", "TC TBK"),
@@ -64,10 +60,8 @@ TBK_HEADER_BELOW_LABELS = {
 
 
 def get_clp_tolerance() -> Decimal:
-    """CLP rounding tolerance from SystemConfiguration, kept inside the ±500 to ±1.000 business range."""
-    config = SystemConfiguration.objects.first()
-    tolerance = config.clp_rounding_tolerance if config else CLP_TOLERANCE_MAX
-    return min(max(tolerance, CLP_TOLERANCE_MIN), CLP_TOLERANCE_MAX)
+    """CLP rounding tolerance from SystemConfiguration (editable by superusers from /settings/)."""
+    return SystemConfiguration.get_solo().clp_rounding_tolerance
 
 
 def card_code_from_masked_number(masked_card: str) -> str:

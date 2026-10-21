@@ -174,15 +174,12 @@ class ClpHelpersTests(TestCase):
         self.assertEqual(safe_date("04 septiembre 2026"), date(2026, 9, 4))
         self.assertEqual(safe_date("04/09/2026"), date(2026, 9, 4))
 
-    def test_tolerance_is_kept_between_500_and_1000(self):
+    def test_tolerance_comes_from_system_configuration(self):
         config = SystemConfiguration.objects.first()
         self.assertEqual(get_clp_tolerance(), Decimal("1000"))
-        config.clp_rounding_tolerance = Decimal("5")
+        config.clp_rounding_tolerance = Decimal("700")
         config.save()
-        self.assertEqual(get_clp_tolerance(), Decimal("500"))
-        config.clp_rounding_tolerance = Decimal("5000")
-        config.save()
-        self.assertEqual(get_clp_tolerance(), Decimal("1000"))
+        self.assertEqual(get_clp_tolerance(), Decimal("700"))
 
 
 class ClpPreviewTests(TestCase):
@@ -239,6 +236,7 @@ class ClpPersistenceTests(TestCase):
     def test_commit_export_and_reupload_without_duplicates(self):
         process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
         self.assertEqual(process.process_currency, "CLP")
+        self.assertEqual(process.tolerance_applied, Decimal("1000"))
         self.assertEqual(process.bank_validations.filter(is_matched=True).count(), 3)
         self.assertEqual(process.cross_match_results.count(), len(CREDIT_SALES + DEBIT_SALES + PREPAID_SALES))
         counts = (TransbankTransaction.objects.count(), ErpTransaction.objects.count(),
@@ -260,6 +258,44 @@ class ClpPersistenceTests(TestCase):
             (TransbankTransaction.objects.count(), ErpTransaction.objects.count(),
              CrossMatchResult.objects.count(), BankStatementMovement.objects.count()),
         )
+
+
+class ToleranceSettingsTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser("admin", password="x")
+        self.auditor = User.objects.create_user("auditor", password="x")
+
+    def _post(self, **overrides):
+        data = {"usd_rounding_tolerance": "0.50", "clp_rounding_tolerance": "700", **overrides}
+        return self.client.post(reverse("settings"), data)
+
+    def test_only_superuser_can_access(self):
+        self.client.force_login(self.auditor)
+        self.assertRedirects(self.client.get(reverse("settings")), reverse("dashboard"))
+        self._post()
+        self.assertEqual(SystemConfiguration.get_solo().clp_rounding_tolerance, Decimal("1000"))
+
+    def test_superuser_updates_tolerances(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("settings")).status_code, 200)
+        self.assertRedirects(self._post(usd_rounding_tolerance="1.25"), reverse("settings"))
+        config = SystemConfiguration.get_solo()
+        self.assertEqual(config.usd_rounding_tolerance, Decimal("1.25"))
+        self.assertEqual(config.clp_rounding_tolerance, Decimal("700"))
+        self.assertEqual(config.updated_by, self.admin)
+        self.assertEqual(SystemConfiguration.objects.count(), 1)
+
+    def test_rejects_out_of_range_values(self):
+        self.client.force_login(self.admin)
+        for overrides in (
+            {"usd_rounding_tolerance": "5.01"},
+            {"clp_rounding_tolerance": "5001"},
+            {"clp_rounding_tolerance": "-1"},
+        ):
+            self.assertEqual(self._post(**overrides).status_code, 200)
+        config = SystemConfiguration.get_solo()
+        self.assertEqual(config.usd_rounding_tolerance, Decimal("0.50"))
+        self.assertEqual(config.clp_rounding_tolerance, Decimal("1000"))
 
 
 class ClpViewsTests(TestCase):

@@ -66,6 +66,7 @@ def _get_or_save_usd_process(
     if existing_process is not None:
         existing_process.user = user
         existing_process.accounting_period = preview.get("accounting_period", existing_process.accounting_period)
+        existing_process.tolerance_applied = preview.get("tolerance")
         for file_key, attr_name in (
             ("erp", "erp_file_name"), ("transbank", "transbank_general_file_name"),
             ("bank", "bank_statement_file_name"), ("amex", "american_express_file_name"),
@@ -77,7 +78,7 @@ def _get_or_save_usd_process(
         return existing_process
 
     return ReconciliationProcess.objects.create(
-        user=user, process_currency="USD",
+        user=user, process_currency="USD", tolerance_applied=preview.get("tolerance"),
         accounting_period=preview.get("accounting_period", "Cierre Dólares (USD)"),
         erp_file_name=files.get("erp", "TERJETAS ERP.xlsx"),
         transbank_general_file_name=files.get("transbank", "ABONO TBK.xlsx"),

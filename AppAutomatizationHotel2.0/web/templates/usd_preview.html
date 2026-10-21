@@ -321,7 +321,7 @@
               <td class="text-end fw-semibold text-primary">US$ {{ item.operator_amount_usd|num_usd }}</td>
               <td class="text-end small font-monospace">
                 {% if item.difference_usd != 0 %}
-                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1" title="Diferencia de centavos dentro de la tolerancia aceptada (±US$ 0.05)">
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1" title="Diferencia de centavos dentro de la tolerancia aceptada (±US$ {{ preview.tolerance|num_usd }})">
                   <i class="bi bi-info-circle me-1"></i>US$ {{ item.difference_usd|num_usd }}
                 </span>
                 {% else %}
@@ -348,8 +348,8 @@
                 <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2.5 py-1 fw-medium d-inline-flex align-items-center gap-1 shadow-xs"
                       data-bs-toggle="tooltip"
                       data-bs-placement="top"
-                      title="{{ item.observation|format_observation }} · Dif. centavos aceptada (±US$ 0.05)">
-                  <i class="bi bi-check2"></i> Tolerancia (±0.05)
+                      title="{{ item.observation|format_observation }} · Dif. centavos aceptada (±US$ {{ preview.tolerance|num_usd }})">
+                  <i class="bi bi-check2"></i> Tolerancia (±{{ preview.tolerance|num_usd }})
                 </span>
                 {% elif "coincide" in item.observation|lower or not item.observation %}
                 <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1 fw-medium d-inline-flex align-items-center gap-1 shadow-xs"

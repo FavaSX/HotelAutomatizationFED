@@ -56,6 +56,11 @@
         {% if user.is_staff %}
         <hr class="my-3 sidebar-divider">
         <small class="sidebar-section-label">Administración</small>
+        {% if user.is_superuser %}
+        <a href="{% url 'settings' %}" class="sidebar-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+          <i class="bi bi-sliders fs-5"></i> Configuración
+        </a>
+        {% endif %}
         <a href="/admin/" target="_blank" class="sidebar-link">
           <i class="bi bi-database-gear fs-5"></i> Base de Datos (Admin)
         </a>

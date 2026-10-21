@@ -24,5 +24,6 @@ urlpatterns = [
     path('reconciliation/clp/discard/', views.clp_discard_view, name='clp_discard'),
     path('reconciliation/clp/export/<int:process_id>/', views.clp_export_committed_view, name='clp_export_committed'),
     path('reconciliation/clp/detect-files/', views.clp_detect_files_view, name='clp_detect_files'),
+    path('settings/', views.settings_view, name='settings'),
     path('reconciliation/clear-test-db/', views.clear_test_database_view, name='clear_test_db'),
 ]

@@ -15,6 +15,7 @@ from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.db.models import Count, Q, Sum
 
+from .forms import ToleranceSettingsForm
 from .models import CrossMatchResult, ReconciliationProcess, ReconciliationSummary, SystemConfiguration
 from .services import (
     calculate_usd_preview,
@@ -399,8 +400,7 @@ def usd_preview_view(request):
         request.session[USD_SESSION_KEY] = preview
 
     if "tolerance" not in preview:
-        config = SystemConfiguration.objects.first()
-        preview["tolerance"] = float(config.usd_rounding_tolerance if config else 0.50)
+        preview["tolerance"] = float(SystemConfiguration.get_solo().usd_rounding_tolerance)
         request.session[USD_SESSION_KEY] = preview
 
     all_cashiers = sorted({
@@ -536,6 +536,24 @@ def clear_test_database_view(request):
             f"Base de datos de pruebas limpiada: se eliminaron {process_count} proceso(s) y todas sus transacciones asociadas."
         )
     return redirect("clp_upload" if request.POST.get("next") == "clp_upload" else "usd_upload")
+
+
+@login_required(login_url="login")
+def settings_view(request):
+    """Reconciliation tolerance settings (USD and CLP). Restricted to superusers."""
+    if not request.user.is_superuser:
+        messages.error(request, "Solo un administrador puede modificar la configuración.")
+        return redirect("dashboard")
+
+    config = SystemConfiguration.get_solo()
+    form = ToleranceSettingsForm(request.POST or None, instance=config)
+    if request.method == "POST" and form.is_valid():
+        config = form.save(commit=False)
+        config.updated_by = request.user
+        config.save()
+        messages.success(request, "Tolerancias actualizadas. Se aplicarán a las próximas conciliaciones.")
+        return redirect("settings")
+    return render(request, "settings.html", {"form": form, "config": config})
 
 
 @login_required(login_url="login")
