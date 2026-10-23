@@ -488,3 +488,43 @@ class UsdPreviewViewTests(TestCase):
         self.assertEqual(response.context["match_rate"], 100.0)
         self.assertContains(response, "A10001")
 
+
+
+class BruteForceProtectionTests(TestCase):
+    """django-axes locks the username+IP pair after 5 failed logins (both /login/ and the admin)."""
+
+    def setUp(self):
+        self.user = User.objects.create_superuser("contadora", password="clave-correcta-123")
+
+    def _login(self, url, password, ip="10.0.0.1"):
+        return self.client.post(url, {"username": "contadora", "password": password}, HTTP_X_REAL_IP=ip)
+
+    def test_correct_password_logs_in(self):
+        self.assertRedirects(self._login(reverse("login"), "clave-correcta-123"), reverse("dashboard"))
+
+    def test_lockout_after_failed_attempts_blocks_even_the_correct_password(self):
+        for _ in range(4):
+            self.assertEqual(self._login(reverse("login"), "mala").status_code, 200)
+        # The 5th failure reaches AXES_FAILURE_LIMIT and is already answered with the lockout page
+        self.assertEqual(self._login(reverse("login"), "mala").status_code, 429)
+
+        response = self._login(reverse("login"), "clave-correcta-123")
+
+        self.assertEqual(response.status_code, 429)
+        self.assertContains(response, "Acceso bloqueado", status_code=429)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_lockout_is_per_ip_so_attacker_cannot_block_real_user(self):
+        for _ in range(5):
+            self._login(reverse("login"), "mala", ip="203.0.113.9")
+
+        response = self._login(reverse("login"), "clave-correcta-123", ip="10.0.0.1")
+
+        self.assertRedirects(response, reverse("dashboard"))
+
+    def test_admin_login_is_also_protected(self):
+        admin_login = reverse("admin:login")
+        for _ in range(5):
+            self._login(admin_login, "mala")
+
+        self.assertEqual(self._login(admin_login, "clave-correcta-123").status_code, 429)

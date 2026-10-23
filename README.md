@@ -184,3 +184,16 @@ El motor financiero de Pesos (`clp_reconciliation.py`) aplica las reglas contabl
 3. **Confirmación Atómica y Descarga de Excel Oficial en 2 Pasos (`clp_persistence.py` y `clp_report_exporter.py`):**
    * Al hacer clic en **"Confirmar y Guardar en BD"**, el sistema guarda atómicamente el cierre en pesos reutilizando la arquitectura relacional y el motor anti-duplicados de 8 tablas, registra cualquier resolución histórica en `AuditResolutionLog` y habilita en el mismo modal la descarga del **Reporte Excel Oficial de Pesos** estructurado en 3 hojas (*Resumen Pesos*, *Vouchers Cuadrados* y *Excepciones*).
 
+
+---
+
+## Seguridad del Despliegue (PythonAnywhere)
+
+* **Protección contra fuerza bruta (`django-axes`):** tras **5 intentos fallidos** se bloquea la combinación *usuario + IP* durante **15 minutos**, tanto en `/login/` como en el login del admin. El bloqueo es por par usuario/IP, por lo que un atacante no puede dejar sin acceso a un usuario legítimo desde otra IP. La IP real del visitante se obtiene de la cabecera `X-Real-IP` del proxy de PythonAnywhere (`web/security.py`). Los intentos quedan registrados en el admin (*Access attempts* / *Access failures*).
+  * Desbloquear a un usuario: `python manage.py axes_reset_username <usuario>` (o `axes_reset` para limpiar todos).
+* **Configuración segura por defecto:** `DEBUG` está desactivado salvo `DJANGO_DEBUG=True`, y la aplicación no arranca en producción sin `DJANGO_SECRET_KEY`. `ALLOWED_HOSTS` ya no acepta cualquier host.
+* **Ruta del admin no predecible:** se define con `DJANGO_ADMIN_URL`, así los bots que prueban `/admin/` reciben un 404.
+* **HTTPS y sesiones:** HSTS, cookies seguras, redirección a HTTPS y sesiones que expiran al cerrar el navegador o tras 8 horas.
+* No existe registro público: solo un superusuario puede crear cuentas desde el admin.
+
+Variables obligatorias en el archivo WSGI de PythonAnywhere: ver `AppAutomatizationHotel2.0/.env.example`.

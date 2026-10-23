@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center align-items-center login-row">
+  <div class="col-md-5 col-lg-4">
+    <div class="card-executive border-0 rounded-4 overflow-hidden">
+      <div class="p-4 text-center text-white login-header-navy">
+        <i class="bi bi-shield-lock display-4 text-danger"></i>
+        <h4 class="fw-bold mt-2 mb-0">Acceso bloqueado</h4>
+        <small class="text-white-50">Suite de Conciliación Financiera v2.0</small>
+      </div>
+      <div class="card-body p-4 text-center">
+        <p class="mb-3">Se registraron demasiados intentos fallidos de inicio de sesión.</p>
+        <p class="text-muted mb-4">Por seguridad, el acceso queda bloqueado durante 15 minutos. Si necesita entrar antes, contacte al administrador del sistema.</p>
+        <a href="{% url 'login' %}" class="btn btn-brand w-100 py-3 rounded-pill fw-bold">
+          Volver al inicio de sesión
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
