@@ -582,6 +582,29 @@ footer.app-footer {
   border-bottom: 3px solid var(--accent);
   box-shadow: var(--navy-glow);
 }
+/* Failed-login notice: one small red dot per failed attempt */
+.login-attempts {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: .82rem;
+  color: var(--text-muted);
+}
+.login-attempts strong { color: var(--danger); font-weight: 600; }
+.login-attempts-dots { display: inline-flex; gap: 5px; }
+.login-attempts-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+/* Only the newest dot pops in, so each mistake visibly adds one */
+.login-attempts-dots span:last-child { animation: login-dot-in .3s ease-out; }
+@keyframes login-dot-in {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
 
 /* USD Upload View */
 #processingOverlay {

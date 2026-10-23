@@ -14,6 +14,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.db.models import Count, Q, Sum
+from axes.handlers.proxy import AxesProxyHandler
+from axes.helpers import get_credentials, get_failure_limit
 
 from .forms import ToleranceSettingsForm
 from .models import CrossMatchResult, ReconciliationProcess, ReconciliationSummary, SystemConfiguration
@@ -49,6 +51,7 @@ def login_view(request):
     if request.user.is_authenticated:
         return redirect("dashboard")
 
+    context = {}
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
@@ -56,9 +59,17 @@ def login_view(request):
         if user is not None:
             login(request, user)
             return redirect("dashboard")
-        messages.error(request, "Credenciales incorrectas. Verifique su usuario y contraseña.")
+        # The failed authenticate() above was already counted by django-axes
+        credentials = get_credentials(username)
+        failures = AxesProxyHandler.get_failures(request, credentials)
+        # Shown under the login button: one red dot per failed attempt, plus the attempts left
+        context = {
+            "username": username,
+            "remaining_attempts": get_failure_limit(request, credentials) - failures,
+            "failed_attempts": range(failures),
+        }
 
-    return render(request, "login.html")
+    return render(request, "login.html", context)
 
 
 def logout_view(request):

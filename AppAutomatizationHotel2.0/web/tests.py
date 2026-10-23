@@ -514,6 +514,12 @@ class BruteForceProtectionTests(TestCase):
         self.assertContains(response, "Acceso bloqueado", status_code=429)
         self.assertNotIn("_auth_user_id", self.client.session)
 
+    def test_failed_login_shows_remaining_attempts(self):
+        self.assertContains(self._login(reverse("login"), "mala"), "quedan <strong>4 intentos</strong>", html=False)
+        self._login(reverse("login"), "mala")
+        self._login(reverse("login"), "mala")
+        self.assertContains(self._login(reverse("login"), "mala"), "último intento")
+
     def test_lockout_is_per_ip_so_attacker_cannot_block_real_user(self):
         for _ in range(5):
             self._login(reverse("login"), "mala", ip="203.0.113.9")
