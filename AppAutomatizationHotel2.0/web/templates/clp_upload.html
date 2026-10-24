@@ -29,9 +29,11 @@
         <i class="bi bi-database me-1 text-primary"></i> {{ saved_clp_processes_count|default:0 }} cierre(s) en pesos · {{ saved_processes_count|default:0 }} en total
       </div>
     </div>
+    {% if user.is_superuser %}
     <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#clearTestDbModal" {% if not saved_processes_count %}disabled{% endif %}>
       <i class="bi bi-trash3 me-1"></i> Vaciar BD Pruebas
     </button>
+    {% endif %}
   </div>
 </div>
 

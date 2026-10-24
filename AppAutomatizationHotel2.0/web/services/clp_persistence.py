@@ -94,6 +94,7 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         process_fields = {
             "user": user,
             "accounting_period": preview.get("accounting_period", "Cierre Pesos (CLP)"),
+            "tolerance_applied": preview.get("tolerance"),
             "erp_file_name": files.get("erp"),
             "bank_statement_file_name": files.get("bank"),
             "transbank_credit_file_name": files.get("tbk_credit"),

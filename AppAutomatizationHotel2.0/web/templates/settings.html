@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load currency_filters %}
+
+{% block module_subtitle %}Configuración{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <span class="badge rounded-pill px-3 py-1 mb-1 badge-brand-pill">
+      <i class="bi bi-shield-lock me-1"></i> Solo administradores
+    </span>
+    <h3 class="fw-bold mb-0">Configuración de Tolerancias</h3>
+    <p class="text-muted small mb-0">Diferencia máxima aceptada para considerar una venta como cuadrada. Los cambios aplican a las próximas conciliaciones; las previsualizaciones abiertas y los cierres guardados mantienen la tolerancia con que se calcularon.</p>
+  </div>
+  <div class="card-executive px-3 py-2 small">
+    <div class="text-uppercase text-muted fw-bold db-status-label">Última modificación</div>
+    <div class="fw-bold">
+      <i class="bi bi-clock-history me-1 text-primary"></i>{{ config.updated_at|date:"d/m/Y H:i" }}
+      {% if config.updated_by %}· {{ config.updated_by.first_name|default:config.updated_by.username }}{% endif %}
+    </div>
+  </div>
+</div>
+
+<form method="post" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+  <div class="alert alert-danger">{{ form.non_field_errors|join:" " }}</div>
+  {% endif %}
+
+  <div class="row g-4">
+    <!-- USD -->
+    <div class="col-12 col-lg-6">
+      <div class="card card-executive p-4 h-100">
+        <h5 class="fw-bold mb-1"><i class="bi bi-currency-dollar me-1"></i> Conciliación Dólares (USD)</h5>
+        <p class="text-muted small">Vigente: ±US$ {{ config.usd_rounding_tolerance|num_usd }}. Rango permitido: 0,00 a 5,00.</p>
+        {% with field=form.usd_rounding_tolerance %}
+        <label for="{{ field.id_for_label }}" class="form-label fw-semibold">{{ field.label }}</label>
+        {{ field }}
+        {% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+        {% endwith %}
+      </div>
+    </div>
+
+    <!-- CLP -->
+    <div class="col-12 col-lg-6">
+      <div class="card card-executive p-4 h-100">
+        <h5 class="fw-bold mb-1"><i class="bi bi-cash-stack me-1"></i> Conciliación Pesos (CLP)</h5>
+        <p class="text-muted small">Vigente: ±${{ config.clp_rounding_tolerance|num_clp }}. Rango permitido: 0 a 5.000.</p>
+        {% with field=form.clp_rounding_tolerance %}
+        <label for="{{ field.id_for_label }}" class="form-label fw-semibold">{{ field.label }}</label>
+        {{ field }}
+        {% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end mt-4">
+    <button type="submit" class="btn btn-primary rounded-pill px-4 fw-semibold">
+      <i class="bi bi-save me-1"></i> Guardar cambios
+    </button>
+  </div>
+</form>
+{% endblock %}

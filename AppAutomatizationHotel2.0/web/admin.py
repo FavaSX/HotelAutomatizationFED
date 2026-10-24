@@ -30,10 +30,14 @@ class ReconciliationStatusAdmin(admin.ModelAdmin):
 class SystemConfigurationAdmin(admin.ModelAdmin):
     list_display = ('usd_rounding_tolerance', 'clp_rounding_tolerance', 'updated_at', 'updated_by')
 
+    def has_add_permission(self, request):
+        # Single-row table: only allow creating it when it does not exist yet
+        return not SystemConfiguration.objects.exists()
+
 
 @admin.register(ReconciliationProcess)
 class ReconciliationProcessAdmin(admin.ModelAdmin):
-    list_display = ('id', 'process_currency', 'accounting_period', 'user', 'execution_date', 'daily_dollar_rate')
+    list_display = ('id', 'process_currency', 'accounting_period', 'user', 'execution_date', 'daily_dollar_rate', 'tolerance_applied')
     list_filter = ('process_currency', 'execution_date')
     search_fields = ('accounting_period', 'user__username')
 

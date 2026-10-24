@@ -3,12 +3,15 @@ URL configuration for BankReconciliation project.
 US Dollars (Phase 1) and Chilean Pesos (Phase 2) reconciliation with Preview & Commit.
 """
 
+import os
+
 from django.contrib import admin
 from django.urls import path
 from web import views
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    # Non-default admin path set per deployment (DJANGO_ADMIN_URL) so bots probing /admin/ get a 404
+    path(os.environ.get('DJANGO_ADMIN_URL', 'admin/'), admin.site.urls),
     path('', views.dashboard_view, name='dashboard'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
@@ -24,5 +27,6 @@ urlpatterns = [
     path('reconciliation/clp/discard/', views.clp_discard_view, name='clp_discard'),
     path('reconciliation/clp/export/<int:process_id>/', views.clp_export_committed_view, name='clp_export_committed'),
     path('reconciliation/clp/detect-files/', views.clp_detect_files_view, name='clp_detect_files'),
+    path('settings/', views.settings_view, name='settings'),
     path('reconciliation/clear-test-db/', views.clear_test_database_view, name='clear_test_db'),
 ]

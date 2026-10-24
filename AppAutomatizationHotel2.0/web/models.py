@@ -35,13 +35,19 @@ class ReconciliationStatus(models.Model):
 
 
 class SystemConfiguration(models.Model):
-    usd_rounding_tolerance = models.DecimalField(max_digits=6, decimal_places=2, default=0.50)
-    # Business rule (requirements survey): CLP tolerance between ±500 and ±1.000 pesos.
+    """Single-row table with the reconciliation tolerances, editable by superusers from /settings/."""
+    usd_rounding_tolerance = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0.50,
+        validators=[MinValueValidator(0), MaxValueValidator(5)],
+    )
+    # Upper bound only guards against typos; the business value is set from /settings/.
     clp_rounding_tolerance = models.DecimalField(
         max_digits=8,
         decimal_places=2,
         default=1000.00,
-        validators=[MinValueValidator(500), MaxValueValidator(1000)],
+        validators=[MinValueValidator(0), MaxValueValidator(5000)],
     )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -53,6 +59,11 @@ class SystemConfiguration(models.Model):
 
     def __str__(self):
         return f"Tolerance: ±${self.usd_rounding_tolerance} USD / ±${self.clp_rounding_tolerance} CLP"
+
+    @classmethod
+    def get_solo(cls) -> "SystemConfiguration":
+        config = cls.objects.first()
+        return config if config is not None else cls.objects.create()
 
 
 # ==========================================
@@ -82,6 +93,9 @@ class ReconciliationProcess(models.Model):
     diners_file_name = models.CharField(max_length=255, blank=True, null=True)
     visa_file_name = models.CharField(max_length=255, blank=True, null=True)
     mastercard_file_name = models.CharField(max_length=255, blank=True, null=True)
+
+    # Tolerance snapshot used when this process was reconciled (USD or CLP depending on process_currency)
+    tolerance_applied = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
 
     # Generated output Excel paths
     matched_transactions_file_path = models.CharField(max_length=255, blank=True, null=True)

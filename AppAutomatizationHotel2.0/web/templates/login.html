@@ -12,12 +12,12 @@
         <form method="post" action="{% url 'login' %}" id="loginForm">
           {% csrf_token %}
           <div class="form-floating mb-3">
-            <input type="text" class="form-control" id="username" name="username" placeholder="Usuario" required autofocus>
+            <input type="text" class="form-control" id="username" name="username" placeholder="Usuario" value="{{ username|default:'' }}" required {% if not username %}autofocus{% endif %}>
             <label for="username"><i class="bi bi-person me-2"></i>Usuario Auditor</label>
           </div>
           <div class="mb-4 position-relative">
             <div class="form-floating">
-              <input type="password" class="form-control pe-5" id="password" name="password" placeholder="Contraseña" required>
+              <input type="password" class="form-control pe-5" id="password" name="password" placeholder="Contraseña" required {% if username %}autofocus{% endif %}>
               <label for="password"><i class="bi bi-key me-2"></i>Contraseña</label>
             </div>
             <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y me-2 border-0 bg-transparent" onclick="togglePass()">
@@ -28,6 +28,16 @@
             Ingresar al Sistema <i class="bi bi-arrow-right ms-2"></i>
           </button>
         </form>
+
+        {% if remaining_attempts is not None %}
+        <div class="login-attempts mt-3" role="alert">
+          <span class="login-attempts-dots" aria-hidden="true">{% for _ in failed_attempts %}<span></span>{% endfor %}</span>
+          <span>
+            Credenciales incorrectas ·
+            {% if remaining_attempts == 1 %}<strong>último intento</strong>{% else %}quedan <strong>{{ remaining_attempts }} intentos</strong>{% endif %}
+          </span>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>

@@ -164,8 +164,7 @@ def calculate_usd_preview(
     accounting_period: str = "",
 ) -> Dict[str, Any]:
     """Executes the complete US Dollars reconciliation workflow purely in memory."""
-    config = SystemConfiguration.objects.first()
-    usd_tolerance = config.usd_rounding_tolerance if config else Decimal("0.50")
+    usd_tolerance = SystemConfiguration.get_solo().usd_rounding_tolerance
     card_types = {card.code: card for card in CardType.objects.all()}
 
     for f in (erp_file, transbank_file, bank_statement_file, amex_file, diners_file, visa_file, mastercard_file):
