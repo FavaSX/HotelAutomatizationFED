@@ -534,3 +534,150 @@ class BruteForceProtectionTests(TestCase):
             self._login(admin_login, "mala")
 
         self.assertEqual(self._login(admin_login, "clave-correcta-123").status_code, 429)
+
+
+# ------------------------------------------------------------------------------
+# Multi-File Reconciliation & Deduplication Tests
+# ------------------------------------------------------------------------------
+
+from .services.file_merger import (
+    ensure_file_list,
+    merge_and_parse_clp_bordero,
+    merge_and_parse_clp_tbk,
+    merge_and_parse_bank_statements,
+    validate_multi_deposit_bank_movements,
+)
+
+
+class MultiFileReconciliationTests(TestCase):
+    """
+    Tests the multi-file merging and deduplication capabilities across extended date ranges.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user("auditor", password="password123")
+
+    def test_ensure_file_list_handles_all_shapes(self):
+        self.assertEqual(ensure_file_list(None), [])
+        f1 = io.BytesIO(b"dummy1")
+        self.assertEqual(ensure_file_list(f1), [f1])
+        f2 = io.BytesIO(b"dummy2")
+        self.assertEqual(ensure_file_list([f1, None, f2]), [f1, f2])
+
+    def test_merge_and_parse_clp_tbk_aggregates_and_deduplicates(self):
+        # File 1: 2 sales (voucher 1001, voucher 1002)
+        sales_1 = [
+            ("07/09/2026", "RESTAURANT", 25000, "VN", 0, 25000, 500, 95, "**** 1234", "1001"),
+            ("07/09/2026", "BAR", 15000, "VN", 0, 15000, 300, 57, "**** 5678", "1002"),
+        ]
+        f1 = build_tbk_settlement("tbk_day1.xlsx", "Crédito", sales_1)
+
+        # File 2: 2 sales (voucher 1002 duplicated from day 1, and voucher 1003 new)
+        sales_2 = [
+            ("07/09/2026", "BAR", 15000, "VN", 0, 15000, 300, 57, "**** 5678", "1002"),
+            ("08/09/2026", "RECEPCION", 50000, "VN", 0, 50000, 1000, 190, "**** 9999", "1003"),
+        ]
+        f2 = build_tbk_settlement("tbk_day2.xlsx", "Crédito", sales_2)
+
+        merged = merge_and_parse_clp_tbk({"CREDIT": [f1, f2]})
+        self.assertIn("CREDIT", merged)
+        credit = merged["CREDIT"]
+
+        # Sales vouchers should be deduplicated: 1001, 1002, 1003 (3 vouchers total, not 4)
+        sales = credit["sales"]
+        self.assertEqual(len(sales), 3)
+        auth_codes = [s["authorization_code"] for s in sales]
+        self.assertIn("1001", auth_codes)
+        self.assertIn("1002", auth_codes)
+        self.assertIn("1003", auth_codes)
+
+        # Header deposits should aggregate both settlement files
+        header = credit["header"]
+        self.assertEqual(header["file_count"], 2)
+        self.assertGreater(header["total_deposit"], Decimal("0"))
+
+    def test_merge_and_parse_clp_bordero_deduplicates_overlapping_rows(self):
+        # Payment 1 and Payment 2 in file 1
+        p1 = (101, 10001, "CNBQ", "Alojamiento", "F-101", 25000, "1001", "07/09/2026", "10:00", "cajero1", "Huesped A")
+        p2 = (102, 10002, "CNBQ", "Bar", "F-102", 15000, "1002", "07/09/2026", "11:00", "cajero1", "Huesped B")
+        f1 = build_bordero([p1, p2])
+
+        # File 2 overlaps p2, and adds p3
+        p3 = (103, 10003, "CNBQ", "Restaurant", "F-103", 50000, "1003", "08/09/2026", "12:00", "cajero2", "Huesped C")
+        f2 = build_bordero([p2, p3])
+
+        all_rows, rows_by_auth, (min_date, max_date) = merge_and_parse_clp_bordero([f1, f2])
+        # 3 unique rows: p1, p2, p3
+        self.assertEqual(len(all_rows), 3)
+        self.assertIn("1001", rows_by_auth)
+        self.assertIn("1002", rows_by_auth)
+        self.assertIn("1003", rows_by_auth)
+
+    def test_validate_multi_deposit_bank_movements_individual_matching(self):
+        m1 = BankStatementMovement(movement_date=date(2026, 9, 8), document_number="DOC1", deposit_amount=Decimal("39100.00"), description="ABONO TBK")
+        m2 = BankStatementMovement(movement_date=date(2026, 9, 8), document_number="DOC2", deposit_amount=Decimal("48810.00"), description="ABONO TBK")
+
+        expected = [
+            ("CREDIT_DAY1", Decimal("39100.00")),
+            ("CREDIT_DAY2", Decimal("48810.00")),
+        ]
+        summary, claimed = validate_multi_deposit_bank_movements([m1, m2], expected, total_consolidated=Decimal("87910.00"))
+
+        self.assertEqual(len(claimed), 2)
+        self.assertTrue(all(v["is_matched"] for v in summary))
+        self.assertFalse(any(v.get("is_consolidated_match") for v in summary))
+
+    def test_validate_multi_deposit_bank_movements_consolidated_fallback(self):
+        # Bank made one combined lump-sum deposit for the weekend: 39,100 + 48,810 = 87,910
+        m_consolidated = BankStatementMovement(
+            movement_date=date(2026, 9, 8),
+            document_number="BULK1",
+            deposit_amount=Decimal("87910.00"),
+            description="ABONO TRANSBANK FIN DE SEMANA",
+        )
+
+        expected = [
+            ("CREDIT_DAY1", Decimal("39100.00")),
+            ("CREDIT_DAY2", Decimal("48810.00")),
+        ]
+        summary, claimed = validate_multi_deposit_bank_movements(
+            [m_consolidated],
+            expected,
+            total_consolidated=Decimal("87910.00"),
+        )
+
+        self.assertEqual(len(claimed), 1)
+        self.assertTrue(all(v["is_matched"] for v in summary))
+        self.assertTrue(all(v.get("is_consolidated_match") for v in summary))
+
+    def test_clp_preview_accepts_file_lists(self):
+        sales_credit = [("07/09/2026", "RESTAURANT", 25000, "VN", 0, 25000, 500, 95, "**** 1234", "A-101")]
+        sales_debit = [("07/09/2026", "BAR", 15000, "VD", 0, 15000, 300, 57, "**** 5678", "A-102")]
+
+        f_tbk_c = build_tbk_settlement("tbk_c.xlsx", "Crédito", sales_credit)
+        f_tbk_d = build_tbk_settlement("tbk_d.xlsx", "Redcompra Débito", sales_debit)
+        f_tbk_p = build_tbk_settlement("tbk_p.xlsx", "Prepago", [])
+
+        p1 = (101, 10001, "CNBQ", "Alojamiento", "F-101", 25000, "A-101", "07/09/2026", "10:00", "cajero1", "Huesped A")
+        p2 = (102, 10002, "VN", "Bar", "F-102", 15000, "A-102", "07/09/2026", "11:00", "cajero1", "Huesped B")
+        f_bordero1 = build_bordero([p1])
+        f_bordero2 = build_bordero([p2])
+
+        cartola_dep = [
+            ("08/09/2026", "TRANSBANK CREDITO", 24405),
+            ("08/09/2026", "TRANSBANK DEBITO", 14643),
+        ]
+        f_cartola = build_cartola(cartola_dep)
+
+        preview = calculate_clp_preview(
+            erp_files=[f_bordero1, f_bordero2],
+            bank_statement_files=[f_cartola],
+            tbk_credit_files=[f_tbk_c],
+            tbk_debit_files=[f_tbk_d],
+            tbk_prepaid_files=[f_tbk_p],
+        )
+
+        self.assertIn("summary", preview)
+        self.assertIn("matched_vouchers", preview)
+        self.assertEqual(preview["counts"]["matched"], 2)
+        self.assertEqual(preview["counts"]["discrepancies"], 0)

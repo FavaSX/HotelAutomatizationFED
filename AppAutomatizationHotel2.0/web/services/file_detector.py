@@ -2,6 +2,9 @@
 Automatic File Role Detector for US Dollars (USD) and Chilean Pesos (CLP) Reconciliation.
 Inspects the internal cell structure (first 45 rows) of uploaded Excel files
 to automatically classify each file into one of the 7 required USD slots or the 5 required CLP slots.
+Uses 100% structural fingerprinting based on internal cell contents, headers, merchant codes, and POS blocks.
+Does NOT guess by filename to avoid false positives with summary/unrelated files.
+Supports multi-file grouping per role for multi-day, weekly or monthly reconciliations.
 """
 
 import io
@@ -9,7 +12,6 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .column_detector import normalize_text, safe_date
-
 
 
 USD_REQUIRED_ROLES: List[Dict[str, str]] = [
@@ -29,24 +31,56 @@ OPERATOR_KEYWORDS = [
     ("visa", ("visa",)),
 ]
 
-FILENAME_FALLBACKS = [
-    ("erp", ("erp", "terjetas", "tarjetas erp", "bordero")),
-    ("transbank", ("abono", "tbk", "transbank")),
-    ("bank", ("cartola", "banco", "chile")),
-    ("amex", ("amex", "american")),
-    ("diners", ("diners", "dinners")),
-    ("visa", ("visa",)),
-    ("mastercard", ("master", "mc")),
-]
+
+def load_dataframe_from_file(uploaded_file) -> pd.DataFrame:
+    """
+    Safely reads an uploaded Excel/spreadsheet file.
+    Tries standard openpyxl, xlrd engine (for binary .xls), HTML tables (common in ERP exports), and CSV.
+    """
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(0)
+    raw_bytes = uploaded_file.read()
+    if hasattr(uploaded_file, "seek"):
+        uploaded_file.seek(0)
+
+    if not raw_bytes:
+        return pd.DataFrame()
+
+    # 1. Standard read_excel (openpyxl for .xlsx, xlrd for binary .xls)
+    try:
+        return pd.read_excel(io.BytesIO(raw_bytes), header=None)
+    except Exception:
+        pass
+
+    # 2. Try xlrd explicitly for legacy binary .xls
+    try:
+        return pd.read_excel(io.BytesIO(raw_bytes), header=None, engine="xlrd")
+    except Exception:
+        pass
+
+    # 3. Many hotel ERP systems (Opera, FrontOffice) export HTML tables with a .xls extension
+    try:
+        dfs = pd.read_html(io.BytesIO(raw_bytes))
+        if dfs:
+            return dfs[0]
+    except Exception:
+        pass
+
+    # 4. Try CSV/TSV
+    try:
+        return pd.read_csv(io.BytesIO(raw_bytes), sep=None, engine="python", header=None)
+    except Exception:
+        pass
+
+    return pd.DataFrame()
 
 
 def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
     """
-    Reads the internal cells of an uploaded Excel file and returns its detected role_key,
-    confidence level, row count, and the internal evidence found.
+    Reads the internal cells of an uploaded Excel file and classifies it 100% by internal accounting fingerprint.
+    No filename guessing is performed.
     """
     file_name = getattr(uploaded_file, "name", f"archivo_{file_index}")
-    normalized_filename = normalize_text(file_name)
     total_rows = 0
 
     def _build_result(role: Optional[str], confidence: str, evidence: str) -> Dict[str, Any]:
@@ -60,77 +94,70 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
         }
 
     try:
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-        raw_bytes = uploaded_file.read()
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-
-        dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+        dataframe = load_dataframe_from_file(uploaded_file)
         total_rows = len(dataframe)
 
-        raw_lines = [
-            " | ".join(str(cell).strip() for cell in row if pd.notna(cell) and str(cell).strip())
-            for _, row in dataframe.head(45).iterrows()
-        ]
-        raw_lines = [line for line in raw_lines if line]
-        combined_raw_text = "\n".join(raw_lines)
-        normalized_content = normalize_text(combined_raw_text)
+        if total_rows > 0:
+            raw_lines = [
+                " | ".join(str(cell).strip() for cell in row if pd.notna(cell) and str(cell).strip())
+                for _, row in dataframe.head(45).iterrows()
+            ]
+            raw_lines = [line for line in raw_lines if line]
+            combined_raw_text = "\n".join(raw_lines)
+            normalized_content = normalize_text(combined_raw_text)
 
-        # 1. Card Operator statements ("Posicion Por Clientes" / "Otra Moneda" + "Saldo Corregido")
-        if "posicion por clientes" in normalized_content or (
-            "otra moneda" in normalized_content and "saldo corregido" in normalized_content
-        ):
-            client_line = next(
-                (line for line in raw_lines if "TARJETA" in line.upper() or "TRANSBANK" in line.upper()),
-                "Reporte de Posición por Clientes (Otra Moneda / Saldo)",
-            )
-            client_line = client_line.split("| Tel")[0].replace("|", "").strip()[:85]
-            for role_key, keywords in OPERATOR_KEYWORDS:
-                if any(kw in normalized_content for kw in keywords):
-                    return _build_result(role_key, "HIGH", f"Huella interna: {client_line}")
+            # 1. Card Operator statements ("Posicion Por Clientes" / "Otra Moneda" + "Saldo Corregido")
+            if "posicion por clientes" in normalized_content or (
+                "otra moneda" in normalized_content and "saldo corregido" in normalized_content
+            ):
+                client_line = next(
+                    (line for line in raw_lines if "TARJETA" in line.upper() or "TRANSBANK" in line.upper()),
+                    "Reporte de Posición por Clientes (Otra Moneda / Saldo)",
+                )
+                client_line = client_line.split("| Tel")[0].replace("|", "").strip()[:85]
+                for role_key, keywords in OPERATOR_KEYWORDS:
+                    if any(kw in normalized_content for kw in keywords):
+                        return _build_result(role_key, "HIGH", f"Huella interna: {client_line}")
 
-        # 2. Transbank Settlement ("Abono Calculado" / "Codigo Local" / "Identificador de Transaccion")
-        if (
-            "abono calculado" in normalized_content
-            or ("codigo local" in normalized_content and "datos empresa" in normalized_content)
-            or "identificador de transaccion" in normalized_content
-        ):
-            return _build_result(
-                "transbank",
-                "HIGH",
-                "Huella interna: Bloque 'Datos Empresa / Abono Calculado' y columnas POS Transbank",
-            )
+            # 2. Transbank Settlement ("Abono Calculado" / "Codigo Local" / "Identificador de Transaccion")
+            if (
+                "abono calculado" in normalized_content
+                or ("codigo local" in normalized_content and "datos empresa" in normalized_content)
+                or "identificador de transaccion" in normalized_content
+            ):
+                return _build_result(
+                    "transbank",
+                    "HIGH",
+                    "Huella interna: Bloque 'Datos Empresa / Abono Calculado' y columnas POS Transbank",
+                )
 
-        # 3. Bank Statement ("Saldo Disponible" + "Saldo Contable" or "Cargos" + "Abonos")
-        if (
-            ("saldo disponible" in normalized_content and "saldo contable" in normalized_content)
-            or ("cargos" in normalized_content and "abonos" in normalized_content and "sucursal" in normalized_content)
-            or "retenciones 24 hrs" in normalized_content
-        ):
-            return _build_result(
-                "bank",
-                "HIGH",
-                "Huella interna: Cartola Cuenta Corriente USD ('Saldo Disponible', 'Cargos', 'Abonos')",
-            )
+            # 3. Bank Statement ("Saldo Disponible" + "Saldo Contable" or "Cargos" + "Abonos")
+            if (
+                ("saldo disponible" in normalized_content and "saldo contable" in normalized_content)
+                or ("cargos" in normalized_content and "abonos" in normalized_content and "sucursal" in normalized_content)
+                or "retenciones 24 hrs" in normalized_content
+            ):
+                return _build_result(
+                    "bank",
+                    "HIGH",
+                    "Huella interna: Cartola Cuenta Corriente USD ('Saldo Disponible', 'Cargos', 'Abonos')",
+                )
 
-        # 4. Hotel ERP ("AME$", "VIS$", "MAS$", "DIN$" or ERP specific headers)
-        if any(tok in combined_raw_text.upper() for tok in ("AME$", "VIS$", "MAS$", "DIN$", "AMEX $", "VISA $")) or (
-            "reserva" in normalized_content and "factura" in normalized_content
-        ):
-            return _build_result(
-                "erp",
-                "HIGH",
-                "Huella interna: 'HOTELERA SAN FRANCISCO S.A' + Códigos de tarjeta ERP (AME$, VIS$, MAS$, DIN$)",
-            )
+            # 4. Hotel ERP ("AME$", "VIS$", "MAS$", "DIN$" or ERP specific headers)
+            if any(tok in combined_raw_text.upper() for tok in ("AME$", "VIS$", "MAS$", "DIN$", "AMEX $", "VISA $")) or (
+                "reserva" in normalized_content and "factura" in normalized_content
+            ):
+                return _build_result(
+                    "erp",
+                    "HIGH",
+                    "Huella interna: 'HOTELERA SAN FRANCISCO S.A' + Códigos de tarjeta ERP (AME$, VIS$, MAS$, DIN$)",
+                )
 
     except Exception:
         pass
 
-    # Fallback: filename keywords
-    for role_key, keywords in FILENAME_FALLBACKS:
-        if any(kw in normalized_filename for kw in keywords):
-            return _build_result(role_key, "MEDIUM", f"Identificado por nombre de archivo ('{file_name}')")
+    if total_rows == 0:
+        return _build_result(None, "LOW", f"Archivo sin filas legibles o formato no reconocido ('{file_name}')")
 
     return _build_result(None, "LOW", "No se encontró una huella contable reconocida en las primeras filas")
 
@@ -138,13 +165,18 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
 def detect_and_align_usd_files(uploaded_files: List[Any]) -> Dict[str, Any]:
     """
     Inspects a batch of uploaded Excel files and aligns them against the 7 required USD roles.
+    Supports multiple files per role.
     """
     inspected_files = [inspect_single_excel_file(f, idx) for idx, f in enumerate(uploaded_files)]
     return align_inspected_files(inspected_files, USD_REQUIRED_ROLES)
 
 
 def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles: List[Dict[str, str]]) -> Dict[str, Any]:
-    """Assigns each inspected file to at most one required role, preferring HIGH confidence detections."""
+    """
+    Assigns inspected files to required roles, supporting multiple files per role.
+    Only auto-groups candidates with matching high confidence and rows > 0 to prevent
+    polluting primary files with 0-row or unverified summary files.
+    """
     used_file_indices = set()
     aligned_roles: List[Dict[str, Any]] = []
 
@@ -158,18 +190,41 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
         candidates.sort(
             key=lambda c: (0 if c["confidence"] == "HIGH" else 1, -(c.get("period_end_ord") or 0), -c["row_count"])
         )
-        matched_info = candidates[0] if candidates else None
 
-        if matched_info:
-            used_file_indices.add(matched_info["file_index"])
+        if candidates:
+            primary = candidates[0]
+            # Only auto-group candidates that have HIGH confidence and actual rows
+            if primary["confidence"] == "HIGH" and primary["row_count"] > 0:
+                valid_candidates = [
+                    c for c in candidates
+                    if c["confidence"] == "HIGH" and c["row_count"] > 0
+                ]
+            else:
+                valid_candidates = [c for c in candidates if c["row_count"] > 0] or [primary]
+
+            for c in valid_candidates:
+                used_file_indices.add(c["file_index"])
+
+            indices = [c["file_index"] for c in valid_candidates]
+            names = [c["file_name"] for c in valid_candidates]
+            total_rows = sum(c["row_count"] for c in valid_candidates)
+            evidence = (
+                f"{len(valid_candidates)} archivo(s) concatenado(s) ({total_rows} filas): {', '.join(names)}"
+                if len(valid_candidates) > 1
+                else primary["evidence"]
+            )
             aligned_roles.append({
                 **role_meta,
                 "matched": True,
-                "file_index": matched_info["file_index"],
-                "file_name": matched_info["file_name"],
-                "confidence": matched_info["confidence"],
-                "row_count": matched_info["row_count"],
-                "evidence": matched_info["evidence"],
+                "file_index": primary["file_index"],
+                "file_name": primary["file_name"],
+                "file_indices": indices,
+                "file_names": names,
+                "file_count": len(valid_candidates),
+                "matched_files": valid_candidates,
+                "confidence": "HIGH" if all(c["confidence"] == "HIGH" for c in valid_candidates) else "MEDIUM",
+                "row_count": total_rows,
+                "evidence": evidence,
             })
         else:
             aligned_roles.append({
@@ -177,6 +232,10 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
                 "matched": False,
                 "file_index": None,
                 "file_name": None,
+                "file_indices": [],
+                "file_names": [],
+                "file_count": 0,
+                "matched_files": [],
                 "confidence": "MISSING",
                 "row_count": 0,
                 "evidence": "No se detectó ningún archivo para este rol en el lote cargado.",
@@ -206,19 +265,12 @@ CLP_REQUIRED_ROLES: List[Dict[str, str]] = [
 
 CLP_TBK_MEDIUM_ROLES = {"credito": "tbk_credit", "debito": "tbk_debit", "prepago": "tbk_prepaid"}
 
-CLP_FILENAME_FALLBACKS = [
-    ("tbk_credit", ("credito",)),
-    ("tbk_debit", ("debito",)),
-    ("tbk_prepaid", ("prepago",)),
-    ("erp", ("bordero", "erp")),
-    ("bank", ("cartola", "banco")),
-]
-
 
 def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
     """
-    Reads the first rows of an uploaded Excel file and classifies it as one of the 5 CLP roles.
+    Reads the first rows of an uploaded Excel file and classifies it 100% by internal accounting fingerprint.
     The 3 Transbank settlements share the same layout; only the 'Medio de pago' cell tells them apart.
+    No filename guessing is performed.
     """
     file_name = getattr(uploaded_file, "name", f"archivo_{file_index}")
     result: Dict[str, Any] = {
@@ -232,12 +284,7 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
     }
 
     try:
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-        raw_bytes = uploaded_file.read()
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
-        dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+        dataframe = load_dataframe_from_file(uploaded_file)
         result["row_count"] = len(dataframe)
         head = dataframe.head(45)
         normalized_content = normalize_text(" | ".join(
@@ -299,11 +346,10 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
     except Exception:
         pass
 
-    normalized_filename = normalize_text(file_name)
-    for role_key, keywords in CLP_FILENAME_FALLBACKS:
-        if any(kw in normalized_filename for kw in keywords):
-            result.update(detected_role=role_key, confidence="MEDIUM", evidence=f"Identificado por nombre de archivo ('{file_name}')")
-            break
+    if result["row_count"] == 0:
+        result.update(evidence=f"Archivo sin filas legibles o formato no reconocido ('{file_name}')")
+        return result
+
     return result
 
 
@@ -311,4 +357,3 @@ def detect_and_align_clp_files(uploaded_files: List[Any]) -> Dict[str, Any]:
     """Inspects a batch of uploaded Excel files and aligns them against the 5 required CLP roles."""
     inspected_files = [inspect_single_clp_excel_file(f, idx) for idx, f in enumerate(uploaded_files)]
     return align_inspected_files(inspected_files, CLP_REQUIRED_ROLES)
-

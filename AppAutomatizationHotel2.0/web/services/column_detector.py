@@ -2,8 +2,9 @@
 Hybrid Column Detector and Data Sanitizers.
 
 Solves both column renaming and column reordering in Excel files:
-1. Scans header rows for semantic keywords (handles column reordering).
-2. Falls back to default positional indices if headers are missing or renamed.
+1. Scans header rows for semantic keywords (handles column reordering, inserted columns, etc.).
+2. Prioritizes exact keyword matches over substring matches to prevent collisions with inserted columns.
+3. Falls back to default positional indices if headers are missing or renamed.
 """
 
 import math
@@ -103,8 +104,10 @@ def resolve_dataframe_columns(
 ) -> Dict[str, int]:
     """
     Dynamically detects column positions by scanning the top rows for header keywords.
-    If a column header is moved, it updates the index automatically.
-    If headers are absent or renamed, it falls back to 'default_index'.
+    Resilient to extra inserted columns, column reordering, and shifted data:
+    1. First pass searches for exact keyword matches.
+    2. Second pass falls back to substring matches for descriptive multi-word keywords.
+    3. Unmatched fields retain their default_index.
     """
     resolved_indices = {
         field_name: rule["default_index"]
@@ -120,15 +123,25 @@ def resolve_dataframe_columns(
 
         matches_in_row = {}
         for field_name, rule in column_rules.items():
-            for col_index, cell_text in enumerate(row_values):
-                if not cell_text:
-                    continue
-                if any(
-                    cell_text == keyword or (len(keyword) > 5 and keyword in cell_text)
-                    for keyword in rule["keywords"]
-                ):
-                    matches_in_row[field_name] = col_index
-                    break
+            # 1. Exact match takes top priority (immune to inserted columns)
+            exact_match = next(
+                (col_index for col_index, cell_text in enumerate(row_values) if cell_text and cell_text in rule["keywords"]),
+                None,
+            )
+            if exact_match is not None:
+                matches_in_row[field_name] = exact_match
+                continue
+
+            # 2. Substring match fallback for descriptive multi-word keywords (> 5 characters)
+            sub_match = next(
+                (
+                    col_index for col_index, cell_text in enumerate(row_values)
+                    if cell_text and any(len(kw) > 5 and kw in cell_text for kw in rule["keywords"])
+                ),
+                None,
+            )
+            if sub_match is not None:
+                matches_in_row[field_name] = sub_match
 
         # If at least 3 expected headers were found in this row, update the mapping
         if len(matches_in_row) >= 3:
@@ -228,5 +241,3 @@ def safe_cell(row: pd.Series, column_index: int) -> Any:
         value = row.iloc[column_index]
         return None if pd.isna(value) else value
     return None
-
-

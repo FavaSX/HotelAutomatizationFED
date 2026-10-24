@@ -1,6 +1,7 @@
 """
 Chilean Pesos (CLP) reconciliation workflow — Phase 2.
 Same lifecycle as USD: upload, in-memory preview, commit or discard, official Excel export.
+Supports multi-file batches for multi-day/weekly periods per payment modality.
 """
 
 from django.shortcuts import render, redirect
@@ -32,13 +33,13 @@ CLP_FILE_INPUTS = {
 @login_required(login_url="login")
 def clp_upload_view(request):
     """
-    Step 1: Upload the 5 CLP Excel files (Bordero, cartola and the 3 Transbank settlements)
-    and process them purely in memory.
+    Step 1: Upload the 5 CLP Excel roles (Bordero, cartola and the 3 Transbank settlements)
+    and process them purely in memory. Supports 1 or multiple files per role.
     """
     if request.method == "POST":
-        files = {arg: request.FILES.get(input_name) for arg, input_name in CLP_FILE_INPUTS.items()}
+        files = {arg: request.FILES.getlist(input_name) for arg, input_name in CLP_FILE_INPUTS.items()}
         if not all(files.values()):
-            messages.error(request, "Por favor seleccione los 5 archivos requeridos para la conciliación en Pesos.")
+            messages.error(request, "Por favor seleccione al menos un archivo para cada uno de los 5 roles requeridos en Pesos.")
             return redirect("clp_upload")
 
         extra_erp_files = request.FILES.getlist("clp_extra_erp_files")

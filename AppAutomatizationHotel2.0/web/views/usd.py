@@ -36,11 +36,11 @@ USD_FILE_INPUTS = {
 
 @login_required(login_url="login")
 def usd_upload_view(request):
-    """Step 1: Upload the 7 USD Excel files and process them purely in memory."""
+    """Step 1: Upload the 7 USD Excel roles (supporting 1 or multiple files per role) and process in memory."""
     if request.method == "POST":
-        files = {arg: request.FILES.get(field) for arg, field in USD_FILE_INPUTS.items()}
+        files = {arg: request.FILES.getlist(field) for arg, field in USD_FILE_INPUTS.items()}
         if not all(files.values()):
-            messages.error(request, "Por favor seleccione los 7 archivos requeridos para la conciliación en Dólares.")
+            messages.error(request, "Por favor seleccione al menos un archivo para cada uno de los 7 roles requeridos en Dólares.")
             return redirect("usd_upload")
 
         try:

@@ -1,9 +1,8 @@
 /**
- * Upload & Auto-Detection Logic shared by usd_upload.html and clp_upload.html
+ * Multi-File Upload & Auto-Detection Logic shared by usd_upload.html and clp_upload.html
  * Handles bulk drag-and-drop, structural fingerprint inspection,
- * manual or single-file slot replacement, and form submission.
- * The upload form declares its detection URL (data-detect-url) and, for CLP,
- * its role -> hidden input map (data-role-inputs).
+ * multi-file assignment per role (chips with add/remove actions),
+ * manual single-file uploads, and form submission via DataTransfer.
  */
 
 const USD_ROLE_INPUT_MAP = {
@@ -18,6 +17,17 @@ const USD_ROLE_INPUT_MAP = {
 
 let bulkUploadedFiles = [];
 let latestDetectionReport = null;
+let roleAssignedFiles = {}; // role_key -> [file_index_1, file_index_2, ...]
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 function getUploadForm() {
   return document.querySelector('form[data-detect-url]');
@@ -29,8 +39,12 @@ function getRoleInputMap() {
   return declared ? JSON.parse(declared) : USD_ROLE_INPUT_MAP;
 }
 
+function getRequiredRoles() {
+  return Object.keys(getRoleInputMap());
+}
+
 function getRequiredFileCount() {
-  return Object.keys(getRoleInputMap()).length;
+  return getRequiredRoles().length;
 }
 
 function getDetectFilesUrl() {
@@ -73,6 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function handleBulkFilesSelected(fileList) {
   if (!fileList || fileList.length === 0) return;
   bulkUploadedFiles = Array.from(fileList);
+  roleAssignedFiles = {};
 
   document.getElementById('expPhase1Dropzone').classList.add('d-none');
   document.getElementById('expPhase2Alignment').classList.add('d-none');
@@ -96,7 +111,19 @@ async function handleBulkFilesSelected(fileList) {
       return;
     }
     latestDetectionReport = data;
-    renderAlignmentTable(data);
+
+    // Initialize multi-file assignments from detection report
+    data.aligned_roles.forEach(role => {
+      if (Array.isArray(role.file_indices) && role.file_indices.length > 0) {
+        roleAssignedFiles[role.role_key] = [...role.file_indices];
+      } else if (role.file_index !== null && role.file_index !== undefined) {
+        roleAssignedFiles[role.role_key] = [role.file_index];
+      } else {
+        roleAssignedFiles[role.role_key] = [];
+      }
+    });
+
+    renderAlignmentTable();
   } catch (err) {
     alert('Error de conexión al inspeccionar los archivos: ' + err);
     resetExperimentalFiles();
@@ -105,56 +132,114 @@ async function handleBulkFilesSelected(fileList) {
   }
 }
 
-function getConfidenceBadgeHtml(type) {
+function getConfidenceBadgeHtml(type, count) {
+  const countText = count > 1 ? ` (${count} archivos)` : '';
   switch (type) {
     case 'HIGH':
-      return '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
+      return `<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro${countText}</span>`;
     case 'MEDIUM':
-      return '<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
+      return `<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre${countText}</span>`;
     case 'MANUAL':
-      return '<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual</span>';
+      return `<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual${countText}</span>`;
     default:
       return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Faltante</span>';
   }
 }
 
-function renderAlignmentTable(data) {
+function renderAlignmentTable() {
+  if (!latestDetectionReport) return;
   const tbody = document.getElementById('alignmentTableBody');
   tbody.innerHTML = '';
 
-  data.aligned_roles.forEach(role => {
-    const tr = document.createElement('tr');
+  const inspectedMap = {};
+  latestDetectionReport.inspected_files.forEach(f => {
+    inspectedMap[f.file_index] = f;
+  });
 
-    let optionsHtml = '<option value="">— Sin archivo asignado —</option>';
-    data.inspected_files.forEach(f => {
-      const selected = (role.file_index === f.file_index) ? 'selected' : '';
-      optionsHtml += `<option value="${f.file_index}" ${selected}>${f.file_name} (${f.row_count} filas)</option>`;
+  latestDetectionReport.aligned_roles.forEach(role => {
+    const roleKey = role.role_key;
+    const assignedIndices = roleAssignedFiles[roleKey] || [];
+    const assignedFiles = assignedIndices.map(idx => inspectedMap[idx]).filter(Boolean);
+    const totalRows = assignedFiles.reduce((sum, f) => sum + (f.row_count || 0), 0);
+
+    const tr = document.createElement('tr');
+    tr.id = `row_${roleKey}`;
+
+    // Render chips for assigned files
+    let chipsHtml = '';
+    if (assignedFiles.length === 0) {
+      chipsHtml = `<div class="mb-1"><span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Sin archivo asignado</span></div>`;
+    } else {
+      chipsHtml = `<div class="d-flex flex-wrap gap-1 align-items-center mb-1">`;
+      assignedFiles.forEach(f => {
+        chipsHtml += `
+          <span class="badge bg-light text-dark border d-inline-flex align-items-center gap-1 py-1 px-2">
+            <i class="bi bi-file-earmark-spreadsheet text-success"></i>
+            <span class="text-truncate" style="max-width: 220px;" title="${escapeHtml(f.file_name)}">${escapeHtml(f.file_name)}</span>
+            <span class="text-muted small">(${f.row_count} filas)</span>
+            <button type="button" class="btn-close ms-1" style="font-size:0.55rem;" onclick="removeFileFromRole('${roleKey}', ${f.file_index})" title="Quitar este archivo" aria-label="Quitar"></button>
+          </span>
+        `;
+      });
+      chipsHtml += `</div>`;
+      if (assignedFiles.length > 1) {
+        chipsHtml += `<div class="small text-primary fw-semibold mb-1"><i class="bi bi-layers-fill me-1"></i>${assignedFiles.length} archivos agrupados (${totalRows} filas totales en conjunto)</div>`;
+      }
+    }
+
+    // Dropdown to add another file from pool + direct upload button
+    let addOptionsHtml = '<option value="">+ Asignar archivo del lote...</option>';
+    latestDetectionReport.inspected_files.forEach(f => {
+      const isAssignedToThis = assignedIndices.includes(f.file_index);
+      addOptionsHtml += `<option value="${f.file_index}" ${isAssignedToThis ? 'disabled' : ''}>${escapeHtml(f.file_name)} (${f.row_count} filas)${isAssignedToThis ? ' (ya asignado)' : ''}</option>`;
     });
 
-    const badgeHtml = getConfidenceBadgeHtml(role.confidence);
+    const actionsHtml = `
+      <div class="d-flex align-items-center gap-2 mt-1">
+        <select class="form-select form-select-sm role-file-add-select" style="max-width: 250px;" onchange="onAddFileSelect('${roleKey}', this)">
+          ${addOptionsHtml}
+        </select>
+        <label class="btn btn-outline-primary btn-sm rounded-pill px-2 py-1 text-nowrap mb-0" style="font-size:0.75rem;" title="Subir otro archivo para este rol">
+          <i class="bi bi-upload me-1"></i>Subir
+          <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${roleKey}', this)">
+        </label>
+      </div>
+    `;
+
+    // Calculate evidence and confidence
+    let evidenceText = '';
+    let confidenceType = 'MISSING';
+    if (assignedFiles.length === 0) {
+      evidenceText = '<span class="text-danger">Seleccione o suba un archivo para este rol.</span>';
+      confidenceType = 'MISSING';
+    } else if (assignedFiles.length === 1) {
+      const single = assignedFiles[0];
+      evidenceText = `<i class="bi bi-cpu me-1 text-primary"></i> ${escapeHtml(single.evidence)}`;
+      confidenceType = (single.detected_role === roleKey && single.confidence === 'HIGH') ? 'HIGH' : 'MANUAL';
+    } else {
+      const names = assignedFiles.map(f => f.file_name).join(', ');
+      evidenceText = `<i class="bi bi-layers-fill me-1 text-primary"></i> ${assignedFiles.length} archivos concatenados (${totalRows} filas): ${escapeHtml(names)}`;
+      const allHigh = assignedFiles.every(f => f.detected_role === roleKey && f.confidence === 'HIGH');
+      confidenceType = allHigh ? 'HIGH' : 'MANUAL';
+    }
+
+    const badgeHtml = getConfidenceBadgeHtml(confidenceType, assignedFiles.length);
 
     tr.innerHTML = `
-      <td class="ps-3 py-3">
+      <td class="ps-3 py-3" style="width: 25%;">
         <div class="d-flex align-items-center gap-2">
           <span class="badge ${role.badge_class}">${role.badge}</span>
           <span class="fw-bold text-dark">${role.role_label}</span>
         </div>
       </td>
-      <td class="py-3">
-        <div class="d-flex align-items-center gap-2">
-          <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
-            ${optionsHtml}
-          </select>
-          <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir un archivo nuevo directamente para este rol">
-            <i class="bi bi-upload me-1"></i>Subir
-            <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
-          </label>
-        </div>
+      <td class="py-3" style="width: 38%;">
+        ${chipsHtml}
+        ${actionsHtml}
       </td>
-      <td class="py-3 text-muted" id="evidence_${role.role_key}">
-        <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
+      <td class="py-3 text-muted" id="evidence_${roleKey}" style="width: 25%;">
+        ${evidenceText}
       </td>
-      <td class="text-center pe-3 py-3" id="confidence_${role.role_key}">
+      <td class="text-center pe-3 py-3" id="confidence_${roleKey}" style="width: 12%;">
         ${badgeHtml}
       </td>
     `;
@@ -163,6 +248,28 @@ function renderAlignmentTable(data) {
 
   document.getElementById('expPhase2Alignment').classList.remove('d-none');
   validateCurrentAlignmentSelection();
+}
+
+function onAddFileSelect(roleKey, selectElem) {
+  const fileIdxStr = selectElem.value;
+  if (!fileIdxStr) return;
+  const fileIdx = parseInt(fileIdxStr, 10);
+  selectElem.value = '';
+
+  if (!roleAssignedFiles[roleKey]) {
+    roleAssignedFiles[roleKey] = [];
+  }
+  if (!roleAssignedFiles[roleKey].includes(fileIdx)) {
+    roleAssignedFiles[roleKey].push(fileIdx);
+  }
+  renderAlignmentTable();
+}
+
+function removeFileFromRole(roleKey, fileIdx) {
+  if (roleAssignedFiles[roleKey]) {
+    roleAssignedFiles[roleKey] = roleAssignedFiles[roleKey].filter(i => i !== fileIdx);
+  }
+  renderAlignmentTable();
 }
 
 async function uploadSingleFileForRole(roleKey, inputElem) {
@@ -188,7 +295,7 @@ async function uploadSingleFileForRole(roleKey, inputElem) {
     const data = await response.json();
     if (!response.ok || !data.inspected_files || data.inspected_files.length === 0) {
       alert(data.error || 'No se pudo analizar el archivo.');
-      onManualAlignmentChange();
+      renderAlignmentTable();
       return;
     }
 
@@ -199,117 +306,116 @@ async function uploadSingleFileForRole(roleKey, inputElem) {
     inspected.file_index = newFileIndex;
     latestDetectionReport.inspected_files.push(inspected);
 
-    document.querySelectorAll('.role-file-select').forEach(sel => {
-      const opt = document.createElement('option');
-      opt.value = newFileIndex;
-      opt.textContent = `${inspected.file_name} (${inspected.row_count} filas)`;
-      sel.appendChild(opt);
-    });
-
-    const targetSelect = document.getElementById('select_' + roleKey);
-    if (targetSelect) {
-      targetSelect.value = String(newFileIndex);
+    if (!roleAssignedFiles[roleKey]) {
+      roleAssignedFiles[roleKey] = [];
     }
+    roleAssignedFiles[roleKey].push(newFileIndex);
 
-    onManualAlignmentChange();
+    renderAlignmentTable();
   } catch (err) {
     alert('Error al subir el archivo individual: ' + err);
-    onManualAlignmentChange();
+    renderAlignmentTable();
   }
-}
-
-function onManualAlignmentChange() {
-  if (!latestDetectionReport) return;
-  const selects = document.querySelectorAll('.role-file-select');
-  selects.forEach(sel => {
-    const roleKey = sel.getAttribute('data-role-key');
-    const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
-    const evidenceCell = document.getElementById('evidence_' + roleKey);
-    const confidenceCell = document.getElementById('confidence_' + roleKey);
-
-    if (fileIdx !== null && latestDetectionReport.inspected_files[fileIdx]) {
-      const fileInfo = latestDetectionReport.inspected_files[fileIdx];
-      evidenceCell.innerHTML = `<i class="bi bi-cpu me-1 text-primary"></i> ${fileInfo.evidence}`;
-      confidenceCell.innerHTML = getConfidenceBadgeHtml(
-        (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') ? 'HIGH' : 'MANUAL'
-      );
-    } else {
-      evidenceCell.innerHTML = '<span class="text-danger">Seleccione un archivo para este rol.</span>';
-      confidenceCell.innerHTML = getConfidenceBadgeHtml('MISSING');
-    }
-  });
-
-  validateCurrentAlignmentSelection();
 }
 
 function getExtraErpFiles(chosenSet) {
   if (!latestDetectionReport || !document.getElementById('input_clp_extra_erp')) return [];
   return (latestDetectionReport.inspected_files || []).filter(
-    f => !chosenSet.has(String(f.file_index)) && f.detected_role === 'erp'
+    f => !chosenSet.has(f.file_index) && f.detected_role === 'erp'
   );
 }
 
 function validateCurrentAlignmentSelection() {
-  const selects = Array.from(document.querySelectorAll('.role-file-select'));
-  const chosenIndices = selects.map(s => s.value).filter(v => v !== '');
-  const uniqueIndices = new Set(chosenIndices);
   const alertBox = document.getElementById('alignmentSummaryAlert');
   const confirmBtn = document.getElementById('btnConfirmAlignment');
-  const required = getRequiredFileCount();
+  const requiredRoles = getRequiredRoles();
 
-  if (chosenIndices.length === required && uniqueIndices.size === required) {
-    const extraErp = getExtraErpFiles(uniqueIndices);
+  // Find missing roles
+  const missingRoles = requiredRoles.filter(
+    rk => !roleAssignedFiles[rk] || roleAssignedFiles[rk].length === 0
+  );
+
+  // Check for cross-role duplicate assignments
+  const fileToRoles = {};
+  requiredRoles.forEach(rk => {
+    (roleAssignedFiles[rk] || []).forEach(idx => {
+      fileToRoles[idx] = (fileToRoles[idx] || []).concat(rk);
+    });
+  });
+
+  const conflicts = Object.entries(fileToRoles).filter(([, roles]) => roles.length > 1);
+
+  const totalAssignedFiles = requiredRoles.reduce(
+    (sum, rk) => sum + (roleAssignedFiles[rk] || []).length, 0
+  );
+
+  if (conflicts.length > 0) {
+    const conflictFile = latestDetectionReport.inspected_files.find(
+      f => f.file_index === parseInt(conflicts[0][0], 10)
+    );
+    const fileName = conflictFile ? conflictFile.file_name : `Archivo #${conflicts[0][0]}`;
+    alertBox.className = 'alert alert-warning rounded-4 mb-3 py-2 px-3 small';
+    alertBox.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Conflicto de asignación:</strong> El archivo <strong>${escapeHtml(fileName)}</strong> está asignado a más de un rol diferente (${conflicts[0][1].join(', ')}). Por favor quite la asignación duplicada.`;
+    confirmBtn.disabled = true;
+  } else if (missingRoles.length > 0) {
+    alertBox.className = 'alert alert-danger rounded-4 mb-3 py-2 px-3 small';
+    alertBox.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i><strong>Faltan ${missingRoles.length} rol(es) por asignar archivo:</strong> ${missingRoles.join(', ')}. Seleccione o suba los archivos faltantes.`;
+    confirmBtn.disabled = true;
+  } else {
+    const chosenSet = new Set(Object.values(roleAssignedFiles).flat());
+    const extraErp = getExtraErpFiles(chosenSet);
     const extraNote = extraErp.length > 0
-      ? `<div class="mt-1 text-dark"><i class="bi bi-journal-plus text-primary me-1"></i><strong>Borderó histórico adicional incluido automáticamente para cruce fuera de período:</strong> ${extraErp.map(f => f.file_name).join(', ')}</div>`
+      ? `<div class="mt-1 text-dark"><i class="bi bi-journal-plus text-primary me-1"></i><strong>Borderó histórico adicional incluido automáticamente para cruce fuera de período:</strong> ${extraErp.map(f => escapeHtml(f.file_name)).join(', ')}</div>`
       : '';
     alertBox.className = 'alert alert-success rounded-4 mb-3 py-2 px-3 small d-flex align-items-center justify-content-between';
     alertBox.innerHTML = `
       <div>
-        <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡${required} de ${required} archivos alineados sin conflictos!</strong> Revise la tabla y confirme para iniciar el cruce financiero.</div>
+        <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡Todos los ${requiredRoles.length} roles están listos sin conflictos!</strong> (${totalAssignedFiles} archivo(s) en total). Confirme para iniciar el cruce financiero.</div>
         ${extraNote}
       </div>
-      <span class="badge bg-success rounded-pill">${bulkUploadedFiles.length} archivo(s) analizado(s)</span>
+      <span class="badge bg-success rounded-pill">${bulkUploadedFiles.length} archivo(s) en lote</span>
     `;
     confirmBtn.disabled = false;
-  } else if (chosenIndices.length === required && uniqueIndices.size < required) {
-    alertBox.className = 'alert alert-warning rounded-4 mb-3 py-2 px-3 small';
-    alertBox.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Atención:</strong> Ha asignado el mismo archivo en más de un rol. Por favor asigne ${required} archivos distintos.`;
-    confirmBtn.disabled = true;
-  } else {
-    const missingCount = required - chosenIndices.length;
-    alertBox.className = 'alert alert-danger rounded-4 mb-3 py-2 px-3 small';
-    alertBox.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i><strong>Faltan ${missingCount} archivo(s) por alinear</strong> (se subieron ${bulkUploadedFiles.length} archivo(s)). Seleccione los faltantes o vuelva a cargar el lote completo de ${required} archivos.`;
-    confirmBtn.disabled = true;
   }
 }
 
 function resetExperimentalFiles() {
   bulkUploadedFiles = [];
   latestDetectionReport = null;
-  document.getElementById('bulkFilesInput').value = '';
+  roleAssignedFiles = {};
+  const fileInput = document.getElementById('bulkFilesInput');
+  if (fileInput) fileInput.value = '';
   document.getElementById('expPhase2Alignment').classList.add('d-none');
   document.getElementById('expScanningSpinner').classList.add('d-none');
   document.getElementById('expPhase1Dropzone').classList.remove('d-none');
 }
 
 function confirmAlignmentAndSubmit() {
-  const selects = document.querySelectorAll('.role-file-select');
+  const roleMap = getRoleInputMap();
   const chosenSet = new Set();
-  for (const sel of selects) {
-    const roleKey = sel.getAttribute('data-role-key');
-    const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
-    if (fileIdx === null || !bulkUploadedFiles[fileIdx]) {
-      alert(`Por favor asegúrese de que los ${getRequiredFileCount()} roles tengan un archivo asignado.`);
+
+  for (const roleKey of Object.keys(roleMap)) {
+    const assigned = roleAssignedFiles[roleKey] || [];
+    if (assigned.length === 0) {
+      alert(`Por favor asegúrese de que todos los roles requeridos tengan al menos un archivo asignado.`);
       return;
     }
-    chosenSet.add(String(fileIdx));
-    const inputId = getRoleInputMap()[roleKey];
+
+    const inputId = roleMap[roleKey];
     const fileInput = document.getElementById(inputId);
+    if (!fileInput) continue;
+
     const dt = new DataTransfer();
-    dt.items.add(bulkUploadedFiles[fileIdx]);
+    assigned.forEach(idx => {
+      chosenSet.add(idx);
+      if (bulkUploadedFiles[idx]) {
+        dt.items.add(bulkUploadedFiles[idx]);
+      }
+    });
     fileInput.files = dt.files;
   }
 
+  // Handle extra ERP files for CLP if element exists
   const extraErpInput = document.getElementById('input_clp_extra_erp');
   if (extraErpInput) {
     const extraDt = new DataTransfer();
@@ -324,5 +430,3 @@ function confirmAlignmentAndSubmit() {
   showProcessingOverlay();
   getUploadForm().submit();
 }
-
-

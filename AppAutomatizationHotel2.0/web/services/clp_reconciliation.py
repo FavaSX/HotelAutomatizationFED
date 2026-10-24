@@ -8,6 +8,7 @@ Database persistence lives in `clp_persistence.py` and Excel generation in `clp_
 
 from datetime import date
 from decimal import Decimal
+import os
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
@@ -23,9 +24,19 @@ from .column_detector import (
     safe_cell,
 )
 from .excel_parsers import (
+    TBK_HEADER_AMOUNT_LABELS,
+    TBK_HEADER_BELOW_LABELS,
+    card_code_from_masked_number,
     parse_bank_statement_movements,
-    serialize_bank_movement,
     parse_bordero_clp_transactions,
+    parse_transbank_clp_settlement,
+    serialize_bank_movement,
+)
+from .file_merger import (
+    ensure_file_list,
+    merge_and_parse_bank_statements,
+    merge_and_parse_clp_bordero,
+    merge_and_parse_clp_tbk,
 )
 
 # (modality, label, deposit modality, bank statement description hint)
@@ -39,118 +50,10 @@ MODALITY_LABELS = {code: label for code, label, _, _ in CLP_MODALITIES}
 # Used when the CardType catalog has not been loaded yet.
 DEFAULT_CARD_NAMES = {"VI": "Visa", "MC": "MasterCard", "AX": "American Express", "DI": "Diners Club"}
 
-# Labels of the settlement header block (rows above the voucher detail).
-TBK_HEADER_AMOUNT_LABELS = {
-    "total ventas (+)": "total_sales",
-    "devolucion comision por anulacion (+)": "commission_refund",
-    "iva devolucion comision por anulacion (+)": "commission_refund_vat",
-    "comision transbank (-)": "commission",
-    "iva de comision transbank (-)": "commission_vat",
-    "ventas anuladas (-)": "voided_sales",
-    "cobros por servicio (-)": "service_charges",
-    "iva de cobros por servicio (-)": "service_charges_vat",
-    "total abono": "total_deposit",
-}
-TBK_HEADER_BELOW_LABELS = {
-    "empresa:": "company",
-    "cuenta corriente:": "bank_account",
-    "moneda:": "currency",
-    "medio de pago:": "payment_medium",
-}
-
 
 def get_clp_tolerance() -> Decimal:
     """CLP rounding tolerance from SystemConfiguration (editable by superusers from /settings/)."""
     return SystemConfiguration.get_solo().clp_rounding_tolerance
-
-
-def card_code_from_masked_number(masked_card: str) -> str:
-    """Infers the card brand from the BIN of a masked card number ('5525 61** **** 5410' -> 'MC')."""
-    digits = "".join(ch for ch in masked_card if ch.isdigit())[:2]
-    if not digits:
-        return ""
-    if digits.startswith("4"):
-        return "VI"
-    if digits[0] in ("2", "5"):
-        return "MC"
-    if digits in ("34", "37"):
-        return "AX"
-    if digits in ("30", "36", "38"):
-        return "DI"
-    return ""
-
-
-def _find_detail_header_row(dataframe: pd.DataFrame) -> int:
-    for row_index in range(min(len(dataframe), 80)):
-        if any(normalize_text(val) == "fecha de venta" for val in dataframe.iloc[row_index].values):
-            return row_index
-    return min(len(dataframe), 28)
-
-
-def parse_transbank_clp_settlement(dataframe: pd.DataFrame, modality: str) -> Dict[str, Any]:
-    """
-    Reads one Transbank 'Abonos por día' settlement (Crédito, Débito or Prepago):
-    the header block (period, account, medium, totals) and every sale in the voucher detail.
-    """
-    detail_header_row = _find_detail_header_row(dataframe)
-    header: Dict[str, Any] = {key: Decimal("0") for key in TBK_HEADER_AMOUNT_LABELS.values()}
-    header.update({key: "" for key in TBK_HEADER_BELOW_LABELS.values()})
-    header["settlement_date"] = None
-
-    for row_index in range(detail_header_row):
-        row = dataframe.iloc[row_index]
-        cells = [(col, val) for col, val in enumerate(row.values) if pd.notna(val) and str(val).strip()]
-        for position, (col, val) in enumerate(cells):
-            label = normalize_text(val)
-            if label.startswith("periodo de consulta") and position + 1 < len(cells):
-                header["settlement_date"] = safe_date(cells[position + 1][1])
-            elif label in TBK_HEADER_BELOW_LABELS and row_index + 1 < len(dataframe):
-                below = safe_cell(dataframe.iloc[row_index + 1], col)
-                header[TBK_HEADER_BELOW_LABELS[label]] = str(below or "").strip()
-            elif label in TBK_HEADER_AMOUNT_LABELS and position + 1 < len(cells):
-                header[TBK_HEADER_AMOUNT_LABELS[label]] = safe_decimal(cells[position + 1][1])
-
-    columns = resolve_dataframe_columns(dataframe, TRANSBANK_CLP_COLUMN_RULES, max_scan_rows=detail_header_row + 3)
-    sales: List[Dict[str, Any]] = []
-    skipped_movements = 0
-
-    for row_index in range(detail_header_row + 1, len(dataframe)):
-        row = dataframe.iloc[row_index]
-        movement_type = normalize_text(safe_cell(row, columns["movement_type"]))
-        auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
-        gross_amount = safe_decimal(safe_cell(row, columns["gross_amount"]))
-        if not auth_code or gross_amount <= 0:
-            continue
-        if movement_type and not movement_type.startswith("venta"):
-            skipped_movements += 1
-            continue
-
-        sale_date = safe_date(safe_cell(row, columns["sale_date"]))
-        masked_card = str(safe_cell(row, columns["masked_card_number"]) or "").strip()
-        location = str(safe_cell(row, columns["merchant_location"]) or "").split(",")[0].strip()
-        installment_number = clean_code_string(safe_cell(row, columns["installment_number"]))
-
-        sales.append({
-            "excel_row": row_index + 1,
-            "payment_modality": modality,
-            "card_code": card_code_from_masked_number(masked_card),
-            "sale_date": sale_date,
-            "merchant_code": clean_code_string(safe_cell(row, columns["merchant_code"])),
-            "merchant_location": location,
-            "gross_amount": gross_amount,
-            "installment_type": str(safe_cell(row, columns["installment_type"]) or "").strip(),
-            "installment_number": installment_number,
-            "valid_amount": safe_decimal(safe_cell(row, columns["valid_amount"])),
-            "commission": safe_decimal(safe_cell(row, columns["commission"])),
-            "commission_vat": safe_decimal(safe_cell(row, columns["commission_vat"])),
-            "net_deposit": safe_decimal(safe_cell(row, columns["net_deposit"])),
-            "masked_card": masked_card,
-            "authorization_code": auth_code,
-            "transaction_identifier": clean_code_string(safe_cell(row, columns["transaction_identifier"])),
-            "receipt_number": clean_code_string(safe_cell(row, columns["receipt_number"])),
-        })
-
-    return {"header": header, "sales": sales, "skipped_movements": skipped_movements}
 
 
 def parse_bordero_period(dataframe: pd.DataFrame) -> Tuple[Optional[date], Optional[date]]:
@@ -332,25 +235,17 @@ def calculate_clp_preview(
     tolerance = get_clp_tolerance()
     card_names = {**DEFAULT_CARD_NAMES, **{card.code: card.name for card in CardType.objects.all()}}
 
-    uploaded = {
-        "erp": erp_file,
-        "bank": bank_statement_file,
+    tbk_uploaded = {
         "CREDIT": transbank_credit_file,
         "DEBIT": transbank_debit_file,
         "PREPAID": transbank_prepaid_file,
     }
-    for uploaded_file in uploaded.values():
-        if hasattr(uploaded_file, "seek"):
-            uploaded_file.seek(0)
+    settlements = merge_and_parse_clp_tbk(tbk_uploaded)
+    bank_movements = merge_and_parse_bank_statements(bank_statement_file)
 
-    import os
-    erp_file_name = os.path.basename(getattr(erp_file, "name", "BORDERO.xlsx"))
-    bordero_dataframe = pd.read_excel(erp_file, header=None)
-    bank_dataframe = pd.read_excel(bank_statement_file, header=None)
-    settlements = {
-        modality: parse_transbank_clp_settlement(pd.read_excel(uploaded[modality], header=None), modality)
-        for modality, _, _, _ in CLP_MODALITIES
-    }
+    # Bordero parsing (supports 1 or multiple Bordero files)
+    main_bordero_files = ensure_file_list(erp_file)
+    erp_rows, rows_by_auth_code, period = merge_and_parse_clp_bordero(main_bordero_files)
 
     # Optional auxiliary/historical Bordero files (e.g. BORDERO 04-07.XLS for earlier installment sales)
     auxiliary_erp_rows: List[Dict[str, Any]] = []
@@ -366,26 +261,17 @@ def calculate_clp_preview(
         parsed_extra, _ = parse_bordero_clp_transactions(extra_df, source_file=extra_name)
         auxiliary_erp_rows.extend(parsed_extra)
 
-
-    # 1. Bank deposits of the 3 settlements
-    bank_movements = parse_bank_statement_movements(bank_dataframe)
+    # 1. Bank deposits of the settlements
     bank_validations, claimed_movements = _match_bank_deposits(bank_movements, settlements, tolerance)
     bank_movements_data = [
         serialize_bank_movement(m, idx in claimed_movements) for idx, m in enumerate(bank_movements)
     ]
-    detected_account = ""
-    for _, row in bank_dataframe.iloc[:15].iterrows():
-        cells = [str(c).strip() for c in row if pd.notna(c) and str(c).strip()]
-        for idx, text in enumerate(cells):
-            if normalize_text(text).startswith("cuenta n") and idx + 1 < len(cells):
-                detected_account = cells[idx + 1]
-
-    # 2. Bordero peso card payments
-    erp_rows, rows_by_auth_code = parse_bordero_clp_transactions(bordero_dataframe, source_file=erp_file_name)
-    period = parse_bordero_period(bordero_dataframe)
-    if not all(period):
-        row_dates = sorted({safe_date(r["transaction_date"]) for r in erp_rows} - {None})
-        period = (row_dates[0], row_dates[-1]) if row_dates else (None, None)
+    detected_account = settlements.get("CREDIT", {}).get("header", {}).get("bank_account") or ""
+    if not detected_account:
+        for m in bank_movements[:15]:
+            if "cuenta" in (m.description or "").lower():
+                detected_account = m.document_number or ""
+                break
 
     # 3. Cross-match every Transbank voucher (source of truth) against the Bordero
     buckets: Dict[str, List[Dict[str, Any]]] = {
@@ -559,6 +445,10 @@ def calculate_clp_preview(
         accounting_period = f"Cierre Pesos — {period_str}" if period_str else "Cierre Pesos (CLP)"
 
     discrepancy_vouchers = buckets["AMOUNT_MISMATCH"] + buckets["CARD_TYPE_MISMATCH"]
+    def _file_label(files_arg, fallback: str) -> str:
+        fl = ensure_file_list(files_arg)
+        return ", ".join(getattr(f, "name", fallback) for f in fl) if fl else fallback
+
     preview_payload = {
         "currency": "CLP",
         "accounting_period": accounting_period,
@@ -568,12 +458,12 @@ def calculate_clp_preview(
             "end": period_end.strftime("%d/%m/%Y") if period_end else None,
         },
         "file_names": {
-            "erp": erp_file_name,
+            "erp": _file_label(erp_file, "BORDERO.xlsx"),
             "extra_erp": extra_erp_names,
-            "bank": getattr(bank_statement_file, "name", "cartola.xlsx"),
-            "tbk_credit": getattr(transbank_credit_file, "name", "CREDITOS TBK.xlsx"),
-            "tbk_debit": getattr(transbank_debit_file, "name", "DEBITOS TBK.xlsx"),
-            "tbk_prepaid": getattr(transbank_prepaid_file, "name", "PREPAGO TBK.xlsx"),
+            "bank": _file_label(bank_statement_file, "cartola.xlsx"),
+            "tbk_credit": _file_label(transbank_credit_file, "CREDITOS TBK.xlsx"),
+            "tbk_debit": _file_label(transbank_debit_file, "DEBITOS TBK.xlsx"),
+            "tbk_prepaid": _file_label(transbank_prepaid_file, "PREPAGO TBK.xlsx"),
         },
         "bank_account_number": detected_account or next((b["bank_account"] for b in bank_validations if b["bank_account"]), ""),
         "bank_validations": bank_validations,
@@ -588,7 +478,7 @@ def calculate_clp_preview(
         "discrepancy_vouchers": discrepancy_vouchers,
         "orphan_vouchers": buckets["NOT_FOUND_IN_ERP"],
         "out_of_period_vouchers": buckets["OUT_OF_PERIOD"],
-        "skipped_movements": sum(s["skipped_movements"] for s in settlements.values()),
+        "skipped_movements": sum(s.get("skipped_movements", 0) for s in settlements.values()),
         "counts": {
             "matched": len(buckets["MATCHED"]),
             "discrepancies": len(discrepancy_vouchers),
@@ -599,4 +489,3 @@ def calculate_clp_preview(
     }
     from .clp_suggestion_engine import enrich_clp_preview_with_suggestions
     return enrich_clp_preview_with_suggestions(preview_payload)
-
