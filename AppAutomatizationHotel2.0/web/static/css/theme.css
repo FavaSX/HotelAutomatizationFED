@@ -654,6 +654,9 @@ footer.app-footer {
 .voucher-search-wrapper { max-width: 400px; }
 .voucher-table-scroll {
   max-height: 500px;
+  /* Keeps the card height when filters leave few or no rows, so the page does not shrink
+     and push the table under the sticky Descartar / Guardar bar */
+  min-height: 280px;
   overflow-y: auto;
 }
 .th-sortable {
@@ -1406,6 +1409,8 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
    Card children each get z-index 1 (.card-executive > *), so the table would paint over the menu:
    lift the toolbar above the table body. */
 #voucherToolbar { z-index: 5; }
+/* While the Filtros panel is open it must also sit above the sticky action bar (z-index 1020) */
+#voucherToolbar:has(.dropdown-menu.show) { z-index: 1025; }
 .filters-menu {
   width: 300px; max-width: calc(100vw - 2rem);
   padding: 1rem;

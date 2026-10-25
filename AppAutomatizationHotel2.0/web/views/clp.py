@@ -110,9 +110,24 @@ def clp_preview_view(request):
         if r.get("cashier_username") and r.get("cashier_username") != "—"
     })
 
+    counts = preview.get("counts", {})
+    total = counts.get("total", 0)
+    match_rate = round(counts.get("matched", 0) / total * 100, 1) if total else 0.0
+
+    # Summary of the 3 Transbank deposits for the bank KPI card (same layout as the USD preview)
+    bank_validations = preview.get("bank_validations", [])
+    bank_summary = {
+        "matched": sum(1 for b in bank_validations if b.get("is_matched")),
+        "total": len(bank_validations),
+        "calculated": sum(b.get("calculated_deposit") or 0 for b in bank_validations),
+        "deposited": sum(b.get("bank_deposit_amount") or 0 for b in bank_validations),
+    }
+
     context = {
         "preview": preview,
-        "bank_validations": preview.get("bank_validations", []),
+        "match_rate": match_rate,
+        "bank_summary": bank_summary,
+        "bank_validations": bank_validations,
         "modality_table": preview.get("modality_table", []),
         "clp_totals": preview.get("clp_totals", {}),
         "matched_vouchers": preview.get("matched_vouchers", []),

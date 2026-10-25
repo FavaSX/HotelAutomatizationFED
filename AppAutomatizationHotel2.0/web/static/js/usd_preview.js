@@ -5,7 +5,7 @@
  *  - Client-side pagination across voucher tabs
  *  - Mayor a Menor / Menor a Mayor numeric column sorting
  *  - Card brand, cashier, and instant text search filtering
- *  - "Filtros" dropdown: sale date range, cashier and Transbank amount range (USD preview)
+ *  - "Filtros" dropdown: sale date range, cashier and Transbank amount range (plus payment medium in CLP)
  *  - 2-step AJAX database commit with official Excel download
  *  - Shared HTML escaping & pagination item builder helpers
  */
@@ -21,7 +21,7 @@ let activeAmountMin = null;
 let activeAmountMax = null;
 const currentSortState = {};
 
-let voucherPageSize = 20;
+let voucherPageSize = 15;
 const voucherCurrentPages = {
   tabMatched: 1,
   tabDiscrepancies: 1,
@@ -148,7 +148,7 @@ function resetVoucherPages() {
 }
 
 function changeVoucherPageSize(newSize) {
-  voucherPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 20);
+  voucherPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 15);
   document.querySelectorAll('.voucher-page-size-select').forEach(sel => {
     sel.value = newSize;
   });
@@ -324,9 +324,12 @@ function clearAdvancedFilters() {
     const input = document.getElementById(id);
     if (input) input.value = '';
   });
-  const cashierSelect = document.getElementById('cashierFilterSelect');
-  if (cashierSelect) cashierSelect.value = 'ALL';
+  ['cashierFilterSelect', 'modalityFilterSelect'].forEach(id => {
+    const select = document.getElementById(id);
+    if (select) select.value = 'ALL';
+  });
   activeCashierFilter = 'ALL';
+  activeModalityFilter = 'ALL';
   applyAdvancedFilters();
 }
 
@@ -334,6 +337,7 @@ function updateAdvancedFilterCount() {
   const badge = document.getElementById('advancedFilterCount');
   if (!badge) return;
   const active = [
+    activeModalityFilter !== 'ALL',
     activeDateFrom || activeDateTo,
     activeCashierFilter !== 'ALL',
     activeAmountMin !== null || activeAmountMax !== null,
@@ -341,6 +345,21 @@ function updateAdvancedFilterCount() {
   badge.textContent = active;
   badge.classList.toggle('d-none', active === 0);
   document.getElementById('btnAdvancedFilters')?.classList.toggle('active', active > 0);
+}
+
+// The panel is positioned "fixed" (so the card does not clip it), which keeps it on screen while the
+// page scrolls away from the button: close it once the page scrolls a bit, like a regular menu
+function initAdvancedFilterScrollClose() {
+  const btn = document.getElementById('btnAdvancedFilters');
+  if (!btn || !window.bootstrap || !window.bootstrap.Dropdown) return;
+  let scrollAtOpen = null;
+  btn.addEventListener('shown.bs.dropdown', () => { scrollAtOpen = window.scrollY; });
+  btn.addEventListener('hidden.bs.dropdown', () => { scrollAtOpen = null; });
+  window.addEventListener('scroll', () => {
+    if (scrollAtOpen !== null && Math.abs(window.scrollY - scrollAtOpen) > 40) {
+      window.bootstrap.Dropdown.getOrCreateInstance(btn).hide();
+    }
+  }, { passive: true });
 }
 
 // Limit the date pickers to the days present in the vouchers of this closing
@@ -508,11 +527,13 @@ function initVoucherTooltips() {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     initAdvancedFilterBounds();
+    initAdvancedFilterScrollClose();
     applyVoucherFilters();
     initVoucherTooltips();
   });
 } else {
   initAdvancedFilterBounds();
+  initAdvancedFilterScrollClose();
   applyVoucherFilters();
   initVoucherTooltips();
 }
