@@ -26,10 +26,10 @@ let currentClpSugAllVouchers = [];
 let currentClpSugWithItems = [];
 let currentClpSugWithoutItems = [];
 let currentClpSugFilterMode = 'ALL';
-let currentClpSugPageSize = 20;
+let currentClpSugPageSize = 25;
 let currentClpSugWithPage = 1;
 let currentClpSugWithoutPage = 1;
-const CLP_WITHOUT_PAGE_SIZE = 20;
+const CLP_WITHOUT_PAGE_SIZE = 25;
 
 function formatClpClient(val) {
   const num = Math.round(Number(val) || 0);
@@ -144,7 +144,7 @@ function resetClpSugFilterButtons(activeBtn) {
 }
 
 function changeClpSugPageSize(newSize) {
-  currentClpSugPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 20);
+  currentClpSugPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 25);
   currentClpSugWithPage = 1;
   renderClpModalSuggestionsPage();
 }

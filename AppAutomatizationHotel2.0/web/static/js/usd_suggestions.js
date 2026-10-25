@@ -9,10 +9,10 @@ let currentSugAllVouchers = [];
 let currentSugWithItems = [];
 let currentSugWithoutItems = [];
 let currentSugFilterMode = 'ALL';
-let currentSugPageSize = 20;
+let currentSugPageSize = 25;
 let currentSugWithPage = 1;
 let currentSugWithoutPage = 1;
-const SUG_WITHOUT_PAGE_SIZE = 20;
+const SUG_WITHOUT_PAGE_SIZE = 25;
 
 function formatUsdClient(val) {
   const num = Number(val) || 0;
@@ -80,7 +80,7 @@ function resetSugFilterButtons(activeBtn) {
 }
 
 function changeSugPageSize(newSize) {
-  currentSugPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 20);
+  currentSugPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 25);
   currentSugWithPage = 1;
   renderModalSuggestionsPage();
 }

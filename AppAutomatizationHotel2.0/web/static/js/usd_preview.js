@@ -21,7 +21,7 @@ let activeAmountMin = null;
 let activeAmountMax = null;
 const currentSortState = {};
 
-let voucherPageSize = 15;
+let voucherPageSize = 25;
 const voucherCurrentPages = {
   tabMatched: 1,
   tabDiscrepancies: 1,
@@ -149,7 +149,7 @@ function resetVoucherPages() {
 }
 
 function changeVoucherPageSize(newSize) {
-  voucherPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 15);
+  voucherPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 25);
   document.querySelectorAll('.voucher-page-size-select').forEach(sel => {
     sel.value = newSize;
   });
