@@ -103,13 +103,14 @@ function buildPaginationItemsHtml(currentPage, totalPages, onClickForPage) {
   html += `<li class="page-item${prevDisabled}"><a class="page-link" href="javascript:void(0)" onclick="${onClickForPage(1)}" title="Primera página">&laquo;</a></li>`;
   html += `<li class="page-item${prevDisabled}"><a class="page-link" href="javascript:void(0)" onclick="${onClickForPage(currentPage - 1)}" title="Anterior">&lsaquo;</a></li>`;
 
-  let startP = Math.max(1, currentPage - 2);
-  let endP = Math.min(totalPages, currentPage + 2);
+  // Window of 3 page numbers around the current one (first/last stay reachable through "…")
+  let startP = Math.max(1, currentPage - 1);
+  let endP = Math.min(totalPages, currentPage + 1);
 
   if (startP === 1) {
-    endP = Math.min(totalPages, 5);
+    endP = Math.min(totalPages, 3);
   } else if (endP === totalPages) {
-    startP = Math.max(1, totalPages - 4);
+    startP = Math.max(1, totalPages - 2);
   }
 
   if (startP > 1) {
