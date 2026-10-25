@@ -98,7 +98,7 @@
       <header class="panel-head py-3">
         <div>
           <h2 class="panel-title fs-6 mb-0">
-            <i class="bi bi-currency-dollar text-primary me-1"></i> 2A. Cuadratura por Operador en Dólares (US$)
+            <i class="bi bi-currency-dollar text-primary me-1"></i> Cuadratura por Operador en Dólares (US$)
           </h2>
         </div>
       </header>
@@ -147,7 +147,7 @@
       <header class="panel-head py-3">
         <div>
           <h2 class="panel-title fs-6 mb-0">
-            <i class="bi bi-cash-stack text-success me-1"></i> 2B. Cuadratura en Moneda Nacional (Pesos CLP)
+            <i class="bi bi-cash-stack text-success me-1"></i> Cuadratura en Moneda Nacional (Pesos CLP)
           </h2>
         </div>
       </header>
@@ -233,16 +233,41 @@
       <button type="button" class="filter-chip card-filter-btn" data-card="AMERICAN EXPRESS" onclick="setCardBrandFilter('AMERICAN EXPRESS', this)">American Express</button>
       <button type="button" class="filter-chip card-filter-btn" data-card="DINERS" onclick="setCardBrandFilter('DINERS', this)">Diners</button>
     </div>
-    <div class="d-flex align-items-center gap-2" id="cashierFilterGroup">
-      <label for="cashierFilterSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
-        <i class="bi bi-person-badge me-1"></i>Cajero
-      </label>
-      <select id="cashierFilterSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 150px;" onchange="setCashierFilter(this.value)">
-        <option value="ALL" selected>Todos los cajeros</option>
-        {% for c in cashiers %}
-        <option value="{{ c }}">{{ c }}</option>
-        {% endfor %}
-      </select>
+    <div class="dropdown" id="advancedFilterGroup">
+      <button type="button" id="btnAdvancedFilters" class="filter-chip dropdown-toggle"
+              data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+              data-bs-popper-config='{"strategy":"fixed"}'>
+        <i class="bi bi-funnel me-1"></i>Filtros
+        <span class="segmented-count ms-1 d-none" id="advancedFilterCount">0</span>
+      </button>
+      <div class="dropdown-menu dropdown-menu-end filters-menu" aria-labelledby="btnAdvancedFilters">
+        <div class="filters-menu-section">
+          <div class="filters-menu-label"><i class="bi bi-calendar3 me-1"></i>Fecha de venta</div>
+          <div class="d-flex gap-2">
+            <input type="date" id="filterDateFrom" class="form-control form-control-sm" aria-label="Fecha desde" onchange="applyAdvancedFilters()">
+            <input type="date" id="filterDateTo" class="form-control form-control-sm" aria-label="Fecha hasta" onchange="applyAdvancedFilters()">
+          </div>
+        </div>
+        <div class="filters-menu-section">
+          <label for="cashierFilterSelect" class="filters-menu-label"><i class="bi bi-person-badge me-1"></i>Cajero</label>
+          <select id="cashierFilterSelect" class="form-select form-select-sm" onchange="setCashierFilter(this.value)">
+            <option value="ALL" selected>Todos los cajeros</option>
+            {% for c in cashiers %}
+            <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filters-menu-section">
+          <div class="filters-menu-label"><i class="bi bi-cash-stack me-1"></i>Monto Transbank (US$)</div>
+          <div class="d-flex gap-2">
+            <input type="number" id="filterAmountMin" class="form-control form-control-sm" placeholder="Desde" min="0" step="0.01" aria-label="Monto desde" oninput="applyAdvancedFilters()">
+            <input type="number" id="filterAmountMax" class="form-control form-control-sm" placeholder="Hasta" min="0" step="0.01" aria-label="Monto hasta" oninput="applyAdvancedFilters()">
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill w-100" onclick="clearAdvancedFilters()">
+          <i class="bi bi-x-circle me-1"></i>Limpiar filtros
+        </button>
+      </div>
     </div>
   </div>
 
@@ -278,6 +303,7 @@
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
                 data-cashier="{{ item.cashier_username|default:''|upper }}"
+                data-date="{{ item.sale_date|default:'' }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}"
                 data-op="{{ item.operator_amount_usd|unlocalize }}"
                 data-diff="{{ item.difference_usd|unlocalize }}"
@@ -428,6 +454,7 @@
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
                 data-cashier="{{ item.cashier_username|default:''|upper }}"
+                data-date="{{ item.sale_date|default:'' }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}"
                 data-op="{{ item.operator_amount_usd|unlocalize }}"
                 data-diff="{{ item.difference_usd|unlocalize }}"
@@ -562,6 +589,7 @@
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }}"
                 data-cashier="{{ item.cashier_username|default:''|upper }}"
+                data-date="{{ item.sale_date|default:'' }}"
                 data-tbk="{{ item.gross_amount_usd|unlocalize }}">
               <td class="ps-4 fw-bold font-monospace text-danger">{{ item.authorization_code }}</td>
               <td><span class="badge bg-dark">{{ item.card_name }}</span></td>
@@ -623,7 +651,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_preview.js' %}?v=25"></script>
+<script src="{% static 'js/usd_preview.js' %}?v=29"></script>
 <script src="{% static 'js/usd_suggestions.js' %}?v=4"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab

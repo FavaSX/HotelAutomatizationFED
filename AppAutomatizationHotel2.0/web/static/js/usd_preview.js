@@ -5,6 +5,7 @@
  *  - Client-side pagination across voucher tabs
  *  - Mayor a Menor / Menor a Mayor numeric column sorting
  *  - Card brand, cashier, and instant text search filtering
+ *  - "Filtros" dropdown: sale date range, cashier and Transbank amount range (plus payment medium in CLP)
  *  - 2-step AJAX database commit with official Excel download
  *  - Shared HTML escaping & pagination item builder helpers
  */
@@ -13,9 +14,14 @@ let isCommitting = false;
 let activeCardBrandFilter = 'ALL';
 let activeModalityFilter = 'ALL';
 let activeCashierFilter = 'ALL';
+// "Filtros" dropdown: ISO dates (YYYY-MM-DD) and USD amounts; empty / null = no limit
+let activeDateFrom = '';
+let activeDateTo = '';
+let activeAmountMin = null;
+let activeAmountMax = null;
 const currentSortState = {};
 
-let voucherPageSize = 20;
+let voucherPageSize = 15;
 const voucherCurrentPages = {
   tabMatched: 1,
   tabDiscrepancies: 1,
@@ -142,7 +148,7 @@ function resetVoucherPages() {
 }
 
 function changeVoucherPageSize(newSize) {
-  voucherPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 20);
+  voucherPageSize = newSize === 'ALL' ? Infinity : (parseInt(newSize, 10) || 15);
   document.querySelectorAll('.voucher-page-size-select').forEach(sel => {
     sel.value = newSize;
   });
@@ -292,6 +298,86 @@ function setCashierFilter(cashierVal) {
   applyVoucherFilters();
 }
 
+// Rows carry the sale date as DD/MM/YYYY; date inputs give YYYY-MM-DD, which compares as text
+function saleDateToIso(value) {
+  const parts = (value || '').trim().split('/');
+  return parts.length === 3 ? `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}` : '';
+}
+
+function readAmountInput(id) {
+  const raw = document.getElementById(id)?.value;
+  const num = parseFloat(raw);
+  return raw === '' || raw === undefined || isNaN(num) ? null : num;
+}
+
+function applyAdvancedFilters() {
+  activeDateFrom = document.getElementById('filterDateFrom')?.value || '';
+  activeDateTo = document.getElementById('filterDateTo')?.value || '';
+  activeAmountMin = readAmountInput('filterAmountMin');
+  activeAmountMax = readAmountInput('filterAmountMax');
+  resetVoucherPages();
+  applyVoucherFilters();
+}
+
+function clearAdvancedFilters() {
+  ['filterDateFrom', 'filterDateTo', 'filterAmountMin', 'filterAmountMax'].forEach(id => {
+    const input = document.getElementById(id);
+    if (input) input.value = '';
+  });
+  ['cashierFilterSelect', 'modalityFilterSelect'].forEach(id => {
+    const select = document.getElementById(id);
+    if (select) select.value = 'ALL';
+  });
+  activeCashierFilter = 'ALL';
+  activeModalityFilter = 'ALL';
+  applyAdvancedFilters();
+}
+
+function updateAdvancedFilterCount() {
+  const badge = document.getElementById('advancedFilterCount');
+  if (!badge) return;
+  const active = [
+    activeModalityFilter !== 'ALL',
+    activeDateFrom || activeDateTo,
+    activeCashierFilter !== 'ALL',
+    activeAmountMin !== null || activeAmountMax !== null,
+  ].filter(Boolean).length;
+  badge.textContent = active;
+  badge.classList.toggle('d-none', active === 0);
+  document.getElementById('btnAdvancedFilters')?.classList.toggle('active', active > 0);
+}
+
+// The panel is positioned "fixed" (so the card does not clip it), which keeps it on screen while the
+// page scrolls away from the button: close it once the page scrolls a bit, like a regular menu
+function initAdvancedFilterScrollClose() {
+  const btn = document.getElementById('btnAdvancedFilters');
+  if (!btn || !window.bootstrap || !window.bootstrap.Dropdown) return;
+  let scrollAtOpen = null;
+  btn.addEventListener('shown.bs.dropdown', () => { scrollAtOpen = window.scrollY; });
+  btn.addEventListener('hidden.bs.dropdown', () => { scrollAtOpen = null; });
+  window.addEventListener('scroll', () => {
+    if (scrollAtOpen !== null && Math.abs(window.scrollY - scrollAtOpen) > 40) {
+      window.bootstrap.Dropdown.getOrCreateInstance(btn).hide();
+    }
+  }, { passive: true });
+}
+
+// Limit the date pickers to the days present in the vouchers of this closing
+function initAdvancedFilterBounds() {
+  const dates = [...document.querySelectorAll('tr.voucher-row[data-date]')]
+    .map(row => saleDateToIso(row.getAttribute('data-date')))
+    .filter(Boolean)
+    .sort();
+  if (!dates.length) return;
+  ['filterDateFrom', 'filterDateTo'].forEach(id => {
+    const input = document.getElementById(id);
+    if (input) {
+      input.min = dates[0];
+      input.max = dates[dates.length - 1];
+    }
+  });
+}
+
 function clearVoucherSearch() {
   const input = document.getElementById('voucherSearchInput');
   if (input) {
@@ -321,7 +407,20 @@ function filterSingleTab(tbodyId, noMatchRowId, countBadgeId) {
     const matchesCashier = (activeCashierFilter === 'ALL') || (cashierAttr === activeCashierFilter);
     const matchesQuery = (!query) || rowText.includes(query);
 
-    if (matchesCard && matchesModality && matchesCashier && matchesQuery) {
+    const rowDate = saleDateToIso(row.getAttribute('data-date'));
+    const matchesDate = (!activeDateFrom && !activeDateTo) || (
+      rowDate !== ''
+      && (!activeDateFrom || rowDate >= activeDateFrom)
+      && (!activeDateTo || rowDate <= activeDateTo)
+    );
+    const rowAmount = parseFloat(row.getAttribute('data-tbk'));
+    const matchesAmount = (activeAmountMin === null && activeAmountMax === null) || (
+      !isNaN(rowAmount)
+      && (activeAmountMin === null || rowAmount >= activeAmountMin)
+      && (activeAmountMax === null || rowAmount <= activeAmountMax)
+    );
+
+    if (matchesCard && matchesModality && matchesCashier && matchesQuery && matchesDate && matchesAmount) {
       row.dataset.filterMatch = 'true';
       visibleCount++;
     } else {
@@ -357,6 +456,8 @@ function applyVoucherFilters() {
 
   const totalBadge = document.getElementById('visibleTotalBadge');
   if (totalBadge) totalBadge.textContent = totalVisible;
+
+  updateAdvancedFilterCount();
 }
 
 async function executeCommitToDatabase() {
@@ -425,10 +526,14 @@ function initVoucherTooltips() {
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
+    initAdvancedFilterBounds();
+    initAdvancedFilterScrollClose();
     applyVoucherFilters();
     initVoucherTooltips();
   });
 } else {
+  initAdvancedFilterBounds();
+  initAdvancedFilterScrollClose();
   applyVoucherFilters();
   initVoucherTooltips();
 }

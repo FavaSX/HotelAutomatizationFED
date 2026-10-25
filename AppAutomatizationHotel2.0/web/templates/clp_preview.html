@@ -4,81 +4,134 @@
 {% block module_subtitle %}Módulo Pesos (CLP){% endblock %}
 
 {% block content %}
-<!-- Top Header -->
-<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3 p-3 card-executive">
-  <div>
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div class="min-w-0">
     <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-      <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-1 rounded-pill fw-bold">
-        <i class="bi bi-eye-fill me-1"></i> Previsualización en Memoria (Borrador)
-      </span>
-      <span class="badge bg-light text-dark border px-3 py-1 rounded-pill">
-        <i class="bi bi-rulers me-1"></i> Tolerancia ±${{ preview.tolerance|num_clp }} CLP
-      </span>
+      <span class="eyebrow">Conciliación Pesos · Paso 2 de 3</span>
+      <span class="status-chip status-warning"><i class="bi bi-eye"></i>Borrador sin guardar</span>
+      <span class="status-chip status-neutral"><i class="bi bi-rulers"></i>Tolerancia ±${{ preview.tolerance|num_clp }} CLP</span>
     </div>
-    <h3 class="fw-bold mb-0">{{ preview.accounting_period }}</h3>
+    <h1 class="h4 fw-bold mb-1">{{ preview.accounting_period }}</h1>
+    <p class="text-muted small mb-0">Revisa el cruce antes de guardarlo. Nada se ha escrito en la base de datos todavía.</p>
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- 1. CARTOLA BANCARIA: VALIDACIÓN DE LOS 3 ABONOS TRANSBANK              -->
-<!-- ====================================================================== -->
-<div class="card card-executive p-4 mb-4">
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-    <h6 class="fw-bold text-uppercase text-muted small mb-0">
-      <i class="bi bi-bank2 text-primary me-2"></i> 1. Validación de Abonos en Cartola Bancaria
-      {% if preview.bank_account_number %}(Cta. {{ preview.bank_account_number }}){% endif %}
-    </h6>
-    {% if all_banks_matched %}
-    <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill fs-6">
-      <i class="bi bi-check-circle-fill me-1"></i> Los 3 Abonos Confirmados en Cartola
-    </span>
-    {% else %}
-    <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2 rounded-pill fs-6">
-      <i class="bi bi-exclamation-triangle-fill me-1"></i> Hay Abonos Pendientes en Cartola
-    </span>
-    {% endif %}
-  </div>
-
-  <div class="row g-3">
-    {% for bank in bank_validations %}
-    <div class="col-lg-4">
-      <div class="p-3 rounded-3 border h-100 {% if bank.is_matched %}bg-success-subtle border-success-subtle{% else %}bg-warning-subtle border-warning-subtle{% endif %}">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <span class="fw-bold text-uppercase small">{{ bank.modality_label }}</span>
-          {% if bank.is_matched %}
-          <span class="badge bg-success rounded-pill"><i class="bi bi-check2"></i> Cuadrado</span>
-          {% else %}
-          <span class="badge bg-danger rounded-pill"><i class="bi bi-x"></i> Pendiente</span>
-          {% endif %}
+<!-- KPI row -->
+<div class="row g-3 mb-3">
+  <div class="col-lg-5">
+    <div class="card-hero-gold p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start gap-3">
+        <div>
+          <div class="kpi-label">Conciliación automática</div>
+          <div class="stat-value accent mt-1">{{ match_rate }}%</div>
         </div>
-        <small class="text-muted d-block">Abono TBK ({{ bank.settlement_date|default:"sin fecha" }})</small>
-        <div class="fs-4 fw-bold text-dark">${{ bank.calculated_deposit|num_clp }}</div>
-        <small class="text-muted d-block">
-          Ventas ${{ bank.total_sales|num_clp }} − Comisión ${{ bank.commission|num_clp }} − IVA ${{ bank.commission_vat|num_clp }}
-        </small>
-        <hr class="my-2">
-        <small class="text-muted d-block">Cartola ({{ bank.bank_movement_date|default:"No detectado" }})</small>
-        <div class="fs-5 fw-bold {% if bank.is_matched %}text-success{% else %}text-danger{% endif %}">${{ bank.bank_deposit_amount|num_clp }}</div>
-        <small class="text-muted d-block text-truncate" title="{{ bank.bank_description }}">{{ bank.bank_description|default:"Sin movimiento Transbank equivalente" }}</small>
-        <small class="fw-semibold">Diferencia: ${{ bank.difference|num_clp }}</small>
+        <div class="text-end">
+          <div class="kpi-label">Vouchers Transbank</div>
+          <div class="stat-value mt-1">{{ counts.total }}</div>
+        </div>
+      </div>
+      <div class="meter meter-lg mt-3" role="img" aria-label="{{ counts.matched }} ubicadas, {{ counts.discrepancies }} con diferencia, {{ counts.orphans }} no están en el Borderó, {{ counts.out_of_period }} fuera de período">
+        <span class="meter-seg meter-success" style="flex: {{ counts.matched|default:0|unlocalize }};" title="{{ counts.matched }} ubicadas"></span>
+        <span class="meter-seg meter-warning" style="flex: {{ counts.discrepancies|default:0|unlocalize }};" title="{{ counts.discrepancies }} con diferencia"></span>
+        <span class="meter-seg meter-danger" style="flex: {{ counts.orphans|default:0|unlocalize }};" title="{{ counts.orphans }} no están en el Borderó"></span>
+        <span class="meter-seg meter-neutral" style="flex: {{ counts.out_of_period|default:0|unlocalize }};" title="{{ counts.out_of_period }} fuera de período"></span>
+      </div>
+      <div class="meter-legend mt-3">
+        <button type="button" class="legend-item" data-tab-target="#tabMatched">
+          <span class="legend-dot meter-success"></span>Ubicadas <strong>{{ counts.matched }}</strong>
+        </button>
+        <button type="button" class="legend-item" data-tab-target="#tabDiscrepancies">
+          <span class="legend-dot meter-warning"></span>Con diferencia <strong>{{ counts.discrepancies }}</strong>
+        </button>
+        <button type="button" class="legend-item" data-tab-target="#tabOrphans">
+          <span class="legend-dot meter-danger"></span>No están en Borderó <strong>{{ counts.orphans }}</strong>
+        </button>
+        <button type="button" class="legend-item" data-tab-target="#tabOutOfPeriod">
+          <span class="legend-dot meter-neutral"></span>Fuera de período <strong>{{ counts.out_of_period }}</strong>
+        </button>
       </div>
     </div>
-    {% endfor %}
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="kpi-label">Diferencia total</div>
+        <div class="icon-square icon-square-navy"><i class="bi bi-arrow-left-right"></i></div>
+      </div>
+      <div class="stat-value {% if clp_totals.difference %}text-danger-soft{% endif %}" style="font-size: 1.6rem;">
+        {% if clp_totals.difference < 0 %}-{% endif %}${{ clp_totals.difference|num_clp|cut:"-" }}
+      </div>
+      <div class="small text-muted mt-1">Transbank vs. Borderó</div>
+      <div class="small mt-2 pt-2 border-top-soft d-flex justify-content-between">
+        <span class="text-muted">Comisión + IVA</span>
+        <strong class="text-nowrap">${{ clp_totals.commissions|num_clp }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-4">
+    <div class="card-hero-navy p-4 h-100">
+      <div class="kpi-label on-navy">Abonos en cartola · Transbank</div>
+      <div class="d-flex align-items-center gap-2 mt-2">
+        {% if all_banks_matched %}
+        <i class="bi bi-patch-check-fill fs-4" style="color: #86EFAC;"></i>
+        <span class="stat-value on-navy" style="font-size: 1.45rem;">Confirmados</span>
+        {% else %}
+        <i class="bi bi-exclamation-octagon-fill fs-4" style="color: #FCA5A5;"></i>
+        <span class="stat-value on-navy" style="font-size: 1.45rem;">{{ bank_summary.matched }} de {{ bank_summary.total }} cuadrados</span>
+        {% endif %}
+      </div>
+      <dl class="bank-dl small mt-3 mb-0">
+        <div><dt>Calculado Transbank</dt><dd>${{ bank_summary.calculated|num_clp }}</dd></div>
+        <div><dt>En cartola</dt><dd>${{ bank_summary.deposited|num_clp }}</dd></div>
+        {% if preview.bank_account_number %}<div><dt>Cuenta</dt><dd class="font-mono">{{ preview.bank_account_number }}</dd></div>{% endif %}
+      </dl>
+    </div>
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- 2. CUADRATURA POR MEDIO DE PAGO (TRANSBANK VS BORDERÓ)                  -->
-<!-- ====================================================================== -->
-<div class="card card-executive mb-4">
-  <div class="card-header border-bottom py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-    <h6 class="fw-bold mb-0">
-      <i class="bi bi-cash-stack text-success me-1"></i> 2. Cuadratura por Medio de Pago (Transbank vs. Borderó)
-    </h6>
-    <small class="text-muted">
-      Borderó principal: {{ preview.bordero_period.start|default:"—" }} al {{ preview.bordero_period.end|default:"—" }}
-    </small>
+<!-- Transbank deposits by payment medium (Crédito / Débito / Prepago) -->
+<div class="row g-3 mb-3">
+  {% for bank in bank_validations %}
+  <div class="col-md-4">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div class="kpi-label">Abono {{ bank.modality_label }}</div>
+        {% if bank.is_matched %}
+        <span class="status-chip status-success"><i class="bi bi-check2"></i>Cuadrado</span>
+        {% else %}
+        <span class="status-chip status-danger"><i class="bi bi-x"></i>Pendiente</span>
+        {% endif %}
+      </div>
+      <div class="stat-value" style="font-size: 1.45rem;">${{ bank.calculated_deposit|num_clp }}</div>
+      <div class="small text-muted mt-1">
+        Abono TBK ({{ bank.settlement_date|default:"sin fecha" }}): ventas ${{ bank.total_sales|num_clp }} − comisión ${{ bank.commission|num_clp }} − IVA ${{ bank.commission_vat|num_clp }}
+      </div>
+      <div class="small mt-2 pt-2 border-top-soft d-flex justify-content-between gap-2">
+        <span class="text-muted">En cartola ({{ bank.bank_movement_date|default:"no detectado" }})</span>
+        <strong class="text-nowrap {% if bank.is_matched %}text-success{% else %}text-danger-soft{% endif %}">${{ bank.bank_deposit_amount|num_clp }}</strong>
+      </div>
+      <div class="small d-flex justify-content-between gap-2">
+        <span class="text-muted text-truncate" title="{{ bank.bank_description }}">{{ bank.bank_description|default:"Sin movimiento Transbank equivalente" }}</span>
+        <span class="text-nowrap">Dif. ${{ bank.difference|num_clp }}</span>
+      </div>
+    </div>
   </div>
+  {% endfor %}
+</div>
+
+<!-- Squaring by payment medium (Transbank vs. Borderó) -->
+<div class="card card-executive mb-3">
+  <header class="panel-head py-3 flex-wrap">
+    <div>
+      <h2 class="panel-title fs-6 mb-0">
+        <i class="bi bi-cash-stack text-success me-1"></i> Cuadratura por Medio de Pago (Transbank vs. Borderó)
+      </h2>
+      <p class="panel-sub">Borderó principal: {{ preview.bordero_period.start|default:"—" }} al {{ preview.bordero_period.end|default:"—" }}</p>
+    </div>
+  </header>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light small text-uppercase text-muted">
@@ -132,96 +185,97 @@
   </div>
 </div>
 
-<!-- ====================================================================== -->
-<!-- 3. PESTAÑAS DE VOUCHERS                                                -->
-<!-- ====================================================================== -->
+<!-- Voucher detail -->
 <div class="card card-executive mb-4" id="voucherSectionCard">
-  <div class="card-header border-bottom pt-3 pb-0 px-4 d-flex flex-wrap justify-content-between align-items-center">
-    <ul class="nav nav-tabs border-bottom-0 gap-2" id="previewTabs" role="tablist">
-      <li class="nav-item">
-        <button class="nav-link active fw-bold text-success" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button">
-          <i class="bi bi-check2-all me-1"></i> Ubicadas Exactas (<span id="countBadgeMatched">{{ counts.matched }}</span>)
+  <div class="card-header panel-head flex-wrap">
+    <div>
+      <h2 class="panel-title">Detalle de vouchers</h2>
+      <p class="panel-sub">Mostrando <strong id="visibleTotalBadge">{{ counts.total }}</strong> de {{ counts.total }} vouchers de Transbank</p>
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <div class="segmented" id="previewTabs" role="tablist">
+        <button class="segmented-item active" data-bs-toggle="tab" data-bs-target="#tabMatched" type="button" role="tab">
+          <span class="legend-dot meter-success"></span>Ubicadas <span class="segmented-count" id="countBadgeMatched">{{ counts.matched }}</span>
         </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold text-warning-emphasis" data-bs-toggle="tab" data-bs-target="#tabDiscrepancies" type="button">
-          <i class="bi bi-shuffle me-1"></i> Con Diferencia (<span id="countBadgeDiscrepancies">{{ counts.discrepancies }}</span>)
+        <button class="segmented-item" data-bs-toggle="tab" data-bs-target="#tabDiscrepancies" type="button" role="tab">
+          <span class="legend-dot meter-warning"></span>Con diferencia <span class="segmented-count" id="countBadgeDiscrepancies">{{ counts.discrepancies }}</span>
         </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold text-danger" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button">
-          <i class="bi bi-exclamation-octagon me-1"></i> En TBK pero NO en Borderó (<span id="countBadgeOrphans">{{ counts.orphans }}</span>)
+        <button class="segmented-item" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button" role="tab">
+          <span class="legend-dot meter-danger"></span>No están en Borderó <span class="segmented-count" id="countBadgeOrphans">{{ counts.orphans }}</span>
         </button>
-      </li>
-      <li class="nav-item">
-        <button class="nav-link fw-bold text-secondary" data-bs-toggle="tab" data-bs-target="#tabOutOfPeriod" type="button">
-          <i class="bi bi-calendar-x me-1"></i> Fuera de Período (<span id="countBadgeOutOfPeriod">{{ counts.out_of_period }}</span>)
+        <button class="segmented-item" data-bs-toggle="tab" data-bs-target="#tabOutOfPeriod" type="button" role="tab">
+          <span class="legend-dot meter-neutral"></span>Fuera de período <span class="segmented-count" id="countBadgeOutOfPeriod">{{ counts.out_of_period }}</span>
         </button>
-      </li>
-    </ul>
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-      <span class="badge bg-light text-dark border">
-        Mostrando: <strong id="visibleTotalBadge">{{ counts.total }}</strong> de <strong>{{ counts.total }} vouchers</strong>
-      </span>
+      </div>
       <button type="button" id="btnToggleFullscreen" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold shadow-xs" onclick="toggleFullscreenTable()" title="Modo Pantalla Completa (Maximizar espacio de trabajo)">
         <i class="bi bi-arrows-fullscreen me-1" id="iconFullscreen"></i><span id="textFullscreen">Pantalla Completa</span>
       </button>
     </div>
   </div>
 
-  <!-- Barra de búsqueda instantánea, filtro por medio de pago y cajero -->
-  <div class="bg-light border-bottom px-4 py-3 d-flex flex-wrap justify-content-start align-items-center gap-3" id="voucherToolbar">
-    <div class="position-relative flex-grow-1 voucher-search-wrapper">
-      <i class="bi bi-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-      <input type="text" id="voucherSearchInput" class="form-control form-control-sm rounded-pill ps-5 pe-5 py-2 border-secondary-subtle shadow-none"
-             placeholder="Buscar por voucher TBK, código Borderó, cuenta, factura, cajero..."
-             oninput="applyVoucherFilters()">
-      <button type="button" id="btnClearVoucherSearch" class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-2 py-0 px-2 text-muted d-none"
-              onclick="clearVoucherSearch()" title="Limpiar búsqueda">
+  <div class="toolbar" id="voucherToolbar">
+    <div class="search-field">
+      <i class="bi bi-search"></i>
+      <input type="text" id="voucherSearchInput" class="form-control form-control-sm"
+             placeholder="Buscar voucher, código Borderó, cuenta, factura, cajero…"
+             oninput="applyVoucherFilters()" aria-label="Buscar vouchers">
+      <button type="button" id="btnClearVoucherSearch" class="search-clear d-none" onclick="clearVoucherSearch()" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">
         <i class="bi bi-x-circle-fill"></i>
       </button>
     </div>
-
-    <div class="vr d-none d-md-block text-secondary opacity-25 my-1"></div>
-
-    <div class="d-flex flex-wrap align-items-center gap-1" id="cardBrandFilterGroup">
-      <span class="text-muted small fw-semibold me-1"><i class="bi bi-credit-card-2-front me-1"></i>Tarjeta:</span>
-      <button type="button" class="btn btn-sm btn-dark rounded-pill px-3 card-filter-btn active" data-card="ALL" onclick="setCardBrandFilter('ALL', this)">Todas</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="VISA" onclick="setCardBrandFilter('VISA', this)">Visa</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="MASTERCARD" onclick="setCardBrandFilter('MASTERCARD', this)">MasterCard</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="AMERICAN" onclick="setCardBrandFilter('AMERICAN', this)">Amex</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="DINERS" onclick="setCardBrandFilter('DINERS', this)">Diners</button>
-      <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 card-filter-btn" data-card="REDCOMPRA" onclick="setCardBrandFilter('REDCOMPRA', this)">Redcompra</button>
+    <div class="chip-group" id="cardBrandFilterGroup" role="group" aria-label="Filtrar por tarjeta">
+      <button type="button" class="filter-chip card-filter-btn active" data-card="ALL" onclick="setCardBrandFilter('ALL', this)">Todas</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="VISA" onclick="setCardBrandFilter('VISA', this)">Visa</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="MASTERCARD" onclick="setCardBrandFilter('MASTERCARD', this)">MasterCard</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="AMERICAN" onclick="setCardBrandFilter('AMERICAN', this)">Amex</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="DINERS" onclick="setCardBrandFilter('DINERS', this)">Diners</button>
+      <button type="button" class="filter-chip card-filter-btn" data-card="REDCOMPRA" onclick="setCardBrandFilter('REDCOMPRA', this)">Redcompra</button>
     </div>
-
-    <div class="vr d-none d-md-block text-secondary opacity-25 my-1"></div>
-
-    <!-- Filtro por Medio (Dropdown) -->
-    <div class="d-flex align-items-center gap-2" id="cardModalityFilterGroup">
-      <label for="modalityFilterSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
-        <i class="bi bi-funnel me-1"></i>Medio:
-      </label>
-      <select id="modalityFilterSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 140px;" onchange="setModalityFilter(this.value)">
-        <option value="ALL" selected>Todos los medios</option>
-        <option value="CRÉDITO">Crédito</option>
-        <option value="DÉBITO">Débito</option>
-        <option value="PREPAGO">Prepago</option>
-      </select>
-    </div>
-
-    <div class="vr d-none d-md-block text-secondary opacity-25 my-1"></div>
-
-    <!-- Filtro por Cajero -->
-    <div class="d-flex align-items-center gap-2" id="cashierFilterGroup">
-      <label for="cashierFilterSelect" class="small text-muted fw-semibold mb-0 text-nowrap">
-        <i class="bi bi-person-badge me-1"></i>Cajero:
-      </label>
-      <select id="cashierFilterSelect" class="form-select form-select-sm rounded-pill" style="width: auto; min-width: 150px;" onchange="setCashierFilter(this.value)">
-        <option value="ALL" selected>Todos los cajeros</option>
-        {% for c in cashiers %}
-        <option value="{{ c }}">{{ c }}</option>
-        {% endfor %}
-      </select>
+    <!-- Filtros: medio de pago, fecha de venta, cajero y monto Transbank -->
+    <div class="dropdown" id="advancedFilterGroup">
+      <button type="button" id="btnAdvancedFilters" class="filter-chip dropdown-toggle"
+              data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+              data-bs-popper-config='{"strategy":"fixed"}'>
+        <i class="bi bi-funnel me-1"></i>Filtros
+        <span class="segmented-count ms-1 d-none" id="advancedFilterCount">0</span>
+      </button>
+      <div class="dropdown-menu dropdown-menu-end filters-menu" aria-labelledby="btnAdvancedFilters">
+        <div class="filters-menu-section">
+          <label for="modalityFilterSelect" class="filters-menu-label"><i class="bi bi-credit-card-2-front me-1"></i>Medio de pago</label>
+          <select id="modalityFilterSelect" class="form-select form-select-sm" onchange="setModalityFilter(this.value)">
+            <option value="ALL" selected>Todos los medios</option>
+            <option value="CRÉDITO">Crédito</option>
+            <option value="DÉBITO">Débito</option>
+            <option value="PREPAGO">Prepago</option>
+          </select>
+        </div>
+        <div class="filters-menu-section">
+          <div class="filters-menu-label"><i class="bi bi-calendar3 me-1"></i>Fecha de venta</div>
+          <div class="d-flex gap-2">
+            <input type="date" id="filterDateFrom" class="form-control form-control-sm" aria-label="Fecha desde" onchange="applyAdvancedFilters()">
+            <input type="date" id="filterDateTo" class="form-control form-control-sm" aria-label="Fecha hasta" onchange="applyAdvancedFilters()">
+          </div>
+        </div>
+        <div class="filters-menu-section">
+          <label for="cashierFilterSelect" class="filters-menu-label"><i class="bi bi-person-badge me-1"></i>Cajero</label>
+          <select id="cashierFilterSelect" class="form-select form-select-sm" onchange="setCashierFilter(this.value)">
+            <option value="ALL" selected>Todos los cajeros</option>
+            {% for c in cashiers %}
+            <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filters-menu-section">
+          <div class="filters-menu-label"><i class="bi bi-cash-stack me-1"></i>Monto Transbank ($)</div>
+          <div class="d-flex gap-2">
+            <input type="number" id="filterAmountMin" class="form-control form-control-sm" placeholder="Desde" min="0" step="1" aria-label="Monto desde" oninput="applyAdvancedFilters()">
+            <input type="number" id="filterAmountMax" class="form-control form-control-sm" placeholder="Hasta" min="0" step="1" aria-label="Monto hasta" oninput="applyAdvancedFilters()">
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill w-100" onclick="clearAdvancedFilters()">
+          <i class="bi bi-x-circle me-1"></i>Limpiar filtros
+        </button>
+      </div>
     </div>
   </div>
 
@@ -248,6 +302,7 @@
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }} {% if item.payment_modality != 'CREDIT' %}REDCOMPRA{% endif %}"
                 data-modality="{{ item.modality_label|upper }}"
+                data-date="{{ item.sale_date|default:'' }}"
                 data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.tbk_amount|unlocalize }}"
                 data-erp="{{ item.erp_amount|unlocalize }}"
@@ -358,6 +413,7 @@
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }} {% if item.payment_modality != 'CREDIT' %}REDCOMPRA{% endif %}"
                 data-modality="{{ item.modality_label|upper }}"
+                data-date="{{ item.sale_date|default:'' }}"
                 data-cashier="{{ item.cashier_username|default:''|upper }}"
                 data-tbk="{{ item.tbk_amount|unlocalize }}"
                 data-erp="{{ item.erp_amount|unlocalize }}"
@@ -445,6 +501,7 @@
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }} {% if item.payment_modality != 'CREDIT' %}REDCOMPRA{% endif %}"
                 data-modality="{{ item.modality_label|upper }}"
+                data-date="{{ item.sale_date|default:'' }}"
                 data-cashier="{% if item.suggestion %}{{ item.suggestion.erp_row.cashier_username|default:''|upper }}{% endif %}"
                 data-tbk="{{ item.tbk_amount|unlocalize }}">
               <td class="ps-4 fw-bold font-monospace text-danger">{{ item.authorization_code }}</td>
@@ -512,6 +569,7 @@
             <tr class="voucher-row"
                 data-card="{{ item.card_name|upper }} {% if item.payment_modality != 'CREDIT' %}REDCOMPRA{% endif %}"
                 data-modality="{{ item.modality_label|upper }}"
+                data-date="{{ item.sale_date|default:'' }}"
                 data-cashier="{% if item.suggestion %}{{ item.suggestion.erp_row.cashier_username|default:''|upper }}{% endif %}"
                 data-tbk="{{ item.tbk_amount|unlocalize }}">
               <td class="ps-4 fw-bold font-monospace text-secondary">{{ item.authorization_code }}</td>
@@ -569,6 +627,17 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_preview.js' %}?v=25"></script>
+<script src="{% static 'js/usd_preview.js' %}?v=29"></script>
 <script src="{% static 'js/clp_preview.js' %}?v=7"></script>
+<script>
+  // Clicking a legend item under the KPI meter opens that voucher tab
+  document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      const tabBtn = document.querySelector('#previewTabs [data-bs-target="' + item.dataset.tabTarget + '"]');
+      if (!tabBtn) return;
+      bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+      document.getElementById('voucherSectionCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+</script>
 {% endblock %}
