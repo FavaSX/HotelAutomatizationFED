@@ -18,6 +18,7 @@ const USD_ROLE_INPUT_MAP = {
 let bulkUploadedFiles = [];
 let latestDetectionReport = null;
 let extraErpIndices = new Set();
+let extraTbkIndices = new Set();
 
 function getUploadForm() {
   return document.querySelector('form[data-detect-url]');
@@ -122,11 +123,18 @@ function renderAlignmentTable(data) {
   const tbody = document.getElementById('alignmentTableBody');
   tbody.innerHTML = '';
   extraErpIndices.clear();
+  extraTbkIndices.clear();
 
   // Prepopulate extra ERP files detected
   const erpRole = data.aligned_roles.find(r => r.role_key === 'erp');
   if (erpRole && erpRole.extra_files && Array.isArray(erpRole.extra_files)) {
     erpRole.extra_files.forEach(ef => extraErpIndices.add(ef.file_index));
+  }
+
+  // Prepopulate extra TBK files detected
+  const tbkRole = data.aligned_roles.find(r => r.role_key === 'tbk');
+  if (tbkRole && tbkRole.extra_files && Array.isArray(tbkRole.extra_files)) {
+    tbkRole.extra_files.forEach(ef => extraTbkIndices.add(ef.file_index));
   }
 
   data.aligned_roles.forEach(role => {
@@ -141,33 +149,7 @@ function renderAlignmentTable(data) {
 
     const badgeHtml = getConfidenceBadgeHtml(role.confidence);
 
-    if (role.role_key !== 'erp') {
-      tr.innerHTML = `
-        <td class="ps-3 py-3">
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge ${role.badge_class}">${role.badge}</span>
-            <span class="fw-bold text-dark">${role.role_label}</span>
-          </div>
-        </td>
-        <td class="py-3">
-          <div class="d-flex align-items-center gap-2">
-            <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
-              ${optionsHtml}
-            </select>
-            <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir un archivo nuevo directamente para este rol">
-              <i class="bi bi-upload me-1"></i>Subir
-              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
-            </label>
-          </div>
-        </td>
-        <td class="py-3 text-muted" id="evidence_${role.role_key}">
-          <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
-        </td>
-        <td class="text-center pe-3 py-3" id="confidence_${role.role_key}">
-          ${badgeHtml}
-        </td>
-      `;
-    } else {
+    if (role.role_key === 'erp') {
       // ERP Role: Primary file select + Extra files container
       tr.innerHTML = `
         <td class="ps-3 py-3 align-top">
@@ -198,11 +180,69 @@ function renderAlignmentTable(data) {
           ${badgeHtml}
         </td>
       `;
+    } else if (role.role_key === 'tbk') {
+      // TBK Role: Primary file select + Extra files container (allows consolidated or multiple separate modality files)
+      tr.innerHTML = `
+        <td class="ps-3 py-3 align-top">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge ${role.badge_class}">${role.badge}</span>
+            <span class="fw-bold text-dark">${role.role_label}</span>
+          </div>
+          <small class="text-muted d-block mt-1">Soporta 1 consolidado o varios archivos</small>
+        </td>
+        <td class="py-3">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
+              ${optionsHtml}
+            </select>
+            <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir archivo principal Transbank">
+              <i class="bi bi-upload me-1"></i>Subir
+              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
+            </label>
+          </div>
+          <div id="extraTbkContainer" class="p-2 bg-light border rounded-3">
+            <!-- Rendered by renderExtraTbkWidgets() -->
+          </div>
+        </td>
+        <td class="py-3 text-muted align-top" id="evidence_${role.role_key}">
+          <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
+        </td>
+        <td class="text-center pe-3 py-3 align-top" id="confidence_${role.role_key}">
+          ${badgeHtml}
+        </td>
+      `;
+    } else {
+      tr.innerHTML = `
+        <td class="ps-3 py-3">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge ${role.badge_class}">${role.badge}</span>
+            <span class="fw-bold text-dark">${role.role_label}</span>
+          </div>
+        </td>
+        <td class="py-3">
+          <div class="d-flex align-items-center gap-2">
+            <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
+              ${optionsHtml}
+            </select>
+            <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir un archivo nuevo directamente para este rol">
+              <i class="bi bi-upload me-1"></i>Subir
+              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
+            </label>
+          </div>
+        </td>
+        <td class="py-3 text-muted" id="evidence_${role.role_key}">
+          <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
+        </td>
+        <td class="text-center pe-3 py-3" id="confidence_${role.role_key}">
+          ${badgeHtml}
+        </td>
+      `;
     }
     tbody.appendChild(tr);
   });
 
   renderExtraErpWidgets();
+  renderExtraTbkWidgets();
   document.getElementById('expPhase2Alignment').classList.remove('d-none');
   validateCurrentAlignmentSelection();
 }
@@ -267,6 +307,7 @@ function renderExtraErpWidgets() {
 function removeExtraErpFile(fileIndex) {
   extraErpIndices.delete(fileIndex);
   renderExtraErpWidgets();
+  renderExtraTbkWidgets();
   validateCurrentAlignmentSelection();
 }
 
@@ -311,6 +352,111 @@ async function uploadExtraErpFile(inputElem) {
     alert('Error al subir el archivo ERP adicional: ' + err);
   }
 }
+
+function renderExtraTbkWidgets() {
+  const container = document.getElementById('extraTbkContainer');
+  if (!container || !latestDetectionReport) return;
+
+  const primaryTbkSelect = document.getElementById('select_tbk');
+  const primaryIdx = primaryTbkSelect && primaryTbkSelect.value !== '' ? parseInt(primaryTbkSelect.value, 10) : null;
+
+  let chipsHtml = '';
+  let extraRowsTotal = 0;
+  extraTbkIndices.forEach(idx => {
+    const f = latestDetectionReport.inspected_files[idx];
+    if (f) {
+      extraRowsTotal += (f.row_count || 0);
+      chipsHtml += `
+        <span class="badge bg-white text-dark border px-2 py-1 d-inline-flex align-items-center gap-1 shadow-sm">
+          <i class="bi bi-file-earmark-excel text-info"></i>
+          <span>${f.file_name} (${f.row_count} filas)</span>
+          <a href="javascript:void(0)" class="text-danger ms-1 text-decoration-none fw-bold" onclick="removeExtraTbkFile(${idx})" title="Quitar">&times;</a>
+        </span>
+      `;
+    }
+  });
+
+  const availableCandidates = latestDetectionReport.inspected_files.filter(f => 
+    f.file_index !== primaryIdx && !extraTbkIndices.has(f.file_index) && !extraErpIndices.has(f.file_index) && (f.row_count || 0) > 0
+  );
+
+  let addSelectOptions = '<option value="">+ Agregar archivo Transbank del lote...</option>';
+  availableCandidates.forEach(f => {
+    addSelectOptions += `<option value="${f.file_index}">${f.file_name} (${f.row_count} filas)</option>`;
+  });
+
+  container.innerHTML = `
+    <div class="d-flex align-items-center justify-content-between mb-1">
+      <small class="fw-bold text-secondary">
+        <i class="bi bi-collection text-info me-1"></i>Archivos Transbank Adicionales (${extraTbkIndices.size})
+      </small>
+      ${extraRowsTotal > 0 ? `<small class="text-info fw-semibold">+ ${extraRowsTotal} filas adicionales</small>` : ''}
+    </div>
+    <div class="d-flex flex-wrap gap-1 align-items-center mb-2">
+      ${chipsHtml || '<small class="text-muted fst-italic">Ningún archivo Transbank adicional asignado</small>'}
+    </div>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      ${availableCandidates.length > 0 ? `
+        <select class="form-select form-select-sm w-auto" style="max-width: 260px;" onchange="addExtraTbkFileFromSelect(this)">
+          ${addSelectOptions}
+        </select>
+      ` : ''}
+      <label class="btn btn-outline-secondary btn-sm rounded-pill px-2 py-1 mb-0" style="font-size:0.75rem;" title="Subir otro archivo Transbank (Crédito, Débito o Prepago)">
+        <i class="bi bi-file-earmark-plus me-1 text-info"></i>Subir otro TBK
+        <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadExtraTbkFile(this)">
+      </label>
+    </div>
+  `;
+}
+
+function removeExtraTbkFile(fileIndex) {
+  extraTbkIndices.delete(fileIndex);
+  renderExtraTbkWidgets();
+  validateCurrentAlignmentSelection();
+}
+
+function addExtraTbkFileFromSelect(selectElem) {
+  if (!selectElem.value) return;
+  const idx = parseInt(selectElem.value, 10);
+  extraTbkIndices.add(idx);
+  renderExtraTbkWidgets();
+  validateCurrentAlignmentSelection();
+}
+
+async function uploadExtraTbkFile(inputElem) {
+  if (!inputElem.files || inputElem.files.length === 0) return;
+  const singleFile = inputElem.files[0];
+  inputElem.value = '';
+
+  const formData = new FormData();
+  formData.append('bulk_files', singleFile);
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+  try {
+    const response = await fetch(getDetectFilesUrl(), {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: formData
+    });
+    const data = await response.json();
+    if (!response.ok || !data.inspected_files || data.inspected_files.length === 0) {
+      alert(data.error || 'No se pudo analizar el archivo.');
+      return;
+    }
+    const newFileIndex = bulkUploadedFiles.length;
+    bulkUploadedFiles.push(singleFile);
+    const inspected = data.inspected_files[0];
+    inspected.file_index = newFileIndex;
+    latestDetectionReport.inspected_files.push(inspected);
+
+    extraTbkIndices.add(newFileIndex);
+    renderExtraTbkWidgets();
+    validateCurrentAlignmentSelection();
+  } catch (err) {
+    alert('Error al subir el archivo Transbank adicional: ' + err);
+  }
+}
+
 
 async function uploadSingleFileForRole(roleKey, inputElem) {
   if (!inputElem.files || inputElem.files.length === 0) return;
@@ -400,9 +546,14 @@ function validateCurrentAlignmentSelection() {
 
   if (chosenIndices.length === required && uniqueIndices.size === required) {
     const extraCount = extraErpIndices.size;
-    const extraNote = extraCount > 0
-      ? `<div class="mt-1 text-dark"><i class="bi bi-layers-half text-primary me-1"></i><strong>Archivos ERP adicionales incluidos para consolidación y cruce de turnos:</strong> ${Array.from(extraErpIndices).map(idx => latestDetectionReport.inspected_files[idx]?.file_name).filter(Boolean).join(', ')}</div>`
-      : '';
+    let extraNotes = [];
+    if (extraErpIndices.size > 0) {
+      extraNotes.push(`<div class="mt-1 text-dark"><i class="bi bi-layers-half text-primary me-1"></i><strong>Archivos ERP adicionales:</strong> ${Array.from(extraErpIndices).map(idx => latestDetectionReport.inspected_files[idx]?.file_name).filter(Boolean).join(', ')}</div>`);
+    }
+    if (extraTbkIndices.size > 0) {
+      extraNotes.push(`<div class="mt-1 text-dark"><i class="bi bi-collection text-info me-1"></i><strong>Archivos Transbank adicionales (Crédito/Débito/Prepago):</strong> ${Array.from(extraTbkIndices).map(idx => latestDetectionReport.inspected_files[idx]?.file_name).filter(Boolean).join(', ')}</div>`);
+    }
+    const extraNote = extraNotes.join('');
     alertBox.className = 'alert alert-success rounded-4 mb-3 py-2 px-3 small d-flex align-items-center justify-content-between';
     alertBox.innerHTML = `
       <div>
@@ -428,6 +579,7 @@ function resetExperimentalFiles() {
   bulkUploadedFiles = [];
   latestDetectionReport = null;
   extraErpIndices.clear();
+  extraTbkIndices.clear();
   document.getElementById('bulkFilesInput').value = '';
   document.getElementById('expPhase2Alignment').classList.add('d-none');
   document.getElementById('expScanningSpinner').classList.add('d-none');
@@ -464,6 +616,18 @@ function confirmAlignmentAndSubmit() {
       }
     });
     extraErpInput.files = extraDt.files;
+  }
+
+  // Populate extra Transbank files (CLP)
+  const extraTbkInput = document.getElementById('input_clp_extra_tbk');
+  if (extraTbkInput) {
+    const extraTbkDt = new DataTransfer();
+    extraTbkIndices.forEach(idx => {
+      if (bulkUploadedFiles[idx] && !chosenSet.has(String(idx))) {
+        extraTbkDt.items.add(bulkUploadedFiles[idx]);
+      }
+    });
+    extraTbkInput.files = extraTbkDt.files;
   }
 
   showProcessingOverlay();

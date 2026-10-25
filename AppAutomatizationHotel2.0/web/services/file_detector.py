@@ -180,10 +180,10 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
             used_file_indices.add(matched_info["file_index"])
             extra_files_info = []
 
-            # ONLY the ERP role allows grouping multiple files:
-            if role_key == "erp":
+            # ERP and TBK roles permit grouping multiple files (e.g. shifts, multi-day, auxiliary borderos, or separate TBK modalities):
+            if role_key in ("erp", "tbk"):
                 for extra in candidates[1:]:
-                    if extra.get("confidence") == "HIGH" and extra.get("row_count", 0) > 0:
+                    if extra.get("confidence") in ("HIGH", "MEDIUM") and extra.get("row_count", 0) > 0:
                         used_file_indices.add(extra["file_index"])
                         extra_files_info.append({
                             "file_index": extra["file_index"],
@@ -231,25 +231,21 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
 CLP_REQUIRED_ROLES: List[Dict[str, str]] = [
     {"role_key": "erp", "input_name": "clp_erp_file", "role_label": "1. Borderó ERP Hotel", "badge": "ERP", "badge_class": "bg-primary"},
     {"role_key": "bank", "input_name": "clp_bank_file", "role_label": "2. Cartola Bancaria (Pesos)", "badge": "BANCO", "badge_class": "bg-success"},
-    {"role_key": "tbk_credit", "input_name": "clp_tbk_credit_file", "role_label": "3. Abono Transbank Crédito", "badge": "TBK", "badge_class": "bg-info text-dark"},
-    {"role_key": "tbk_debit", "input_name": "clp_tbk_debit_file", "role_label": "4. Abono Transbank Débito", "badge": "TBK", "badge_class": "bg-info text-dark"},
-    {"role_key": "tbk_prepaid", "input_name": "clp_tbk_prepaid_file", "role_label": "5. Abono Transbank Prepago", "badge": "TBK", "badge_class": "bg-info text-dark"},
+    {"role_key": "tbk", "input_name": "clp_tbk_file", "role_label": "3. Abono(s) Transbank CLP", "badge": "TBK", "badge_class": "bg-info text-dark"},
 ]
 
-CLP_TBK_MEDIUM_ROLES = {"credito": "tbk_credit", "debito": "tbk_debit", "prepago": "tbk_prepaid"}
-
 CLP_FILENAME_FALLBACKS = [
-    ("tbk_credit", ("credito",)),
-    ("tbk_debit", ("debito",)),
-    ("tbk_prepaid", ("prepago",)),
-    ("bank", ("cartola", "banco")),
+    ("tbk", ("abono", "tbk", "transbank", "credito", "debito", "prepago")),
+    ("bank", ("cartola", "banco", "chile", "estado")),
+    ("erp", ("bordero", "cargos", "frontoffice")),
 ]
 
 
 def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
     """
-    Reads the first rows of an uploaded Excel file and classifies it as one of the 5 CLP roles.
-    The 3 Transbank settlements share the same layout; only the 'Medio de pago' cell tells them apart.
+    Reads the first rows of an uploaded Excel file and classifies it as one of the 3 CLP roles.
+    Transbank files (whether 1 consolidated 'Todos los medios de pago' or separate Crédito, Débito, Prepago)
+    are unified under the 'tbk' role.
     """
     file_name = getattr(uploaded_file, "name", f"archivo_{file_index}")
     result: Dict[str, Any] = {
@@ -290,9 +286,12 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
             str(cell) for _, row in head.iterrows() for cell in row if pd.notna(cell)
         ))
 
-        # 1. Transbank 'Abonos por día': read the value below the 'Medio de pago:' label
-        if "abonos por dia" in normalized_content and "medio de pago" in normalized_content:
+        # 1. Transbank 'Abonos por día': single consolidated or separate modality settlements
+        if ("abonos por dia" in normalized_content and "medio de pago" in normalized_content) or (
+            "datos empresa" in normalized_content and "abono calculado" in normalized_content
+        ) or ("codigo de comercio" in normalized_content and "monto original de venta" in normalized_content):
             settlement_date = None
+            medium_raw = "Todos los medios de pago"
             for _, r in head.iterrows():
                 cells = [val for val in r.values if pd.notna(val) and str(val).strip()]
                 for pos, val in enumerate(cells):
@@ -301,17 +300,19 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
             for row_index in range(len(head) - 1):
                 for col_index, cell in enumerate(head.iloc[row_index].values):
                     if normalize_text(cell).startswith("medio de pago"):
-                        medium_raw = str(head.iloc[row_index + 1].values[col_index]).strip()
-                        role = CLP_TBK_MEDIUM_ROLES.get(normalize_text(medium_raw))
-                        if role:
-                            date_suffix = f" ({settlement_date.strftime('%d/%m/%Y')})" if settlement_date else ""
-                            result.update(
-                                detected_role=role,
-                                confidence="HIGH",
-                                period_end_ord=settlement_date.toordinal() if settlement_date else 0,
-                                evidence=f"Huella interna: Transbank 'Abonos por día' · Medio de pago: {medium_raw}{date_suffix}",
-                            )
-                            return result
+                        candidate_med = str(head.iloc[row_index + 1].values[col_index]).strip()
+                        if candidate_med and candidate_med.lower() != "nan":
+                            medium_raw = candidate_med
+                            break
+
+            date_suffix = f" ({settlement_date.strftime('%d/%m/%Y')})" if settlement_date else ""
+            result.update(
+                detected_role="tbk",
+                confidence="HIGH",
+                period_end_ord=settlement_date.toordinal() if settlement_date else 0,
+                evidence=f"Huella interna: Transbank 'Abonos por día' · Medio: {medium_raw}{date_suffix}",
+            )
+            return result
 
         # 2. Bordero 'Cargos de Débitos y Créditos'
         if "cargos de debitos y creditos" in normalized_content or (
@@ -335,12 +336,21 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
             )
             return result
 
-        # 3. Bank statement in pesos
-        if ("saldo disponible" in normalized_content and "saldo contable" in normalized_content) or (
-            "cargos" in normalized_content and "abonos" in normalized_content and "sucursal" in normalized_content
+        # 3. Bank statement in pesos (Banco de Chile / BancoEstado)
+        if (
+            ("saldo disponible" in normalized_content and "saldo contable" in normalized_content)
+            or ("cargos" in normalized_content and "abonos" in normalized_content)
+            or ("cuenta corriente" in normalized_content and ("movimiento" in normalized_content or "depositos" in normalized_content or "banco" in normalized_content))
+            or "bancoestado" in normalized_content
+            or "cartola historica" in normalized_content
         ):
-            currency = "Pesos Chilenos (CLP)" if "pesos" in normalized_content else "moneda no indicada"
-            result.update(detected_role="bank", confidence="HIGH", evidence=f"Huella interna: Cartola Cuenta Corriente ({currency})")
+            bank_name = "BancoEstado" if ("bancoestado" in normalized_content or "cartola historica" in normalized_content) else "Banco de Chile"
+            currency = "Pesos Chilenos (CLP)" if "pesos" in normalized_content else "moneda CLP"
+            result.update(
+                detected_role="bank",
+                confidence="HIGH",
+                evidence=f"Huella interna: Cartola Cuenta Corriente ({bank_name} · {currency})",
+            )
             return result
     except Exception:
         pass

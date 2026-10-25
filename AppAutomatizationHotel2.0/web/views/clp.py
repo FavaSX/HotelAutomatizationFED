@@ -36,14 +36,42 @@ def clp_upload_view(request):
     and process them purely in memory.
     """
     if request.method == "POST":
-        files = {arg: request.FILES.get(input_name) for arg, input_name in CLP_FILE_INPUTS.items()}
-        if not all(files.values()):
-            messages.error(request, "Por favor seleccione los 5 archivos requeridos para la conciliación en Pesos.")
+        erp_file = request.FILES.get("clp_erp_file")
+        bank_file = request.FILES.get("clp_bank_file")
+        extra_erp_files = request.FILES.getlist("clp_extra_erp_files")
+
+        # Unified Transbank inputs + optional extra TBK files
+        tbk_primary = request.FILES.get("clp_tbk_file")
+        extra_tbk_files = request.FILES.getlist("clp_extra_tbk_files")
+
+        # Legacy separate inputs fallback
+        legacy_credit = request.FILES.get("clp_tbk_credit_file")
+        legacy_debit = request.FILES.get("clp_tbk_debit_file")
+        legacy_prepaid = request.FILES.get("clp_tbk_prepaid_file")
+
+        tbk_files = []
+        if tbk_primary:
+            tbk_files.append(tbk_primary)
+        if extra_tbk_files:
+            tbk_files.extend(extra_tbk_files)
+        for leg in [legacy_credit, legacy_debit, legacy_prepaid]:
+            if leg and leg not in tbk_files:
+                tbk_files.append(leg)
+
+        if not erp_file or not bank_file or not tbk_files:
+            messages.error(
+                request,
+                "Por favor asegúrese de cargar los 3 componentes requeridos: Borderó ERP, Cartola Bancaria y Abono(s) Transbank en Pesos."
+            )
             return redirect("clp_upload")
 
-        extra_erp_files = request.FILES.getlist("clp_extra_erp_files")
         try:
-            request.session[CLP_SESSION_KEY] = calculate_clp_preview(**files, extra_erp_files=extra_erp_files)
+            request.session[CLP_SESSION_KEY] = calculate_clp_preview(
+                erp_file=erp_file,
+                bank_statement_file=bank_file,
+                extra_erp_files=extra_erp_files,
+                tbk_files=tbk_files,
+            )
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("clp_preview")
         except Exception as error:

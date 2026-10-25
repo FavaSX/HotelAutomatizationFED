@@ -18,7 +18,7 @@
       <i class="bi bi-1-circle me-1"></i> Paso 1 de 3 · Carga de archivos
     </span>
     <h3 class="fw-bold mb-0">Conciliación en Pesos (CLP) — Carga y Auto-Detección</h3>
-    <p class="text-muted small mb-0">El motor inspecciona los 5 reportes Excel (Borderó, Cartola y los 3 abonos Transbank), los alinea automáticamente y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
+    <p class="text-muted small mb-0">El motor inspecciona los reportes Excel (Borderó ERP, Cartola Bancaria y Abono(s) Transbank), los alinea automáticamente y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
   </div>
 
   <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
@@ -74,16 +74,15 @@
 
 <form method="post" enctype="multipart/form-data" id="clpUploadForm"
       data-detect-url="{% url 'clp_detect_files' %}"
-      data-role-inputs='{"erp": "input_clp_erp", "bank": "input_clp_bank", "tbk_credit": "input_clp_tbk_credit", "tbk_debit": "input_clp_tbk_debit", "tbk_prepaid": "input_clp_tbk_prepaid"}'>
+      data-role-inputs='{"erp": "input_clp_erp", "bank": "input_clp_bank", "tbk": "input_clp_tbk"}'>
   {% csrf_token %}
 
   <!-- Hidden file inputs populated automatically upon alignment confirmation -->
   <input type="file" name="clp_erp_file" id="input_clp_erp" class="d-none" accept=".xls,.xlsx">
   <input type="file" name="clp_extra_erp_files" id="input_clp_extra_erp" class="d-none" accept=".xls,.xlsx" multiple>
   <input type="file" name="clp_bank_file" id="input_clp_bank" class="d-none" accept=".xls,.xlsx">
-  <input type="file" name="clp_tbk_credit_file" id="input_clp_tbk_credit" class="d-none" accept=".xls,.xlsx">
-  <input type="file" name="clp_tbk_debit_file" id="input_clp_tbk_debit" class="d-none" accept=".xls,.xlsx">
-  <input type="file" name="clp_tbk_prepaid_file" id="input_clp_tbk_prepaid" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_tbk_file" id="input_clp_tbk" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_extra_tbk_files" id="input_clp_extra_tbk" class="d-none" accept=".xls,.xlsx" multiple>
 
 
   <div class="card card-executive p-4 mb-4">
@@ -101,11 +100,11 @@
             <i class="bi bi-cloud-arrow-up-fill fs-2"></i>
           </span>
         </div>
-        <h5 class="fw-bold mb-1">Arrastre aquí los 5 archivos Excel o haga clic para seleccionarlos</h5>
+        <h5 class="fw-bold mb-1">Arrastre aquí los archivos Excel o haga clic para seleccionarlos</h5>
         <p class="text-muted small mb-3">
           El sistema identificará automáticamente cuál corresponde a
-          <strong>Borderó ERP, Cartola Bancaria y los abonos Transbank de Crédito, Débito y Prepago</strong>
-          (los 3 abonos se distinguen por la celda "Medio de pago").
+          <strong>Borderó ERP, Cartola Bancaria y Abono(s) Transbank</strong>
+          (admite 1 archivo consolidado con 'Todos los medios' o los 3 archivos individuales de Crédito, Débito y Prepago).
         </p>
         <span class="btn btn-brand rounded-pill px-4 py-2 fw-semibold shadow-sm">
           <i class="bi bi-folder2-open me-1"></i> Seleccionar Archivos (.xls / .xlsx)
@@ -153,7 +152,7 @@
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
           <div>
-            <div class="fw-bold small">¿La alineación de los 5 archivos es correcta?</div>
+            <div class="fw-bold small">¿La alineación de los archivos es correcta?</div>
             <div class="text-muted small">Al confirmar, los archivos se procesarán y se abrirá la previsualización en memoria.</div>
           </div>
         </div>
