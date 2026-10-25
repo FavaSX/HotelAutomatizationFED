@@ -3,15 +3,17 @@ Level 2 Assisted Suggestion Engine for CLP (Pesos) Card Reconciliation.
 Looks for unclaimed Bordero rows that explain an orphan voucher (NOT_FOUND_IN_ERP) or an
 amount discrepancy (AMOUNT_MISMATCH), using amount, date, payment medium and the OCR/human-typo
 authorization code similarity shared with the USD engine.
+Also searches unreconciled historical ERP transactions stored in the database.
 
-It never reconciles anything: suggestions are a reference for the auditor's manual review.
+It never reconciles anything automatically: suggestions are a reference for the auditor's manual review.
 """
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..models import ErpTransaction
 from ..templatetags.currency_filters import fmt_clp
 from .clp_reconciliation import _is_compatible
-from .column_detector import normalize_auth_code, safe_date
+from .column_detector import clean_code_string, normalize_auth_code, safe_date
 from .suggestion_engine import _chip, _compute_code_similarity
 
 HIGH_CONFIDENCE_SCORE = 120
@@ -52,6 +54,7 @@ def _erp_row_view(erp_row: Dict[str, Any]) -> Dict[str, Any]:
         "payment_code": erp_row.get("payment_code") or "—",
         "card_code": card_code,
         "card_name": card_name,
+        "payment_group": payment_group,
         "amount": erp_row.get("amount"),
         "transaction_date": erp_row.get("transaction_date") or "—",
         "transaction_time": erp_row.get("transaction_time") or "",
@@ -163,10 +166,162 @@ def _build_candidate_suggestion(
     }
 
 
+def _find_db_suggestion_for_clp_voucher(
+    voucher: Dict[str, Any],
+    tolerance: float,
+    tbk_file: str,
+    default_erp_file: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Searches unreconciled historical CLP ERP transactions stored in the database
+    to provide assisted suggestions for orphan or out-of-period vouchers.
+    """
+    auth_code = clean_code_string(voucher.get("authorization_code") or "")
+    tbk_amount = float(voucher.get("tbk_amount") or 0.0)
+    modality = voucher.get("payment_modality", "")
+    voucher_date = str(voucher.get("sale_date") or "")
+
+    try:
+        qs = ErpTransaction.objects.filter(
+            reconciled=False,
+            source_currency="CLP",
+        ).select_related("process", "card_type").order_by("-transaction_date")[:200]
+    except Exception:
+        return None
+
+    best_match = None
+    best_score = 0
+
+    for db_tx in qs:
+        db_amount = float(db_tx.amount or 0.0)
+        amount_gap = abs(tbk_amount - db_amount)
+        if amount_gap > tolerance:
+            continue
+
+        db_auth = clean_code_string(db_tx.authorization_code or "")
+        exact_code = bool(auth_code and db_auth and normalize_auth_code(auth_code) == normalize_auth_code(db_auth))
+        sim_ratio, typo_badge = (
+            (1.0, f"Mismo código en BD ({db_auth})")
+            if exact_code
+            else (_compute_code_similarity(auth_code, db_auth) if db_auth else (0.0, None))
+        )
+
+        exact_amount = amount_gap < 1
+        missing_code = not db_auth
+        if sim_ratio < 0.55 and not (missing_code and exact_amount):
+            continue
+
+        is_rc = (db_tx.payment_code in ("RCO", "RC", "REDCOMPRA")) or (db_tx.card_type and db_tx.card_type.code in ("RCO", "RC"))
+        compat = is_rc == (modality in ("DEBIT", "PREPAID"))
+
+        db_date_str = db_tx.transaction_date.strftime("%d/%m/%Y") if db_tx.transaction_date else ""
+        day_gap = _day_gap(voucher_date, db_date_str)
+
+        # Guard against weak matches when auth code is missing
+        if missing_code and not (compat and day_gap is not None and 0 <= day_gap <= 2):
+            continue
+
+        score = (60 if exact_amount else 40) + int(sim_ratio * 65) + (20 if compat else 0)
+        if day_gap == 0:
+            score += 20
+        elif day_gap and 0 <= day_gap <= 2:
+            score += 10
+
+        if score > best_score and score >= 80:
+            best_score = score
+            best_match = (db_tx, sim_ratio, typo_badge, exact_code, exact_amount, amount_gap, missing_code, is_rc, db_date_str)
+
+    if not best_match:
+        return None
+
+    db_tx, sim_ratio, typo_badge, exact_code, exact_amount, amount_gap, missing_code, is_rc, db_date = best_match
+    db_auth = clean_code_string(db_tx.authorization_code or "")
+    db_amount = float(db_tx.amount or 0.0)
+    db_proc_id = db_tx.process_id
+    db_proc_period = db_tx.process.accounting_period if db_tx.process else f"Proceso #{db_proc_id}"
+    db_time = db_tx.transaction_time.strftime("%H:%M:%S") if db_tx.transaction_time else ""
+    db_guest = db_tx.guest_name or "—"
+    db_room = db_tx.room_number or "—"
+    db_cashier = db_tx.cashier_username or "—"
+    db_inv = db_tx.invoice_number or "—"
+    db_acc = db_tx.account_code or "—"
+    db_card_name = db_tx.card_type.name if db_tx.card_type else ("Redcompra" if is_rc else "Tarjeta de Crédito")
+    db_pay_code = db_tx.payment_code or (db_tx.card_type.code if db_tx.card_type else "—")
+    source_label = f"Base de Datos (Proceso #{db_proc_id})"
+
+    reasons = [
+        _chip(f"💾 Venta previa en Base de Datos (Proceso #{db_proc_id})", "bi-database-fill-check", "purple"),
+        _chip(
+            f"Monto Exacto ({fmt_clp(db_amount)})" if exact_amount else f"Monto Cercano ({fmt_clp(db_amount)} · Dif: {fmt_clp(amount_gap)})",
+            "bi-cash-stack",
+            "emerald",
+        ),
+        _chip(f"Fecha Venta ERP: {db_date}", "bi-calendar-check", "cyan"),
+    ]
+    if missing_code:
+        cause = f"Venta pendiente en BD (Proceso #{db_proc_id}) sin código de autorización"
+        reasons.append(_chip("Fila en BD sin código de autorización", "bi-exclamation-triangle", "gold"))
+        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} y anotar código en ERP"
+    elif exact_code:
+        cause = f"Código exacto ({db_auth}) hallado en BD Proceso #{db_proc_id}"
+        reasons.append(_chip(cause, "bi-check2-circle", "emerald"))
+        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Doc #{db_tx.document_number}, Cta. {db_acc})"
+    else:
+        cause = typo_badge or f"Código digitado como {db_auth} en BD Proceso #{db_proc_id}"
+        reasons.append(_chip(cause, "bi-upc-scan", "gold"))
+        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} y corregir código"
+
+    headline = f"Venta pendiente en BD (Proceso #{db_proc_id} · {db_proc_period})"
+
+    erp_row_view = {
+        "excel_row": f"ID #{db_tx.id}",
+        "source_file": source_label,
+        "authorization_code": db_auth or "— (sin código)",
+        "payment_code": db_pay_code,
+        "card_code": db_tx.card_type.code if db_tx.card_type else "",
+        "card_name": db_card_name,
+        "payment_group": "REDCOMPRA" if is_rc else "CREDIT",
+        "amount": db_amount,
+        "transaction_date": db_date,
+        "transaction_time": db_time,
+        "cashier_username": db_cashier,
+        "guest_name": db_guest,
+        "room_number": db_room,
+        "account_code": db_acc,
+        "invoice_number": db_inv,
+    }
+
+    return {
+        "confidence": "ALTA" if best_score >= HIGH_CONFIDENCE_SCORE else "MEDIA",
+        "score": best_score,
+        "erp_index": None,
+        "headline": headline,
+        "cause": cause,
+        "missing_code": missing_code,
+        "action": action,
+        "candidate_summary": f"{db_guest} · Hab. {db_room} · {fmt_clp(db_amount)} · {db_date} ({db_cashier})",
+        "manual_check_note": (
+            f"El voucher '{voucher['authorization_code']}' ({fmt_clp(voucher['tbk_amount'])}) no figura en el Borderó actual, "
+            f"pero fue localizado en la Base de Datos como venta pendiente en el proceso #{db_proc_id} ({db_proc_period}, fecha {db_date}). "
+            f"Corresponde a la Habitación {db_room} (Huésped: {db_guest}), registrado por el cajero '{db_cashier}' "
+            f"con código '{db_auth or 'sin código'}' (Cta. {db_acc} · Factura {db_inv})."
+        ),
+        "reasons": reasons,
+        "files_involved": {"tbk": tbk_file, "erp": source_label},
+        "erp_row": erp_row_view,
+        "db_match": {
+            "transaction_id": db_tx.id,
+            "process_id": db_proc_id,
+            "accounting_period": db_proc_period,
+        },
+    }
+
+
 def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Adds a `suggestion` dictionary to orphan, discrepancy, and out-of-period vouchers in-place,
     assigning each unclaimed Bordero row to at most one voucher (highest score first).
+    Also runs database queries to suggest pending sales from earlier reconciliations.
     """
     if not preview_data:
         return preview_data
@@ -373,15 +528,36 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
             voucher, target_row, erp_index_ref, score, detail, _tbk_file(voucher), default_erp_file
         )
 
-    # 4. Exception report columns (Tipo de error / Acción sugerida) for every non-matched voucher.
+    # 4. Database Assisted Suggestions for remaining Orphans and Out-of-Period vouchers
+    for voucher in orphans:
+        if not voucher.get("suggestion"):
+            db_sug = _find_db_suggestion_for_clp_voucher(voucher, tolerance, _tbk_file(voucher), default_erp_file)
+            if db_sug:
+                voucher["suggestion"] = db_sug
+
+    for voucher in out_of_period:
+        if not voucher.get("suggestion"):
+            db_sug = _find_db_suggestion_for_clp_voucher(voucher, tolerance, _tbk_file(voucher), default_erp_file)
+            if db_sug:
+                voucher["suggestion"] = db_sug
+
+    # 5. Exception report columns (Tipo de error / Acción sugerida) for every non-matched voucher.
     for bucket in ("discrepancy_vouchers", "orphan_vouchers", "out_of_period_vouchers"):
         for voucher in preview_data.get(bucket, []):
             suggestion = voucher.get("suggestion")
             result = voucher["system_result"]
             if suggestion and result == "NOT_FOUND_IN_ERP":
-                voucher["error_type"] = "Falta código en ERP" if suggestion["missing_code"] else "Error de tipeo"
+                if suggestion.get("db_match"):
+                    voucher["error_type"] = "Venta previa en BD"
+                elif suggestion.get("missing_code"):
+                    voucher["error_type"] = "Falta código en ERP"
+                else:
+                    voucher["error_type"] = "Error de tipeo"
             elif suggestion and result == "OUT_OF_PERIOD":
-                voucher["error_type"] = "Fuera de período (Con sugerencia)"
+                if suggestion.get("db_match"):
+                    voucher["error_type"] = "Fuera de período (En BD)"
+                else:
+                    voucher["error_type"] = "Fuera de período (Con sugerencia)"
             else:
                 voucher["error_type"] = EXCEPTION_ERROR_TYPES[result]
             voucher["action"] = suggestion["action"] if suggestion else EXCEPTION_ACTIONS[result]
@@ -398,4 +574,3 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
         "out_of_period_without": len(out_of_period) - oop_with,
     }
     return preview_data
-

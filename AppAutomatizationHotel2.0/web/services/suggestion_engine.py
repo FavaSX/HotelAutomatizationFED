@@ -1,7 +1,8 @@
 """
 Level 2 Assisted Suggestion Engine for USD Financial Reconciliation.
 Analyzes Discrepancy Vouchers (AMOUNT_MISMATCH) and Orphan Vouchers (NOT_FOUND_IN_ERP)
-against unlinked Card Operator statements and unreconciled ERP transactions.
+against unlinked Card Operator statements, in-memory unreconciled ERP transactions,
+and historical unreconciled ERP transactions stored in the database.
 """
 
 import difflib
@@ -440,6 +441,150 @@ def _enrich_unassigned_orphan(
         }
 
 
+def _find_db_suggestion_for_orphan(
+    orph: Dict[str, Any],
+    operator_txs: List[Dict[str, Any]],
+    claimed_op_indices: Set[int],
+    files_for_card: Callable[[str], Dict[str, str]],
+) -> Optional[Dict[str, Any]]:
+    """
+    Looks up unreconciled historical ERP transactions in the database from previous reconciliation runs.
+    Provides high-confidence assisted suggestions when a voucher corresponds to an earlier date/closing.
+    """
+    try:
+        from ..models import ErpTransaction
+    except Exception:
+        return None
+
+    card_code = orph.get("card_code", "")
+    card_name = orph.get("card_name", card_code)
+    auth_code = clean_code_string(orph.get("authorization_code") or "")
+    tbk_usd = float(orph.get("gross_amount_usd") or 0.0)
+    sale_date = str(orph.get("sale_date") or "")
+    masked_card = str(orph.get("masked_card") or "—")
+
+    # Match operator transaction if available
+    exact_op = next(
+        (
+            op for idx, op in enumerate(operator_txs)
+            if op.get("card_code") == card_code
+            and abs(float(op.get("foreign_currency_amount") or 0.0) - tbk_usd) < 0.01
+            and float(op.get("foreign_currency_amount") or 0.0) > 0
+        ),
+        None,
+    )
+    op_doc = str(exact_op.get("document_number") or "") if exact_op else ""
+    op_usd = float(exact_op.get("foreign_currency_amount") or 0.0) if exact_op else 0.0
+    op_clp = float(exact_op.get("balance_amount") or exact_op.get("corrected_balance_amount") or 0.0) if exact_op else 0.0
+
+    try:
+        # Search unreconciled USD records in DB
+        qs = ErpTransaction.objects.filter(
+            reconciled=False,
+            source_currency="USD"
+        ).select_related("process", "card_type").order_by("-transaction_date")[:150]
+    except Exception:
+        return None
+
+    best_match = None
+    best_score = 0
+
+    for db_tx in qs:
+        db_card = db_tx.card_type.code if db_tx.card_type else ""
+        if card_code and db_card and db_card != card_code:
+            continue
+
+        db_auth = clean_code_string(db_tx.authorization_code or "")
+        db_doc = clean_code_string(db_tx.document_number or "")
+        db_clp = float(db_tx.amount or 0.0)
+        sim_ratio, typo_badge = _compute_code_similarity(auth_code, db_auth)
+
+        same_code = bool(auth_code and db_auth and (auth_code == db_auth or sim_ratio >= 0.85))
+        same_doc = bool(op_doc and db_doc and op_doc == db_doc)
+        same_clp = bool(op_clp > 0 and abs(db_clp - op_clp) <= 10)
+
+        score = (60 if same_code else 0) + (35 if same_doc else 0) + (25 if same_clp else 0) + int(sim_ratio * 40)
+        if score >= 60 and score > best_score:
+            best_score = score
+            best_match = (db_tx, sim_ratio, typo_badge, same_code, same_doc, same_clp)
+
+    if not best_match:
+        return None
+
+    db_tx, sim_ratio, typo_badge, same_code, same_doc, same_clp = best_match
+    db_auth = clean_code_string(db_tx.authorization_code or "")
+    db_doc = clean_code_string(db_tx.document_number or "")
+    db_clp = float(db_tx.amount or 0.0)
+    db_proc_id = db_tx.process_id
+    db_proc_period = db_tx.process.accounting_period if db_tx.process else f"Proceso #{db_proc_id}"
+    db_date = db_tx.transaction_date.strftime("%d/%m/%Y") if db_tx.transaction_date else "—"
+    db_time = db_tx.transaction_time.strftime("%H:%M:%S") if db_tx.transaction_time else ""
+    db_guest = db_tx.guest_name or "—"
+    db_room = db_tx.room_number or "—"
+    db_cashier = db_tx.cashier_username or "—"
+    db_inv = db_tx.invoice_number or "—"
+
+    reasons = [
+        _chip(f"💾 Venta pendiente en Base de Datos (Proceso #{db_proc_id})", "purple"),
+    ]
+    if same_code and auth_code == db_auth:
+        reasons.append(_chip(f"Cód. Autorización Exacto ({db_auth})", "emerald"))
+    elif typo_badge:
+        reasons.append(_chip(typo_badge, "gold"))
+    if same_doc:
+        reasons.append(_chip(f"Doc. ERP = Operadora (#{db_doc})", "cyan"))
+    if same_clp:
+        reasons.append(_chip(f"Saldo CLP Coincide ({fmt_clp(db_clp)})", "emerald"))
+    reasons.append(_chip(f"Fecha Venta ERP: {db_date}", "cyan"))
+
+    headline = f"Venta pendiente en BD (Proceso #{db_proc_id} · {db_proc_period})"
+    action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Doc #{db_doc}, Factura {db_inv})"
+    note = (
+        f"El voucher de Transbank '{auth_code}' ({fmt_usd(tbk_usd)}) no figura en los archivos cargados hoy, "
+        f"pero fue localizado en la Base de Datos como venta pendiente en el proceso #{db_proc_id} ({db_proc_period}, "
+        f"fecha {db_date}). Corresponde a la Habitación {db_room} (Huésped: {db_guest}), registrado por el "
+        f"cajero '{db_cashier}' con código '{db_auth or 'sin código'}'. "
+        f"Esta venta quedó pendiente en ese cierre y se está abonando en esta liquidación."
+    )
+
+    comparison_rows = _build_standard_comparison_rows(
+        tbk_auth=auth_code, erp_auth=db_auth or "— (Sin cód.)",
+        op_auth=exact_op.get("authorization_code") if exact_op else "—",
+        auth_tone="emerald" if same_code else "gold",
+        erp_doc_str=f"Doc #{db_doc} (BD Proceso #{db_proc_id})",
+        op_doc_str=f"Doc #{op_doc}" if op_doc else "—",
+        doc_tone="emerald" if same_doc else "cyan",
+        tbk_usd=tbk_usd,
+        op_usd_str=fmt_usd(op_usd) if exact_op else fmt_usd(tbk_usd),
+        usd_tone="emerald",
+        erp_clp_str=fmt_clp(db_clp),
+        op_clp_str=fmt_clp(op_clp) if exact_op else fmt_clp(db_clp),
+        clp_tone="emerald" if same_clp else "gold",
+        tbk_context=f"Tarjeta: {masked_card} · {sale_date}",
+        erp_context=f"{db_guest} · Hab. {db_room} · {db_date} {db_time} ({db_cashier})",
+        op_context=f"Operadora {card_name}",
+        context_tone="cyan",
+    )
+
+    return {
+        "confidence": "ALTA",
+        "headline": headline,
+        "action": action,
+        "files_involved": files_for_card(card_code),
+        "erp_cashier": db_cashier,
+        "erp_card": f"{card_name} ({card_code})",
+        "erp_date": db_date,
+        "manual_check_note": note,
+        "reasons": reasons,
+        "comparison_rows": comparison_rows,
+        "db_match": {
+            "transaction_id": db_tx.id,
+            "process_id": db_proc_id,
+            "accounting_period": db_proc_period,
+        },
+    }
+
+
 def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, Any]:
     """Enriches `discrepancy_vouchers` and `orphan_vouchers` in `preview_data` in-place with Level 2 suggestions."""
     if not preview_data:
@@ -474,9 +619,11 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
         if v.get("erp_index") is not None:
             claimed_erp_indices.add(v["erp_index"])
 
+    # Pass 1: Discrepancy voucher suggestions
     for disc in discrepancy_vouchers:
         _enrich_discrepancy_voucher(disc, operator_txs, erp_txs, claimed_op_indices, op_file_by_card, _files_for_card)
 
+    # Pass 2A: Orphan proposals from in-memory ERP + Operator
     candidate_proposals = _collect_orphan_erp_op_proposals(
         orphan_vouchers, operator_txs, erp_txs, claimed_op_indices, claimed_erp_indices, _files_for_card
     )
@@ -495,12 +642,22 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
         if erp_idx is not None:
             claimed_erp_indices.add(erp_idx)
 
+    # Pass 2B: Split invoices or operator-only in-memory matches
     for orph_idx, orph in enumerate(orphan_vouchers):
         if orph_idx not in assigned_orphans:
             _enrich_unassigned_orphan(
                 orph_idx, orph, operator_txs, erp_txs,
                 claimed_op_indices, claimed_erp_indices, assigned_orphans, _files_for_card,
             )
+
+    # Pass 3: Database Assisted Suggestions for remaining orphans (or orphans with only operator matches)
+    for orph_idx, orph in enumerate(orphan_vouchers):
+        curr_sug = orph.get("suggestion")
+        if not curr_sug or curr_sug.get("confidence") == "MEDIA":
+            db_sug = _find_db_suggestion_for_orphan(orph, operator_txs, claimed_op_indices, _files_for_card)
+            if db_sug:
+                orph["suggestion"] = db_sug
+                assigned_orphans.add(orph_idx)
 
     disc_with = sum(1 for v in discrepancy_vouchers if v.get("suggestion"))
     orph_with = sum(1 for v in orphan_vouchers if v.get("suggestion"))

@@ -4,8 +4,10 @@ Executes the in-memory cross-match of the 3 Transbank "Abonos por día" settleme
 (Crédito, Débito, Prepago) against the Hotel Bordero, and validates each settlement
 against its deposit in the Bank Statement, without writing to the database.
 Database persistence lives in `clp_persistence.py` and Excel generation in `clp_report_exporter.py`.
+Supports multiple ERP files (e.g. daily extracts, shifts, auxiliary borderos) with automatic deduplication.
 """
 
+import os
 from datetime import date
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
@@ -326,8 +328,7 @@ def calculate_clp_preview(
 ) -> Dict[str, Any]:
     """
     Executes the complete Chilean Pesos reconciliation workflow purely in memory.
-    Returns a JSON-serializable dictionary with bank validations, modality summaries,
-    extracted source rows and classified vouchers without touching the database.
+    Consolidates primary Bordero and any auxiliary Borderos with automatic deduplication.
     """
     tolerance = get_clp_tolerance()
     card_names = {**DEFAULT_CARD_NAMES, **{card.code: card.name for card in CardType.objects.all()}}
@@ -343,7 +344,6 @@ def calculate_clp_preview(
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(0)
 
-    import os
     erp_file_name = os.path.basename(getattr(erp_file, "name", "BORDERO.xlsx"))
     bordero_dataframe = pd.read_excel(erp_file, header=None)
     bank_dataframe = pd.read_excel(bank_statement_file, header=None)
@@ -362,10 +362,13 @@ def calculate_clp_preview(
             extra_file.seek(0)
         extra_name = os.path.basename(getattr(extra_file, "name", "BORDERO_ADICIONAL.xlsx"))
         extra_erp_names.append(extra_name)
-        extra_df = pd.read_excel(extra_file, header=None)
-        parsed_extra, _ = parse_bordero_clp_transactions(extra_df, source_file=extra_name)
-        auxiliary_erp_rows.extend(parsed_extra)
-
+        try:
+            extra_df = pd.read_excel(extra_file, header=None)
+            if len(extra_df) > 0:
+                parsed_extra, _ = parse_bordero_clp_transactions(extra_df, source_file=extra_name)
+                auxiliary_erp_rows.extend(parsed_extra)
+        except Exception:
+            continue
 
     # 1. Bank deposits of the 3 settlements
     bank_movements = parse_bank_statement_movements(bank_dataframe)
@@ -382,6 +385,41 @@ def calculate_clp_preview(
 
     # 2. Bordero peso card payments
     erp_rows, rows_by_auth_code = parse_bordero_clp_transactions(bordero_dataframe, source_file=erp_file_name)
+
+    # Incorporate and deduplicate auxiliary / extra ERP files if provided
+    if auxiliary_erp_rows:
+        seen_clp_sigs = {
+            (
+                r.get("account_code"),
+                r.get("invoice_number", ""),
+                r.get("authorization_code"),
+                str(r.get("transaction_date")),
+                str(r.get("transaction_time")),
+                str(r.get("amount")),
+                r.get("card_code"),
+            )
+            for r in erp_rows
+        }
+        for extra_row in auxiliary_erp_rows:
+            sig = (
+                extra_row.get("account_code"),
+                extra_row.get("invoice_number", ""),
+                extra_row.get("authorization_code"),
+                str(extra_row.get("transaction_date")),
+                str(extra_row.get("transaction_time")),
+                str(extra_row.get("amount")),
+                extra_row.get("card_code"),
+            )
+            if sig in seen_clp_sigs:
+                continue
+            seen_clp_sigs.add(sig)
+            pos = len(erp_rows)
+            extra_row["is_auxiliary"] = True
+            erp_rows.append(extra_row)
+            norm_code = normalize_auth_code(extra_row.get("authorization_code"))
+            if norm_code:
+                rows_by_auth_code.setdefault(norm_code, []).append(pos)
+
     period = parse_bordero_period(bordero_dataframe)
     if not all(period):
         row_dates = sorted({safe_date(r["transaction_date"]) for r in erp_rows} - {None})
@@ -599,4 +637,3 @@ def calculate_clp_preview(
     }
     from .clp_suggestion_engine import enrich_clp_preview_with_suggestions
     return enrich_clp_preview_with_suggestions(preview_payload)
-

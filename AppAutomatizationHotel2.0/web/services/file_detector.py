@@ -2,6 +2,8 @@
 Automatic File Role Detector for US Dollars (USD) and Chilean Pesos (CLP) Reconciliation.
 Inspects the internal cell structure (first 45 rows) of uploaded Excel files
 to automatically classify each file into one of the 7 required USD slots or the 5 required CLP slots.
+Only the ERP / Borderó role supports grouping multiple files (e.g. shifts, weekend days, auxiliary files).
+All other roles (Cartola, Transbank, Card Operators) strictly assign 1 file per role.
 """
 
 import io
@@ -9,7 +11,6 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .column_detector import normalize_text, safe_date
-
 
 
 USD_REQUIRED_ROLES: List[Dict[str, str]] = [
@@ -30,7 +31,6 @@ OPERATOR_KEYWORDS = [
 ]
 
 FILENAME_FALLBACKS = [
-    ("erp", ("erp", "terjetas", "tarjetas erp", "bordero")),
     ("transbank", ("abono", "tbk", "transbank")),
     ("bank", ("cartola", "banco", "chile")),
     ("amex", ("amex", "american")),
@@ -44,6 +44,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
     """
     Reads the internal cells of an uploaded Excel file and returns its detected role_key,
     confidence level, row count, and the internal evidence found.
+    Empty files (0 rows) are strictly marked as unassigned without guessing.
     """
     file_name = getattr(uploaded_file, "name", f"archivo_{file_index}")
     normalized_filename = normalize_text(file_name)
@@ -66,7 +67,20 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(0)
 
-        dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+        dataframe = None
+        try:
+            dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+        except Exception:
+            try:
+                tables = pd.read_html(io.BytesIO(raw_bytes))
+                if tables:
+                    dataframe = tables[0]
+            except Exception:
+                pass
+
+        if dataframe is None or len(dataframe) == 0:
+            return _build_result(None, "LOW", "Archivo vacío sin registros (0 filas)")
+
         total_rows = len(dataframe)
 
         raw_lines = [
@@ -127,7 +141,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # Fallback: filename keywords
+    # Fallback por nombre solo para operadores y banco (nunca para ERP, para evitar falsos positivos con 0 filas)
     for role_key, keywords in FILENAME_FALLBACKS:
         if any(kw in normalized_filename for kw in keywords):
             return _build_result(role_key, "MEDIUM", f"Identificado por nombre de archivo ('{file_name}')")
@@ -136,15 +150,17 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
 
 
 def detect_and_align_usd_files(uploaded_files: List[Any]) -> Dict[str, Any]:
-    """
-    Inspects a batch of uploaded Excel files and aligns them against the 7 required USD roles.
-    """
+    """Inspects a batch of uploaded Excel files and aligns them against the 7 required USD roles."""
     inspected_files = [inspect_single_excel_file(f, idx) for idx, f in enumerate(uploaded_files)]
     return align_inspected_files(inspected_files, USD_REQUIRED_ROLES)
 
 
 def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles: List[Dict[str, str]]) -> Dict[str, Any]:
-    """Assigns each inspected file to at most one required role, preferring HIGH confidence detections."""
+    """
+    Assigns inspected files to required roles.
+    ONLY the ERP role permits grouping multiple files (e.g. shifts, multi-day, auxiliary borderos).
+    All other roles strictly assign exactly 1 file per role.
+    """
     used_file_indices = set()
     aligned_roles: List[Dict[str, Any]] = []
 
@@ -152,7 +168,7 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
         role_key = role_meta["role_key"]
         candidates = [
             c for c in inspected_files
-            if c["file_index"] not in used_file_indices and c["detected_role"] == role_key
+            if c["file_index"] not in used_file_indices and c["detected_role"] == role_key and c.get("row_count", 0) > 0
         ]
         # Prefer HIGH confidence, then most recent period, then largest row count
         candidates.sort(
@@ -162,6 +178,20 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
 
         if matched_info:
             used_file_indices.add(matched_info["file_index"])
+            extra_files_info = []
+
+            # ONLY the ERP role allows grouping multiple files:
+            if role_key == "erp":
+                for extra in candidates[1:]:
+                    if extra.get("confidence") == "HIGH" and extra.get("row_count", 0) > 0:
+                        used_file_indices.add(extra["file_index"])
+                        extra_files_info.append({
+                            "file_index": extra["file_index"],
+                            "file_name": extra["file_name"],
+                            "row_count": extra["row_count"],
+                            "evidence": extra["evidence"],
+                        })
+
             aligned_roles.append({
                 **role_meta,
                 "matched": True,
@@ -170,6 +200,7 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
                 "confidence": matched_info["confidence"],
                 "row_count": matched_info["row_count"],
                 "evidence": matched_info["evidence"],
+                "extra_files": extra_files_info,
             })
         else:
             aligned_roles.append({
@@ -180,6 +211,7 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
                 "confidence": "MISSING",
                 "row_count": 0,
                 "evidence": "No se detectó ningún archivo para este rol en el lote cargado.",
+                "extra_files": [],
             })
 
     return {
@@ -210,7 +242,6 @@ CLP_FILENAME_FALLBACKS = [
     ("tbk_credit", ("credito",)),
     ("tbk_debit", ("debito",)),
     ("tbk_prepaid", ("prepago",)),
-    ("erp", ("bordero", "erp")),
     ("bank", ("cartola", "banco")),
 ]
 
@@ -237,7 +268,22 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
         raw_bytes = uploaded_file.read()
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(0)
-        dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+
+        dataframe = None
+        try:
+            dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
+        except Exception:
+            try:
+                tables = pd.read_html(io.BytesIO(raw_bytes))
+                if tables:
+                    dataframe = tables[0]
+            except Exception:
+                pass
+
+        if dataframe is None or len(dataframe) == 0:
+            result.update(detected_role=None, confidence="LOW", row_count=0, evidence="Archivo vacío sin registros (0 filas)")
+            return result
+
         result["row_count"] = len(dataframe)
         head = dataframe.head(45)
         normalized_content = normalize_text(" | ".join(
@@ -311,4 +357,3 @@ def detect_and_align_clp_files(uploaded_files: List[Any]) -> Dict[str, Any]:
     """Inspects a batch of uploaded Excel files and aligns them against the 5 required CLP roles."""
     inspected_files = [inspect_single_clp_excel_file(f, idx) for idx, f in enumerate(uploaded_files)]
     return align_inspected_files(inspected_files, CLP_REQUIRED_ROLES)
-

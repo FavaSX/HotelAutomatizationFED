@@ -74,6 +74,7 @@
 
   <!-- Hidden file inputs populated automatically upon alignment confirmation -->
   <input type="file" name="usd_erp_file" id="input_usd_erp" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_extra_erp_files" id="input_usd_extra_erp" class="d-none" accept=".xls,.xlsx" multiple>
   <input type="file" name="usd_transbank_file" id="input_usd_tbk" class="d-none" accept=".xls,.xlsx">
   <input type="file" name="usd_bank_file" id="input_usd_bank" class="d-none" accept=".xls,.xlsx">
   <input type="file" name="usd_amex_file" id="input_usd_ax" class="d-none" accept=".xls,.xlsx">
@@ -170,5 +171,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=5"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=6"></script>
 {% endblock %}

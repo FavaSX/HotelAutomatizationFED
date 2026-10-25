@@ -43,8 +43,9 @@ def usd_upload_view(request):
             messages.error(request, "Por favor seleccione los 7 archivos requeridos para la conciliación en Dólares.")
             return redirect("usd_upload")
 
+        extra_erp_files = request.FILES.getlist("usd_extra_erp_files")
         try:
-            request.session[USD_SESSION_KEY] = calculate_usd_preview(**files)
+            request.session[USD_SESSION_KEY] = calculate_usd_preview(**files, extra_erp_files=extra_erp_files)
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("usd_preview")
         except Exception as error:
@@ -121,8 +122,9 @@ def usd_preview_view(request):
         "matched_vouchers": preview.get("matched_vouchers", []),
         "discrepancy_vouchers": preview.get("discrepancy_vouchers", []),
         "orphan_vouchers": preview.get("orphan_vouchers", []),
-        "cashiers": all_cashiers,
-        "counts": preview.get("counts", {}),
+        "counts": counts,
+        "all_cashiers": all_cashiers,
+        "tolerance": preview.get("tolerance", 0.0),
         "suggestion_counts": preview.get("suggestion_counts", {}),
     }
     return render(request, "usd_preview.html", context)
@@ -130,9 +132,10 @@ def usd_preview_view(request):
 
 @login_required(login_url="login")
 def usd_discard_view(request):
-    """Step 3A: Discard preview without touching the database."""
-    request.session.pop(USD_SESSION_KEY, None)
-    messages.info(request, "La previsualización fue descartada. La base de datos no fue modificada.")
+    """Step 3A: Discard the in-memory reconciliation and return to upload."""
+    if request.method == "POST":
+        request.session.pop(USD_SESSION_KEY, None)
+        messages.info(request, "Proceso descartado de la memoria. Puede cargar un nuevo lote de archivos.")
     return redirect("usd_upload")
 
 

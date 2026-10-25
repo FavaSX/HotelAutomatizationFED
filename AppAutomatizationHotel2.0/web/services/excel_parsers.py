@@ -97,7 +97,11 @@ def parse_and_validate_bank_deposits(
             "modality": modality_code,
             "transbank_deposit": float(expected_amount),
             "bank_deposit": float(matched_movement.deposit_amount) if matched_movement else 0.0,
-            "movement_date": matched_movement.movement_date if matched_movement else None,
+            "movement_date": (
+                matched_movement.movement_date.strftime("%d/%m/%Y")
+                if (matched_movement and hasattr(matched_movement.movement_date, "strftime"))
+                else str(matched_movement.movement_date or "") if matched_movement else None
+            ),
             "is_matched": matched_movement is not None,
             "movements_data": [
                 serialize_bank_movement(m, m is matched_movement) for m in bank_movements
