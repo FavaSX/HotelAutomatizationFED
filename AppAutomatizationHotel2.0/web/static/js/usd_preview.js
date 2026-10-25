@@ -363,6 +363,41 @@ function initAdvancedFilterScrollClose() {
   }, { passive: true });
 }
 
+// Caution banner of the suggestions modals: fully visible when the modal opens, then collapses
+// to its title row after a few seconds (unless the user is reading it or already toggled it)
+const CAUTION_AUTOCOLLAPSE_MS = 6000;
+
+function initCautionAutoCollapse() {
+  if (!window.bootstrap || !window.bootstrap.Collapse) return;
+  document.querySelectorAll('.suggestion-caution-banner[data-autocollapse]').forEach(banner => {
+    const modal = banner.closest('.modal');
+    const toggle = banner.querySelector('.caution-toggle');
+    const body = banner.querySelector('.collapse');
+    if (!modal || !toggle || !body) return;
+    let timer = null;
+    let userToggled = false;
+
+    const collapseLater = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (userToggled) return;
+        if (banner.matches(':hover')) { collapseLater(); return; }
+        window.bootstrap.Collapse.getOrCreateInstance(body, { toggle: false }).hide();
+      }, CAUTION_AUTOCOLLAPSE_MS);
+    };
+
+    toggle.addEventListener('click', () => { userToggled = true; clearTimeout(timer); });
+    modal.addEventListener('show.bs.modal', () => {
+      // Every opening starts with the full warning visible, without animation
+      userToggled = false;
+      body.classList.add('show');
+      toggle.setAttribute('aria-expanded', 'true');
+    });
+    modal.addEventListener('shown.bs.modal', collapseLater);
+    modal.addEventListener('hidden.bs.modal', () => clearTimeout(timer));
+  });
+}
+
 // Limit the date pickers to the days present in the vouchers of this closing
 function initAdvancedFilterBounds() {
   const dates = [...document.querySelectorAll('tr.voucher-row[data-date]')]
@@ -529,12 +564,14 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     initAdvancedFilterBounds();
     initAdvancedFilterScrollClose();
+    initCautionAutoCollapse();
     applyVoucherFilters();
     initVoucherTooltips();
   });
 } else {
   initAdvancedFilterBounds();
   initAdvancedFilterScrollClose();
+  initCautionAutoCollapse();
   applyVoucherFilters();
   initVoucherTooltips();
 }
