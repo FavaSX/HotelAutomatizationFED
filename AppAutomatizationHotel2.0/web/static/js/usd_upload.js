@@ -521,6 +521,8 @@ function onManualAlignmentChange() {
     const confidenceCell = document.getElementById('confidence_' + roleKey);
 
     if (fileIdx !== null && latestDetectionReport.inspected_files[fileIdx]) {
+      extraErpIndices.delete(fileIdx);
+      extraTbkIndices.delete(fileIdx);
       const fileInfo = latestDetectionReport.inspected_files[fileIdx];
       evidenceCell.innerHTML = `<i class="bi bi-cpu me-1 text-primary"></i> ${fileInfo.evidence}`;
       confidenceCell.innerHTML = getConfidenceBadgeHtml(
@@ -533,6 +535,7 @@ function onManualAlignmentChange() {
   });
 
   renderExtraErpWidgets();
+  renderExtraTbkWidgets();
   validateCurrentAlignmentSelection();
 }
 

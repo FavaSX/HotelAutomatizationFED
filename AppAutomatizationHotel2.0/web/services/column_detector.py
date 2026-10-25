@@ -37,7 +37,7 @@ BANK_STATEMENT_COLUMN_RULES = {
     "movement_date": {"keywords": ["fecha"], "default_index": 1},
     "description": {"keywords": ["descripcion"], "default_index": 3},
     "branch_or_channel": {"keywords": ["canal", "sucursal"], "default_index": 5},
-    "document_number": {"keywords": ["docto", "documento"], "default_index": 6},
+    "document_number": {"keywords": ["docto", "documento", "operacion"], "default_index": 6},
     "charge_amount": {"keywords": ["cargos"], "default_index": 7},
     "deposit_amount": {"keywords": ["abonos"], "default_index": 8},
     "balance_amount": {"keywords": ["saldo"], "default_index": 9},

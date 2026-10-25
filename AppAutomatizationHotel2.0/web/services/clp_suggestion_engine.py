@@ -171,6 +171,8 @@ def _find_db_suggestion_for_clp_voucher(
     tolerance: float,
     tbk_file: str,
     default_erp_file: str,
+    db_candidates: Optional[List[ErpTransaction]] = None,
+    claimed_db_ids: Optional[set] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Searches unreconciled historical CLP ERP transactions stored in the database
@@ -181,18 +183,23 @@ def _find_db_suggestion_for_clp_voucher(
     modality = voucher.get("payment_modality", "")
     voucher_date = str(voucher.get("sale_date") or "")
 
-    try:
-        qs = ErpTransaction.objects.filter(
-            reconciled=False,
-            source_currency="CLP",
-        ).select_related("process", "card_type").order_by("-transaction_date")[:200]
-    except Exception:
-        return None
+    if db_candidates is None:
+        try:
+            db_candidates = list(
+                ErpTransaction.objects.filter(
+                    reconciled=False,
+                    source_currency="CLP",
+                ).select_related("process", "card_type").order_by("-transaction_date")[:500]
+            )
+        except Exception:
+            return None
 
     best_match = None
     best_score = 0
 
-    for db_tx in qs:
+    for db_tx in db_candidates:
+        if claimed_db_ids is not None and db_tx.id in claimed_db_ids:
+            continue
         db_amount = float(db_tx.amount or 0.0)
         amount_gap = abs(tbk_amount - db_amount)
         if amount_gap > tolerance:
@@ -235,6 +242,8 @@ def _find_db_suggestion_for_clp_voucher(
         return None
 
     db_tx, sim_ratio, typo_badge, exact_code, exact_amount, amount_gap, missing_code, is_rc, db_date = best_match
+    if claimed_db_ids is not None:
+        claimed_db_ids.add(db_tx.id)
     db_auth = clean_code_string(db_tx.authorization_code or "")
     db_amount = float(db_tx.amount or 0.0)
     db_proc_id = db_tx.process_id
@@ -362,7 +371,11 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                 break
 
     def _tbk_file(voucher):
-        return file_names.get(f"tbk_{voucher['payment_modality'].lower()}", "Transbank")
+        return (
+            file_names.get(f"tbk_{voucher['payment_modality'].lower()}")
+            or file_names.get("tbk")
+            or "Transbank"
+        )
 
     # 1. Orphans: an unclaimed Bordero row with the same amount, date and medium, and a similar (or missing) code.
     proposals = []
@@ -488,56 +501,55 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                 "erp_row": _erp_row_view(base_row),
             }
 
-    # 3. Out-of-Period Vouchers: check auxiliary historical Bordero files (and any unclaimed main Bordero rows on sale_date).
-    claimed_aux = set()
+    # 3. Out-of-Period Vouchers: check unclaimed Bordero rows (including auxiliary historical Bordero files merged into erp_rows).
     oop_proposals = []
     for oop_idx, voucher in enumerate(out_of_period):
-        for aux_idx, aux_row in enumerate(aux_erp_rows):
-            if float(aux_row.get("amount") or 0) <= 0 or not _is_compatible(voucher["payment_modality"], aux_row):
-                continue
-            scored = _score_orphan_candidate(voucher, aux_row, tolerance)
-            if scored:
-                oop_proposals.append((scored[0], oop_idx, ("aux", aux_idx), scored[1]))
         for erp_idx, erp_row in enumerate(erp_rows):
             if erp_idx in claimed or float(erp_row.get("amount") or 0) <= 0 or not _is_compatible(voucher["payment_modality"], erp_row):
                 continue
             scored = _score_orphan_candidate(voucher, erp_row, tolerance)
             if scored:
-                oop_proposals.append((scored[0], oop_idx, ("main", erp_idx), scored[1]))
+                bonus = 5 if erp_row.get("is_auxiliary") else 0
+                oop_proposals.append((scored[0] + bonus, oop_idx, erp_idx, scored[1]))
 
     oop_proposals.sort(key=lambda item: item[0], reverse=True)
     assigned_oop = set()
-    for score, oop_idx, (pool_type, row_idx), detail in oop_proposals:
-        if oop_idx in assigned_oop:
-            continue
-        if pool_type == "aux" and row_idx in claimed_aux:
-            continue
-        if pool_type == "main" and row_idx in claimed:
+    for score, oop_idx, erp_idx, detail in oop_proposals:
+        if oop_idx in assigned_oop or erp_idx in claimed:
             continue
         assigned_oop.add(oop_idx)
-        if pool_type == "aux":
-            claimed_aux.add(row_idx)
-            target_row = aux_erp_rows[row_idx]
-            erp_index_ref = None
-        else:
-            claimed.add(row_idx)
-            target_row = erp_rows[row_idx]
-            erp_index_ref = row_idx
+        claimed.add(erp_idx)
+        target_row = erp_rows[erp_idx]
         voucher = out_of_period[oop_idx]
         voucher["suggestion"] = _build_candidate_suggestion(
-            voucher, target_row, erp_index_ref, score, detail, _tbk_file(voucher), default_erp_file
+            voucher, target_row, erp_idx, score, detail, _tbk_file(voucher), default_erp_file
         )
 
-    # 4. Database Assisted Suggestions for remaining Orphans and Out-of-Period vouchers
+    # 4. Database Assisted Suggestions for remaining Orphans and Out-of-Period vouchers (single pre-fetched query)
+    try:
+        db_candidates = list(
+            ErpTransaction.objects.filter(
+                reconciled=False,
+                source_currency="CLP",
+            ).select_related("process", "card_type").order_by("-transaction_date")[:500]
+        )
+    except Exception:
+        db_candidates = []
+    claimed_db_ids: set = set()
+
     for voucher in orphans:
         if not voucher.get("suggestion"):
-            db_sug = _find_db_suggestion_for_clp_voucher(voucher, tolerance, _tbk_file(voucher), default_erp_file)
+            db_sug = _find_db_suggestion_for_clp_voucher(
+                voucher, tolerance, _tbk_file(voucher), default_erp_file, db_candidates, claimed_db_ids
+            )
             if db_sug:
                 voucher["suggestion"] = db_sug
 
     for voucher in out_of_period:
         if not voucher.get("suggestion"):
-            db_sug = _find_db_suggestion_for_clp_voucher(voucher, tolerance, _tbk_file(voucher), default_erp_file)
+            db_sug = _find_db_suggestion_for_clp_voucher(
+                voucher, tolerance, _tbk_file(voucher), default_erp_file, db_candidates, claimed_db_ids
+            )
             if db_sug:
                 voucher["suggestion"] = db_sug
 

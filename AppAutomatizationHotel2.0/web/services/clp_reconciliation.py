@@ -3,7 +3,8 @@ Phase 2: Chilean Pesos (CLP) Card Reconciliation Calculation Service.
 Executes the in-memory cross-match of the 3 Transbank "Abonos por día" settlements
 (Crédito, Débito, Prepago) against the Hotel Bordero, and validates each settlement
 against its deposit in the Bank Statement, without writing to the database.
-Database persistence lives in `clp_persistence.py` and Excel generation in `clp_report_exporter.py`.
+Excel parsing lives in `excel_parsers.py`, database persistence in `clp_persistence.py`,
+and Excel generation in `clp_report_exporter.py`.
 Supports multiple ERP files (e.g. daily extracts, shifts, auxiliary borderos) with automatic deduplication.
 """
 
@@ -15,19 +16,20 @@ import pandas as pd
 
 from ..models import CardType, SystemConfiguration
 from .column_detector import (
-    TRANSBANK_CLP_COLUMN_RULES,
-    resolve_dataframe_columns,
     normalize_text,
     normalize_auth_code,
-    clean_code_string,
-    safe_decimal,
     safe_date,
-    safe_cell,
 )
 from .excel_parsers import (
+    TBK_HEADER_AMOUNT_LABELS,
+    TBK_HEADER_BELOW_LABELS,
+    card_code_from_masked_number,
     parse_bank_statement_movements,
     serialize_bank_movement,
     parse_bordero_clp_transactions,
+    parse_bordero_period,
+    parse_transbank_clp_settlement,
+    parse_universal_transbank_clp,
 )
 
 # (modality, label, deposit modality, bank statement description hint)
@@ -41,263 +43,10 @@ MODALITY_LABELS = {code: label for code, label, _, _ in CLP_MODALITIES}
 # Used when the CardType catalog has not been loaded yet.
 DEFAULT_CARD_NAMES = {"VI": "Visa", "MC": "MasterCard", "AX": "American Express", "DI": "Diners Club"}
 
-# Labels of the settlement header block (rows above the voucher detail).
-TBK_HEADER_AMOUNT_LABELS = {
-    "total ventas (+)": "total_sales",
-    "devolucion comision por anulacion (+)": "commission_refund",
-    "iva devolucion comision por anulacion (+)": "commission_refund_vat",
-    "comision transbank (-)": "commission",
-    "iva de comision transbank (-)": "commission_vat",
-    "ventas anuladas (-)": "voided_sales",
-    "cobros por servicio (-)": "service_charges",
-    "iva de cobros por servicio (-)": "service_charges_vat",
-    "total abono": "total_deposit",
-}
-TBK_HEADER_BELOW_LABELS = {
-    "empresa:": "company",
-    "cuenta corriente:": "bank_account",
-    "moneda:": "currency",
-    "medio de pago:": "payment_medium",
-}
-
 
 def get_clp_tolerance() -> Decimal:
     """CLP rounding tolerance from SystemConfiguration (editable by superusers from /settings/)."""
     return SystemConfiguration.get_solo().clp_rounding_tolerance
-
-
-def card_code_from_masked_number(masked_card: str) -> str:
-    """Infers the card brand from the BIN of a masked card number ('5525 61** **** 5410' -> 'MC')."""
-    digits = "".join(ch for ch in masked_card if ch.isdigit())[:2]
-    if not digits:
-        return ""
-    if digits.startswith("4"):
-        return "VI"
-    if digits[0] in ("2", "5"):
-        return "MC"
-    if digits in ("34", "37"):
-        return "AX"
-    if digits in ("30", "36", "38"):
-        return "DI"
-    return ""
-
-
-def _find_detail_header_row(dataframe: pd.DataFrame) -> int:
-    for row_index in range(min(len(dataframe), 80)):
-        if any(normalize_text(val) == "fecha de venta" for val in dataframe.iloc[row_index].values):
-            return row_index
-    return min(len(dataframe), 28)
-
-
-def parse_universal_transbank_clp(files_or_dfs: List[Any]) -> Dict[str, Dict[str, Any]]:
-    """
-    Universal Transbank Chilean Pesos (CLP) Parser.
-    Accepts:
-      - A single consolidated file ('Todos los medios de pago') containing Débito, Crédito, and Prepago.
-      - OR multiple separate files (e.g. Crédito, Débito, Prepago uploaded individually).
-    Correctly splits transactions into the 3 modalities, computes sub-totals,
-    and isolates installment sales using 'valid_amount' (monto venta válido para abono).
-    """
-    CLP_MODALITIES_MAP = [
-        ("CREDIT", "Crédito"),
-        ("DEBIT", "Débito"),
-        ("PREPAID", "Prepago"),
-    ]
-    settlements: Dict[str, Dict[str, Any]] = {
-        modality: {
-            "header": {
-                "total_sales": Decimal("0"),
-                "sales_total": Decimal("0"),
-                "commission": Decimal("0"),
-                "commission_vat": Decimal("0"),
-                "total_deposit": Decimal("0"),
-                "calculated_deposit": Decimal("0"),
-                "settlement_date": None,
-                "company": "",
-                "bank_account": "",
-                "currency": "Pesos",
-                "payment_medium": label,
-            },
-            "sales": [],
-            "skipped_movements": 0,
-        }
-        for modality, label in CLP_MODALITIES_MAP
-    }
-
-    if not files_or_dfs:
-        return settlements
-
-    for item in files_or_dfs:
-        if item is None:
-            continue
-        if isinstance(item, pd.DataFrame):
-            df = item
-        else:
-            if hasattr(item, "seek"):
-                item.seek(0)
-            try:
-                df = pd.read_excel(item, header=None)
-            except Exception:
-                if hasattr(item, "seek"):
-                    item.seek(0)
-                try:
-                    tables = pd.read_html(item)
-                    df = tables[0] if tables else pd.DataFrame()
-                except Exception:
-                    df = pd.DataFrame()
-
-        if df is None or len(df) == 0:
-            continue
-
-        detail_header_row = _find_detail_header_row(df)
-
-        settlement_date = None
-        header_medium = ""
-        company = ""
-        bank_account = ""
-
-        for row_index in range(min(len(df), detail_header_row)):
-            row = df.iloc[row_index]
-            cells = [(col, val) for col, val in enumerate(row.values) if pd.notna(val) and str(val).strip()]
-            for position, (col, val) in enumerate(cells):
-                label = normalize_text(val)
-                if label.startswith("periodo de consulta") and position + 1 < len(cells):
-                    settlement_date = safe_date(cells[position + 1][1])
-                elif label.startswith("medio de pago") and row_index + 1 < len(df):
-                    header_medium = normalize_text(df.iloc[row_index + 1, col])
-                elif label.startswith("empresa") and row_index + 1 < len(df):
-                    company = str(df.iloc[row_index + 1, col] or "").strip()
-                elif label.startswith("cuenta corriente") and row_index + 1 < len(df):
-                    bank_account = str(df.iloc[row_index + 1, col] or "").strip()
-
-        columns = resolve_dataframe_columns(df, TRANSBANK_CLP_COLUMN_RULES, max_scan_rows=detail_header_row + 3)
-        is_consolidated = "todos los medios" in header_medium or not header_medium
-
-        for row_index in range(detail_header_row + 1, len(df)):
-            row = df.iloc[row_index]
-            auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
-            if not auth_code:
-                continue
-
-            movement_type = normalize_text(safe_cell(row, columns["movement_type"]))
-            is_void = "anulac" in movement_type or "devoluc" in movement_type
-            if movement_type and not movement_type.startswith("venta") and not is_void:
-                continue
-
-            # Modality check: first check row-level medium column, fallback to header
-            row_medium = normalize_text(safe_cell(row, columns.get("payment_medium", 5)))
-            if "deb" in row_medium:
-                modality = "DEBIT"
-            elif "prep" in row_medium:
-                modality = "PREPAID"
-            elif "cred" in row_medium:
-                modality = "CREDIT"
-            else:
-                if "deb" in header_medium:
-                    modality = "DEBIT"
-                elif "prep" in header_medium:
-                    modality = "PREPAID"
-                else:
-                    modality = "CREDIT"
-
-            gross_amount = safe_decimal(safe_cell(row, columns["gross_amount"]))
-            valid_amount = safe_decimal(safe_cell(row, columns["valid_amount"])) or gross_amount
-            commission = safe_decimal(safe_cell(row, columns["commission"]))
-            commission_vat = safe_decimal(safe_cell(row, columns["commission_vat"]))
-            net_deposit = safe_decimal(safe_cell(row, columns["net_deposit"]))
-
-            if is_void:
-                gross_amount = -abs(gross_amount)
-                valid_amount = -abs(valid_amount)
-                net_deposit = -abs(net_deposit)
-
-            sale_date = safe_date(safe_cell(row, columns["sale_date"]))
-            masked_card = str(safe_cell(row, columns["masked_card_number"]) or "").strip()
-            location = str(safe_cell(row, columns["merchant_location"]) or "").split(",")[0].strip()
-            installment_number = clean_code_string(safe_cell(row, columns["installment_number"]))
-
-            settlements[modality]["sales"].append({
-                "excel_row": row_index + 1,
-                "payment_modality": modality,
-                "card_code": card_code_from_masked_number(masked_card),
-                "sale_date": sale_date,
-                "merchant_code": clean_code_string(safe_cell(row, columns["merchant_code"])),
-                "merchant_location": location,
-                "gross_amount": gross_amount,
-                "installment_type": str(safe_cell(row, columns["installment_type"]) or "").strip(),
-                "installment_number": installment_number,
-                "valid_amount": valid_amount,
-                "commission": commission,
-                "commission_vat": commission_vat,
-                "net_deposit": net_deposit,
-                "masked_card": masked_card,
-                "authorization_code": auth_code,
-                "transaction_identifier": clean_code_string(safe_cell(row, columns["transaction_identifier"])),
-                "receipt_number": clean_code_string(safe_cell(row, columns["receipt_number"])),
-                "is_void": is_void,
-            })
-
-            h = settlements[modality]["header"]
-            h["total_sales"] += valid_amount
-            h["sales_total"] += valid_amount
-            h["commission"] += commission
-            h["commission_vat"] += commission_vat
-            h["total_deposit"] += net_deposit
-            h["calculated_deposit"] += net_deposit
-            if settlement_date and not h["settlement_date"]:
-                h["settlement_date"] = settlement_date
-            if company and not h["company"]:
-                h["company"] = company
-            if bank_account and not h["bank_account"]:
-                h["bank_account"] = bank_account
-
-        # If not consolidated, read official header amounts from rows 16-25
-        if not is_consolidated:
-            target_mod = "CREDIT" if "cred" in header_medium else ("DEBIT" if "deb" in header_medium else "PREPAID")
-            h = settlements[target_mod]["header"]
-            for row_index in range(min(len(df), detail_header_row)):
-                row = df.iloc[row_index]
-                cells = [(col, val) for col, val in enumerate(row.values) if pd.notna(val) and str(val).strip()]
-                for position, (col, val) in enumerate(cells):
-                    label = normalize_text(val)
-                    if label in TBK_HEADER_AMOUNT_LABELS and position + 1 < len(cells):
-                        amt = safe_decimal(cells[position + 1][1])
-                        field = TBK_HEADER_AMOUNT_LABELS[label]
-                        if field == "total_sales" and amt > 0:
-                            h["total_sales"] = amt
-                            h["sales_total"] = amt
-                        elif field == "commission" and amt > 0:
-                            h["commission"] = amt
-                        elif field == "commission_vat" and amt > 0:
-                            h["commission_vat"] = amt
-                        elif field == "total_deposit" and amt > 0:
-                            h["total_deposit"] = amt
-                            h["calculated_deposit"] = amt
-
-    return settlements
-
-
-def parse_transbank_clp_settlement(dataframe: pd.DataFrame, modality: str) -> Dict[str, Any]:
-    """Legacy helper for backward compatibility: delegates to parse_universal_transbank_clp."""
-    all_settlements = parse_universal_transbank_clp([dataframe])
-    return all_settlements.get(modality) or {
-        "header": {key: Decimal("0") for key in TBK_HEADER_AMOUNT_LABELS.values()},
-        "sales": [],
-        "skipped_movements": 0,
-    }
-
-
-def parse_bordero_period(dataframe: pd.DataFrame) -> Tuple[Optional[date], Optional[date]]:
-    """Reads 'Periodo de: 04/09/2026 hasta 07/09/2026' from the Bordero header."""
-    for row_index in range(min(len(dataframe), 15)):
-        cells = [val for val in dataframe.iloc[row_index].values if pd.notna(val) and str(val).strip()]
-        labels = [normalize_text(val) for val in cells]
-        if labels and labels[0].startswith("periodo de"):
-            dates = [safe_date(val) for val in cells[1:]]
-            dates = [d for d in dates if d]
-            if dates:
-                return min(dates), max(dates)
-    return None, None
 
 
 def _installment_parts(installment_number: str) -> Optional[Tuple[int, int]]:
@@ -335,17 +84,19 @@ def _match_bank_deposits(
             (s["net_deposit"] for s in settlements[modality]["sales"]), Decimal("0")
         )
         settlement_date = header["settlement_date"]
+        has_activity = bool(expected != 0 or settlements[modality]["sales"])
 
         candidates = []
-        for idx, movement in enumerate(bank_movements):
-            if idx in claimed_movements or movement.deposit_amount <= 0 or not movement.is_transbank_deposit:
-                continue
-            difference = abs(movement.deposit_amount - expected)
-            if difference > tolerance:
-                continue
-            same_hint = description_hint in (movement.description or "").upper()
-            same_date = settlement_date is not None and movement.movement_date == settlement_date
-            candidates.append((difference, not same_hint, not same_date, idx))
+        if has_activity:
+            for idx, movement in enumerate(bank_movements):
+                if idx in claimed_movements or movement.deposit_amount <= 0 or not movement.is_transbank_deposit:
+                    continue
+                difference = abs(movement.deposit_amount - expected)
+                if difference > tolerance:
+                    continue
+                same_hint = description_hint in (movement.description or "").upper()
+                same_date = settlement_date is not None and movement.movement_date == settlement_date
+                candidates.append((difference, not same_hint, not same_date, idx))
 
         matched_idx = min(candidates)[3] if candidates else None
         matched = bank_movements[matched_idx] if matched_idx is not None else None
@@ -364,10 +115,12 @@ def _match_bank_deposits(
             "calculated_deposit": float(expected),
             "bank_deposit_amount": float(matched.deposit_amount) if matched else 0.0,
             "bank_movement_date": matched.movement_date.strftime("%d/%m/%Y") if matched and matched.movement_date else None,
-            "bank_description": matched.description if matched else "",
+            "bank_description": (
+                matched.description if matched else ("Sin ventas ni abono en este período" if not has_activity else "")
+            ),
             "bank_movement_index": matched_idx,
             "difference": float(expected - matched.deposit_amount) if matched else float(expected),
-            "is_matched": matched is not None,
+            "is_matched": matched is not None or not has_activity,
         })
 
     return validations, claimed_movements
@@ -384,70 +137,117 @@ def _cross_match_sale(
     """Level 1: Transbank voucher -> Bordero by normalized authorization code, then validates the amount."""
     modality = sale["payment_modality"]
     gross = sale["gross_amount"]
-    candidates = [i for i in rows_by_auth_code.get(normalize_auth_code(sale["authorization_code"]), []) if i not in claimed_erp]
-    compatible = [i for i in candidates if _is_compatible(modality, erp_rows[i])]
-    pool = compatible or candidates
+    normalized_code = normalize_auth_code(sale["authorization_code"])
+    candidates = [idx for idx in rows_by_auth_code.get(normalized_code, []) if idx not in claimed_erp]
 
+    def _same_or_next_day(row_idx: int) -> bool:
+        erp_date = safe_date(erp_rows[row_idx]["transaction_date"])
+        return sale["sale_date"] is None or erp_date is None or 0 <= (erp_date - sale["sale_date"]).days <= 1
+
+    compatible = [idx for idx in candidates if _is_compatible(modality, erp_rows[idx])]
+    incompatible = [idx for idx in candidates if idx not in compatible]
+
+    # 1. Single compatible Bordero row with the same amount (within tolerance).
+    exact = [
+        idx for idx in compatible
+        if abs(gross - Decimal(str(erp_rows[idx]["amount"]))) <= tolerance and _same_or_next_day(idx)
+    ]
+    if not exact:
+        exact = [idx for idx in compatible if abs(gross - Decimal(str(erp_rows[idx]["amount"]))) <= tolerance]
+    if exact:
+        chosen = exact[0]
+        claimed_erp.add(chosen)
+        diff = gross - Decimal(str(erp_rows[chosen]["amount"]))
+        return {
+            "result": "MATCHED",
+            "linked": [chosen],
+            "erp_amount": Decimal(str(erp_rows[chosen]["amount"])),
+            "difference": diff,
+            "observation": "Cuadrado con Borderó" if diff == 0 else f"Cuadrado (redondeo ${diff:,.0f})",
+        }
+
+    # 2. Split folio or payment + reversal on the same account: net sum of the group matches the voucher.
+    by_account: Dict[str, List[int]] = {}
+    for idx in compatible:
+        if _same_or_next_day(idx):
+            by_account.setdefault(erp_rows[idx]["account_code"], []).append(idx)
+    for group in by_account.values():
+        if len(group) > 1:
+            group_sum = sum((Decimal(str(erp_rows[i]["amount"])) for i in group), Decimal("0"))
+            if abs(gross - group_sum) <= tolerance:
+                claimed_erp.update(group)
+                return {
+                    "result": "MATCHED",
+                    "linked": group,
+                    "erp_amount": group_sum,
+                    "difference": gross - group_sum,
+                    "observation": f"Cuadrado sumando {len(group)} filas de la cuenta {erp_rows[group[0]]['account_code']}",
+                }
+
+    # 3. Same code and compatible medium, but the amount differs beyond the tolerance.
+    same_window = [idx for idx in compatible if _same_or_next_day(idx)] or compatible
+    if same_window:
+        chosen = min(same_window, key=lambda idx: abs(gross - Decimal(str(erp_rows[idx]["amount"]))))
+        claimed_erp.add(chosen)
+        erp_amount = Decimal(str(erp_rows[chosen]["amount"]))
+        diff = gross - erp_amount
+        return {
+            "result": "AMOUNT_MISMATCH",
+            "linked": [chosen],
+            "erp_amount": erp_amount,
+            "difference": diff,
+            "observation": f"Diferencia de ${diff:,.0f} entre Transbank (${gross:,.0f}) y Borderó (${erp_amount:,.0f})",
+        }
+
+    # 4. Same code and amount, but the cashier typed the wrong payment code (e.g. Red Compra as Visa $).
+    if incompatible:
+        chosen = min(incompatible, key=lambda idx: abs(gross - Decimal(str(erp_rows[idx]["amount"]))))
+        claimed_erp.add(chosen)
+        erp_amount = Decimal(str(erp_rows[chosen]["amount"]))
+        return {
+            "result": "CARD_TYPE_MISMATCH",
+            "linked": [chosen],
+            "erp_amount": erp_amount,
+            "difference": gross - erp_amount,
+            "observation": (
+                f"Liquidado en Transbank {MODALITY_LABELS[modality]}, registrado en Borderó como "
+                f"{erp_rows[chosen]['payment_code']} ({erp_rows[chosen]['payment_description']})"
+            ),
+        }
+
+    # 5. Not found in this Bordero: distinguish out-of-period / later installments from true orphans.
     period_start, period_end = period
-    sale_date = sale["sale_date"]
-    outside_period = bool(
-        sale_date and period_start and period_end and not (period_start <= sale_date <= period_end)
-    ) or _installment_is_later(sale["installment_number"])
+    if _installment_is_later(sale["installment_number"]):
+        return {
+            "result": "OUT_OF_PERIOD",
+            "linked": [],
+            "erp_amount": Decimal("0"),
+            "difference": gross,
+            "observation": (
+                f"Cuota {sale['installment_number']} de venta del "
+                f"{sale['sale_date'].strftime('%d/%m/%Y') if sale['sale_date'] else 'período anterior'} "
+                f"(monto original ${gross:,.0f}; abono de la cuota ${sale['valid_amount']:,.0f})"
+            ),
+        }
+    if sale["sale_date"] and period_start and period_end and not (period_start <= sale["sale_date"] <= period_end):
+        return {
+            "result": "OUT_OF_PERIOD",
+            "linked": [],
+            "erp_amount": Decimal("0"),
+            "difference": gross,
+            "observation": (
+                f"Venta del {sale['sale_date'].strftime('%d/%m/%Y')} fuera del período del Borderó "
+                f"({period_start.strftime('%d/%m/%Y')} al {period_end.strftime('%d/%m/%Y')})"
+            ),
+        }
 
-    def _amount(indices):
-        return sum((Decimal(str(erp_rows[i]["amount"])) for i in indices), Decimal("0"))
-
-    linked: List[int] = []
-    if pool:
-        # Net of every row of the code first (cancels reversals), then the closest single row.
-        if abs(gross - _amount(pool)) <= tolerance:
-            linked = pool
-        else:
-            closest = min(pool, key=lambda i: abs(gross - Decimal(str(erp_rows[i]["amount"]))))
-            if abs(gross - Decimal(str(erp_rows[closest]["amount"]))) <= tolerance:
-                linked = [closest]
-
-    if linked:
-        erp_amount = _amount(linked)
-        if compatible:
-            result = "MATCHED"
-            observation = "Coincide código y monto en Borderó"
-            if len(linked) > 1:
-                observation = f"Coincide neto de {len(linked)} filas del Borderó (incluye reversas)"
-        else:
-            result = "CARD_TYPE_MISMATCH"
-            observation = (
-                f"Monto coincide, pero el Borderó lo registra como {erp_rows[linked[0]]['payment_code']} "
-                f"(no corresponde a {MODALITY_LABELS[modality]})"
-            )
-    elif pool and not outside_period:
-        linked = pool
-        erp_amount = _amount(pool)
-        result = "AMOUNT_MISMATCH"
-        observation = f"Código en Borderó con diferencia de monto ({erp_amount:.0f} en Borderó)"
-    elif outside_period:
-        erp_amount = Decimal("0")
-        result = "OUT_OF_PERIOD"
-        if _installment_is_later(sale["installment_number"]):
-            observation = f"Cuota {sale['installment_number']} de una venta anterior: buscar en el Borderó de la venta original"
-        else:
-            observation = "Venta fuera del período del Borderó cargado: buscar en el Borderó de esa fecha"
-        if pool:
-            observation += " (el código existe en este Borderó, pero para otra venta)"
-    else:
-        erp_amount = Decimal("0")
-        result = "NOT_FOUND_IN_ERP"
-        observation = f"Voucher {sale['authorization_code']} no encontrado en ERP Hotel"
-
-    if _installment_parts(sale["installment_number"]) and result == "MATCHED":
-        observation += f" · Venta en cuotas ({sale['installment_number']})"
-
-    for i in linked:
-        claimed_erp.add(i)
-        if result == "MATCHED":
-            erp_rows[i]["reconciled"] = True
-
-    return {"linked": linked, "erp_amount": erp_amount, "result": result, "observation": observation}
+    return {
+        "result": "NOT_FOUND_IN_ERP",
+        "linked": [],
+        "erp_amount": Decimal("0"),
+        "difference": gross,
+        "observation": f"Voucher {sale['authorization_code']} no encontrado en ERP Hotel",
+    }
 
 
 def calculate_clp_preview(
@@ -458,24 +258,23 @@ def calculate_clp_preview(
     transbank_prepaid_file=None,
     extra_erp_files: Optional[List[Any]] = None,
     tbk_files: Optional[List[Any]] = None,
-    extra_tbk_files: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Executes the complete Chilean Pesos reconciliation workflow purely in memory.
-    Consolidates primary Bordero and any auxiliary Borderos with automatic deduplication.
-    Supports unified Transbank files (single consolidated or separate modality files).
+    Runs the CLP reconciliation in memory and returns a JSON-serializable dictionary for the session.
+    Supports both:
+      - Unified Transbank file(s) via `tbk_files` (1 consolidated file or 2-3 separate modality files).
+      - Legacy individual file arguments (`transbank_credit_file`, `transbank_debit_file`, `transbank_prepaid_file`).
+      - Optional auxiliary/extra ERP files (`extra_erp_files`) for multi-shift or historical Bordero matching.
     """
     tolerance = get_clp_tolerance()
-    card_names = {**DEFAULT_CARD_NAMES, **{card.code: card.name for card in CardType.objects.all()}}
+    card_names = {**DEFAULT_CARD_NAMES, **{c.code: c.name for c in CardType.objects.all()}}
 
     all_tbk_files: List[Any] = []
     if tbk_files:
-        all_tbk_files.extend([f for f in tbk_files if f])
-    if extra_tbk_files:
-        all_tbk_files.extend([f for f in extra_tbk_files if f])
-    for leg in [transbank_credit_file, transbank_debit_file, transbank_prepaid_file]:
-        if leg and leg not in all_tbk_files:
-            all_tbk_files.append(leg)
+        all_tbk_files.extend([f for f in tbk_files if f is not None])
+    for legacy_f in (transbank_credit_file, transbank_debit_file, transbank_prepaid_file):
+        if legacy_f is not None and legacy_f not in all_tbk_files:
+            all_tbk_files.append(legacy_f)
 
     all_upload_handles = [erp_file, bank_statement_file] + (extra_erp_files or []) + all_tbk_files
     for uploaded_file in all_upload_handles:
@@ -485,9 +284,9 @@ def calculate_clp_preview(
     erp_file_name = os.path.basename(getattr(erp_file, "name", "BORDERO.xlsx"))
     bordero_dataframe = pd.read_excel(erp_file, header=None)
     try:
-        xl_bank = pd.ExcelFile(bank_statement_file)
-        target_sheet = "Movimientos" if "Movimientos" in xl_bank.sheet_names else xl_bank.sheet_names[0]
-        bank_dataframe = xl_bank.parse(target_sheet, header=None)
+        with pd.ExcelFile(bank_statement_file) as xl_bank:
+            target_sheet = "Movimientos" if "Movimientos" in xl_bank.sheet_names else xl_bank.sheet_names[0]
+            bank_dataframe = xl_bank.parse(target_sheet, header=None)
     except Exception:
         if hasattr(bank_statement_file, "seek"):
             bank_statement_file.seek(0)
@@ -552,26 +351,31 @@ def calculate_clp_preview(
                 str(extra_row.get("amount")),
                 extra_row.get("card_code"),
             )
-            if sig in seen_clp_sigs:
-                continue
-            seen_clp_sigs.add(sig)
-            pos = len(erp_rows)
-            extra_row["is_auxiliary"] = True
-            erp_rows.append(extra_row)
-            norm_code = normalize_auth_code(extra_row.get("authorization_code"))
-            if norm_code:
-                rows_by_auth_code.setdefault(norm_code, []).append(pos)
+            if sig not in seen_clp_sigs:
+                seen_clp_sigs.add(sig)
+                extra_row["is_auxiliary"] = True
+                pos = len(erp_rows)
+                erp_rows.append(extra_row)
+                norm_code = normalize_auth_code(extra_row.get("authorization_code") or "")
+                if norm_code:
+                    rows_by_auth_code.setdefault(norm_code, []).append(pos)
 
     period = parse_bordero_period(bordero_dataframe)
-    if not all(period):
-        row_dates = sorted({safe_date(r["transaction_date"]) for r in erp_rows} - {None})
-        period = (row_dates[0], row_dates[-1]) if row_dates else (None, None)
+    if period == (None, None):
+        erp_dates = [d for d in (safe_date(r["transaction_date"]) for r in erp_rows if not r.get("is_auxiliary")) if d]
+        if erp_dates:
+            period = (min(erp_dates), max(erp_dates))
 
-    # 3. Cross-match every Transbank voucher (source of truth) against the Bordero
-    buckets: Dict[str, List[Dict[str, Any]]] = {
-        "MATCHED": [], "AMOUNT_MISMATCH": [], "CARD_TYPE_MISMATCH": [], "NOT_FOUND_IN_ERP": [], "OUT_OF_PERIOD": [],
-    }
+    # 3. Cross-match every Transbank voucher against the Bordero
     transbank_transactions_data: List[Dict[str, Any]] = []
+    all_vouchers: List[Dict[str, Any]] = []
+    buckets: Dict[str, List[Dict[str, Any]]] = {
+        "MATCHED": [],
+        "AMOUNT_MISMATCH": [],
+        "CARD_TYPE_MISMATCH": [],
+        "NOT_FOUND_IN_ERP": [],
+        "OUT_OF_PERIOD": [],
+    }
     claimed_erp: set = set()
 
     # Exact-amount vouchers first so a shared or reused code is not consumed by the wrong sale.
@@ -629,63 +433,63 @@ def calculate_clp_preview(
             "reconciled": match["result"] == "MATCHED",
         })
 
-        difference = sale["gross_amount"] - match["erp_amount"] if linked else sale["gross_amount"]
+        for idx in linked:
+            if match["result"] == "MATCHED":
+                erp_rows[idx]["reconciled"] = True
+
         voucher = {
             "tbk_index": tbk_index,
             "erp_index": primary_idx,
             "erp_indices": linked,
-            "tbk_excel_row": sale["excel_row"],
-            "erp_excel_rows": [erp_rows[i]["excel_row"] for i in linked],
             "payment_modality": sale["payment_modality"],
             "modality_label": MODALITY_LABELS[sale["payment_modality"]],
+            "card_code": card_code,
+            "card_name": (
+                "Redcompra"
+                if sale["payment_modality"] in ("DEBIT", "PREPAID") and not card_code
+                else card_names.get(card_code, card_code or "Sin marca")
+            ),
             "authorization_code": sale["authorization_code"],
             "erp_authorization_code": primary_erp["authorization_code"] if primary_erp else "",
-            "erp_payment_code": primary_erp["payment_code"] if primary_erp else "",
-            "invoice_number": primary_erp["invoice_number"] if primary_erp else "",
-            "document_number": primary_erp["account_code"] if primary_erp else "",
-            "card_code": card_code,
-            "card_name": card_names.get(card_code, card_code or "—"),
-
             "masked_card": sale["masked_card"],
             "sale_date": sale_date_str,
-            "merchant_location": sale["merchant_location"],
-            "installment_number": sale["installment_number"],
-            "guest_name": (primary_erp["guest_name"] if primary_erp else "") or "—",
-            "room_number": (primary_erp["room_number"] if primary_erp else "") or "—",
-            "cashier_username": (primary_erp["cashier_username"] if primary_erp else "") or "—",
             "erp_date": primary_erp["transaction_date"] if primary_erp else "",
+            "merchant_location": sale["merchant_location"],
+            "installment_type": sale["installment_type"],
+            "installment_number": sale["installment_number"],
+            "account_code": primary_erp["account_code"] if primary_erp else "—",
+            "invoice_number": primary_erp["invoice_number"] if primary_erp else "—",
+            "room_number": primary_erp["room_number"] if primary_erp else "—",
+            "guest_name": primary_erp["guest_name"] if primary_erp else "—",
+            "cashier_username": primary_erp["cashier_username"] if primary_erp else "—",
+            "erp_payment_code": primary_erp["payment_code"] if primary_erp else "—",
             "tbk_amount": float(sale["gross_amount"]),
             "valid_amount": float(sale["valid_amount"]),
-            "net_deposit": float(sale["net_deposit"]),
-            "commissions": float(sale["commission"] + sale["commission_vat"]),
             "erp_amount": float(match["erp_amount"]),
-            "difference": float(difference),
+            "difference": float(match["difference"]),
+            "commissions": float(sale["commission"] + sale["commission_vat"]),
+            "net_deposit": float(sale["net_deposit"]),
             "system_result": match["result"],
             "observation": match["observation"],
         }
+        all_vouchers.append(voucher)
         buckets[match["result"]].append(voucher)
 
-    # 4. Summaries by payment modality (screen) and by modality + card brand (persistence)
-    all_vouchers = [v for bucket in buckets.values() for v in bucket]
-    modality_table: List[Dict[str, Any]] = []
+    # 4. Summary tables: by payment medium (UI) and by medium + brand (for ReconciliationSummary in DB)
+    modality_table = []
     brand_accumulators: Dict[Tuple[str, str], Dict[str, Decimal]] = {}
-
-    for modality, label, deposit_modality, _ in CLP_MODALITIES:
-        sales = settlements[modality]["sales"]
+    for modality, label, _, _ in CLP_MODALITIES:
         header = settlements[modality]["header"]
         vouchers = [v for v in all_vouchers if v["payment_modality"] == modality]
-        gross_total = sum((s["gross_amount"] for s in sales), Decimal("0"))
-        valid_total = sum((s["valid_amount"] for s in sales), Decimal("0"))
-        net_total = sum((s["net_deposit"] for s in sales), Decimal("0"))
-        header_sales = header.get("sales_total") or header.get("total_sales") or Decimal("0")
-        tbk_sales_basis = header_sales if header_sales > 0 else (valid_total if valid_total > 0 else gross_total)
+        gross_total = sum((Decimal(str(v["tbk_amount"])) for v in vouchers), Decimal("0"))
+        valid_total = sum((Decimal(str(v["valid_amount"])) for v in vouchers), Decimal("0"))
         erp_total = sum((Decimal(str(v["erp_amount"])) for v in vouchers), Decimal("0"))
+        net_total = sum((Decimal(str(v["net_deposit"])) for v in vouchers), Decimal("0"))
         validation = next(b for b in bank_validations if b["payment_modality"] == modality)
-
+        tbk_sales_basis = valid_total if valid_total > 0 else gross_total
         modality_table.append({
             "payment_modality": modality,
             "modality_label": label,
-            "deposit_modality": deposit_modality,
             "vouchers": len(vouchers),
             "matched": sum(1 for v in vouchers if v["system_result"] == "MATCHED"),
             "exceptions": sum(1 for v in vouchers if v["system_result"] != "MATCHED"),
@@ -705,7 +509,7 @@ def calculate_clp_preview(
                 (modality, voucher["card_code"]),
                 {"tbk": Decimal("0"), "erp": Decimal("0"), "commissions": Decimal("0"), "net": Decimal("0")},
             )
-            acc["tbk"] += Decimal(str(voucher["tbk_amount"]))
+            acc["tbk"] += Decimal(str(voucher.get("valid_amount") or voucher["tbk_amount"]))
             acc["erp"] += Decimal(str(voucher["erp_amount"]))
             acc["commissions"] += Decimal(str(voucher["commissions"]))
             acc["net"] += Decimal(str(voucher["net_deposit"]))
@@ -767,7 +571,6 @@ def calculate_clp_preview(
         "bank_validations": bank_validations,
         "bank_movements": bank_movements_data,
         "erp_transactions": erp_rows,
-        "auxiliary_erp_transactions": auxiliary_erp_rows,
         "transbank_transactions": transbank_transactions_data,
         "modality_table": modality_table,
         "clp_table": clp_table,

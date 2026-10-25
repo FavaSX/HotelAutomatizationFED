@@ -1,27 +1,24 @@
 """
-Excel Report Exporter for the CLP (Pesos) Card Reconciliation.
-Generates the official styled workbook from a committed ReconciliationProcess:
-  1. Resumen Pesos: deposits validated against the bank statement and totals by medium / brand.
-  2. Vouchers Cuadrados: every Transbank voucher reconciled with the Bordero.
-  3. Reporte de Excepciones: the single exception report requested by the hotel
-     (Tipo de error, Fecha de origen, Documento / Código, Monto discrepante, Acción sugerida).
+Excel Report Exporter for the CLP (Pesos) Card Reconciliation (Phase 2).
+Generates the official styled workbook from a committed ReconciliationProcess,
+using shared styling helpers from `excel_styles.py`.
 """
 
 import io
 from datetime import date
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Font
 
 from ..models import ReconciliationProcess
-
-NAVY_FILL = PatternFill(start_color="0C0C42", end_color="0C0C42", fill_type="solid")
-GOLD_FILL = PatternFill(start_color="996909", end_color="996909", fill_type="solid")
-LIGHT_FILL = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
-WHITE_BOLD = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-NAVY_BOLD = Font(name="Calibri", size=11, bold=True, color="0C0C42")
-RED_BOLD = Font(bold=True, color="DC2626")
-THIN_BORDER = Border(*(Side(style="thin", color="CBD5E1"),) * 4)
-CLP_FORMAT = "$#,##0"
+from .excel_styles import (
+    GOLD_FILL,
+    LIGHT_FILL,
+    NAVY_BOLD,
+    NAVY_FILL,
+    auto_adjust_columns,
+    write_data_row,
+    write_header_row,
+)
 
 # Most actionable exceptions first; out-of-period sales are only pending another Bordero.
 EXCEPTION_ORDER = {
@@ -39,24 +36,6 @@ MODALITY_LABELS = {
     "DEBIT": "Débito",
     "PREPAID": "Prepago",
 }
-
-
-def _write_header(ws, row: int, headers, fill=NAVY_FILL):
-    for col_idx, header in enumerate(headers, 1):
-        cell = ws.cell(row=row, column=col_idx, value=header)
-        cell.fill = fill
-        cell.font = WHITE_BOLD
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-
-def _write_row(ws, row: int, values, money_columns=(), red_columns=()):
-    for col_idx, value in enumerate(values, 1):
-        cell = ws.cell(row=row, column=col_idx, value=value)
-        cell.border = THIN_BORDER
-        if col_idx in money_columns:
-            cell.number_format = CLP_FORMAT
-        if col_idx in red_columns and value:
-            cell.font = RED_BOLD
 
 
 def _split_status_detail(detail: str):
@@ -79,17 +58,26 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     # Sheet 1: Resumen Pesos
     ws = wb.active
     ws.title = "Resumen Pesos"
-    ws.cell(row=1, column=1, value=f"HOTEL PLAZA SAN FRANCISCO — REPORTE OFICIAL CONCILIACIÓN PESOS (PROCESO #{process.id})").font = Font(size=14, bold=True, color="0C0C42")
+    ws.cell(
+        row=1,
+        column=1,
+        value=f"HOTEL PLAZA SAN FRANCISCO — REPORTE OFICIAL CONCILIACIÓN PESOS (PROCESO #{process.id})",
+    ).font = Font(size=14, bold=True, color="0C0C42")
     exec_str = process.execution_date.strftime("%d/%m/%Y %H:%M") if process.execution_date else ""
-    ws.cell(row=2, column=1, value=f"Periodo: {process.accounting_period or 'Cierre Pesos'} | Auditor: {process.user.username} | Fecha Registro BD: {exec_str}").font = Font(size=10, italic=True)
+    ws.cell(
+        row=2,
+        column=1,
+        value=f"Periodo: {process.accounting_period or 'Cierre Pesos'} | Auditor: {process.user.username} | Fecha Registro BD: {exec_str}",
+    ).font = Font(size=10, italic=True)
 
     ws.cell(row=4, column=1, value="1. VALIDACIÓN DE ABONOS TRANSBANK EN CARTOLA").font = NAVY_BOLD
-    _write_header(ws, 5, ["Medio de pago", "Abono TBK (CLP)", "Abono Cartola (CLP)", "Diferencia (CLP)", "Fecha Cartola", "Estado"])
+    write_header_row(ws, 5, ["Medio de pago", "Abono TBK (CLP)", "Abono Cartola (CLP)", "Diferencia (CLP)", "Fecha Cartola", "Estado"], fill=NAVY_FILL, center=True, wrap_text=True)
     row = 6
     for validation in validations:
         difference = float(validation.transbank_calculated_deposit - (validation.bank_statement_deposit or 0))
-        _write_row(
-            ws, row,
+        write_data_row(
+            ws,
+            row,
             [
                 MODALITY_LABELS.get(validation.payment_modality, validation.payment_modality),
                 float(validation.transbank_calculated_deposit),
@@ -106,7 +94,7 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     row += 2
     ws.cell(row=row, column=1, value="2. CUADRATURA POR MEDIO DE PAGO Y MARCA (TRANSBANK VS BORDERÓ)").font = NAVY_BOLD
     row += 1
-    _write_header(ws, row, ["Medio · Marca", "Ventas TBK (CLP)", "Ventas Borderó (CLP)", "Diferencia (CLP)", "Comisión + IVA (CLP)", "Abono Neto (CLP)"])
+    write_header_row(ws, row, ["Medio · Marca", "Ventas TBK (CLP)", "Ventas Borderó (CLP)", "Diferencia (CLP)", "Comisión + IVA (CLP)", "Abono Neto (CLP)"], fill=NAVY_FILL, center=True, wrap_text=True)
     row += 1
     totals = [0.0] * 5
     for summary in sorted(summaries, key=lambda s: (s.payment_modality or "", s.card_type.name)):
@@ -119,9 +107,9 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
         ]
         totals = [t + v for t, v in zip(totals, values)]
         label = f"{MODALITY_LABELS.get(summary.payment_modality, summary.payment_modality)} · {summary.card_type.name}"
-        _write_row(ws, row, [label, *values], money_columns=(2, 3, 4, 5, 6), red_columns=(4,))
+        write_data_row(ws, row, [label, *values], money_columns=(2, 3, 4, 5, 6), red_columns=(4,))
         row += 1
-    _write_row(ws, row, ["TOTAL GENERAL CLP", *totals], money_columns=(2, 3, 4, 5, 6))
+    write_data_row(ws, row, ["TOTAL GENERAL CLP", *totals], money_columns=(2, 3, 4, 5, 6))
     for col in range(1, 7):
         ws.cell(row=row, column=col).fill = LIGHT_FILL
         ws.cell(row=row, column=col).font = NAVY_BOLD
@@ -130,56 +118,82 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
 
     # Sheet 2: Vouchers Cuadrados
     ws_matched = wb.create_sheet(title="Vouchers Cuadrados")
-    _write_header(ws_matched, 1, [
+    write_header_row(ws_matched, 1, [
         "Autorización TBK", "Código en Borderó", "Medio", "Tarjeta", "Fecha Venta", "Huésped", "Hab.",
         "Cajero", "Monto TBK", "Monto Borderó", "Diferencia", "Diagnóstico",
-    ])
+    ], fill=NAVY_FILL, center=True, wrap_text=True)
     row = 2
     for match in (m for m in cross_matches if m.system_result == "MATCHED"):
         modality = match.transbank_transaction.payment_modality if match.transbank_transaction else ""
-        _write_row(ws_matched, row, [
-            match.authorization_code or "", match.document_number or "", MODALITY_LABELS.get(modality, modality),
-            match.card_type.name if match.card_type else "", match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "",
-            match.guest_name or "", match.room_number or "", match.cashier_username or "",
-            float(match.transbank_amount), float(match.erp_amount_clp), float(match.difference_clp),
-            match.system_observation or "",
-        ], money_columns=(9, 10, 11))
+        write_data_row(
+            ws_matched,
+            row,
+            [
+                match.authorization_code or "",
+                match.document_number or match.authorization_code or "",
+                MODALITY_LABELS.get(modality, modality),
+                match.card_type.name if match.card_type else "",
+                match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
+                match.guest_name or "",
+                match.room_number or "",
+                match.cashier_username or "",
+                float(match.transbank_amount),
+                float(match.erp_amount_clp),
+                float(match.difference_clp),
+                match.system_observation or "",
+            ],
+            money_columns=(9, 10, 11),
+        )
         row += 1
 
-    # Sheet 3: Reporte de Excepciones
+    # Sheet 3: Reporte de Excepciones (sorted by severity, then date)
     ws_exc = wb.create_sheet(title="Reporte de Excepciones")
-    _write_header(ws_exc, 1, [
-        "Tipo de Error", "Fecha de Origen", "Documento / Código", "Monto Discrepante", "Acción Sugerida",
-        "Medio", "Tarjeta", "Huésped", "Hab.", "Cajero", "Monto TBK", "Monto Borderó", "Diagnóstico",
-    ], fill=GOLD_FILL)
-    row = 2
+    write_header_row(ws_exc, 1, [
+        "Tipo de error",
+        "Fecha de origen",
+        "Medio de pago",
+        "Código en Transbank",
+        "Código en Borderó",
+        "Monto Transbank (CLP)",
+        "Monto Borderó (CLP)",
+        "Monto discrepante (CLP)",
+        "Huésped / Hab. / Cajero",
+        "Acción sugerida",
+        "Detalle",
+    ], fill=GOLD_FILL, center=True, wrap_text=True)
     exceptions = sorted(
         (m for m in cross_matches if m.system_result != "MATCHED"),
-        key=lambda m: (EXCEPTION_ORDER.get(m.system_result, 9), m.sale_date or date.min),
+        key=lambda m: (EXCEPTION_ORDER.get(m.system_result, 9), m.sale_date or date.min, m.authorization_code or ""),
     )
+    row = 2
     for match in exceptions:
         modality_label, error_type, action = _split_status_detail(match.system_status_detail)
-        code = match.authorization_code or ""
-        if match.document_number and match.document_number != code:
-            code = f"{code} / {match.document_number}"
-        discrepant_amount = (
-            float(match.difference_clp)
-            if match.system_result in ("AMOUNT_MISMATCH", "CARD_TYPE_MISMATCH")
-            else float(match.transbank_amount)
+        context = " · ".join(
+            part for part in (match.guest_name, f"Hab. {match.room_number}" if match.room_number and match.room_number != "—" else "", match.cashier_username)
+            if part and part != "—"
         )
-        _write_row(ws_exc, row, [
-            error_type, match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "", code,
-            discrepant_amount, action, modality_label, match.card_type.name if match.card_type else "",
-            match.guest_name or "", match.room_number or "", match.cashier_username or "",
-            float(match.transbank_amount), float(match.erp_amount_clp), match.system_observation or "",
-        ], money_columns=(4, 11, 12))
+        write_data_row(
+            ws_exc,
+            row,
+            [
+                error_type or match.system_result,
+                match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
+                modality_label,
+                match.authorization_code or "",
+                match.document_number or "—",
+                float(match.transbank_amount),
+                float(match.erp_amount_clp),
+                float(match.difference_clp),
+                context or "—",
+                action,
+                match.system_observation or "",
+            ],
+            money_columns=(6, 7, 8),
+            red_columns=(1, 8),
+        )
         row += 1
 
-    for sheet in (ws_matched, ws_exc):
-        for column_cells in sheet.columns:
-            width = max(len(str(cell.value or "")) for cell in column_cells[:200])
-            sheet.column_dimensions[column_cells[0].column_letter].width = min(max(12, width + 2), 60)
-        sheet.freeze_panes = "A2"
+    auto_adjust_columns((ws_matched, ws_exc), min_width=14, max_width=45)
 
     stream = io.BytesIO()
     wb.save(stream)

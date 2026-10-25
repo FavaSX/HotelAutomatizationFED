@@ -446,6 +446,8 @@ def _find_db_suggestion_for_orphan(
     operator_txs: List[Dict[str, Any]],
     claimed_op_indices: Set[int],
     files_for_card: Callable[[str], Dict[str, str]],
+    db_candidates: Optional[List[Any]] = None,
+    claimed_db_ids: Optional[Set[int]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Looks up unreconciled historical ERP transactions in the database from previous reconciliation runs.
@@ -477,19 +479,24 @@ def _find_db_suggestion_for_orphan(
     op_usd = float(exact_op.get("foreign_currency_amount") or 0.0) if exact_op else 0.0
     op_clp = float(exact_op.get("balance_amount") or exact_op.get("corrected_balance_amount") or 0.0) if exact_op else 0.0
 
-    try:
-        # Search unreconciled USD records in DB
-        qs = ErpTransaction.objects.filter(
-            reconciled=False,
-            source_currency="USD"
-        ).select_related("process", "card_type").order_by("-transaction_date")[:150]
-    except Exception:
-        return None
+    if db_candidates is None:
+        try:
+            # Search unreconciled USD records in DB
+            db_candidates = list(
+                ErpTransaction.objects.filter(
+                    reconciled=False,
+                    source_currency="USD"
+                ).select_related("process", "card_type").order_by("-transaction_date")[:300]
+            )
+        except Exception:
+            return None
 
     best_match = None
     best_score = 0
 
-    for db_tx in qs:
+    for db_tx in db_candidates:
+        if claimed_db_ids is not None and db_tx.id in claimed_db_ids:
+            continue
         db_card = db_tx.card_type.code if db_tx.card_type else ""
         if card_code and db_card and db_card != card_code:
             continue
@@ -512,6 +519,8 @@ def _find_db_suggestion_for_orphan(
         return None
 
     db_tx, sim_ratio, typo_badge, same_code, same_doc, same_clp = best_match
+    if claimed_db_ids is not None:
+        claimed_db_ids.add(db_tx.id)
     db_auth = clean_code_string(db_tx.authorization_code or "")
     db_doc = clean_code_string(db_tx.document_number or "")
     db_clp = float(db_tx.amount or 0.0)
@@ -650,11 +659,25 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
                 claimed_op_indices, claimed_erp_indices, assigned_orphans, _files_for_card,
             )
 
-    # Pass 3: Database Assisted Suggestions for remaining orphans (or orphans with only operator matches)
+    # Pass 3: Database Assisted Suggestions for remaining orphans (single pre-fetched query)
+    try:
+        from ..models import ErpTransaction
+        db_candidates = list(
+            ErpTransaction.objects.filter(
+                reconciled=False,
+                source_currency="USD"
+            ).select_related("process", "card_type").order_by("-transaction_date")[:300]
+        )
+    except Exception:
+        db_candidates = []
+    claimed_db_ids: Set[int] = set()
+
     for orph_idx, orph in enumerate(orphan_vouchers):
         curr_sug = orph.get("suggestion")
         if not curr_sug or curr_sug.get("confidence") == "MEDIA":
-            db_sug = _find_db_suggestion_for_orphan(orph, operator_txs, claimed_op_indices, _files_for_card)
+            db_sug = _find_db_suggestion_for_orphan(
+                orph, operator_txs, claimed_op_indices, _files_for_card, db_candidates, claimed_db_ids
+            )
             if db_sug:
                 orph["suggestion"] = db_sug
                 assigned_orphans.add(orph_idx)

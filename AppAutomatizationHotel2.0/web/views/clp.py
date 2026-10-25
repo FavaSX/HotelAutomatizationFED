@@ -4,10 +4,8 @@ Same lifecycle as USD: upload, in-memory preview, commit or discard, official Ex
 """
 
 from django.shortcuts import render, redirect
-from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import HttpResponse, JsonResponse
 
 from ..models import ReconciliationProcess
 from ..services import (
@@ -17,7 +15,14 @@ from ..services import (
     generate_committed_clp_excel_bytes,
     detect_and_align_clp_files,
 )
-from .common import CLP_SESSION_KEY
+from .common import (
+    CLP_SESSION_KEY,
+    extract_unique_cashiers,
+    handle_commit_preview,
+    handle_detect_files_api,
+    handle_discard_preview,
+    handle_export_committed,
+)
 
 
 CLP_FILE_INPUTS = {
@@ -32,7 +37,7 @@ CLP_FILE_INPUTS = {
 @login_required(login_url="login")
 def clp_upload_view(request):
     """
-    Step 1: Upload the 5 CLP Excel files (Bordero, cartola and the 3 Transbank settlements)
+    Step 1: Upload the CLP Excel files (Bordero, cartola and the Transbank settlement(s))
     and process them purely in memory.
     """
     if request.method == "POST":
@@ -87,15 +92,8 @@ def clp_upload_view(request):
 
 @login_required(login_url="login")
 def clp_detect_files_view(request):
-    """Inspects the uploaded Excel files and aligns them against the 5 required CLP roles."""
-    if request.method != "POST":
-        return JsonResponse({"error": "Método no permitido."}, status=405)
-
-    uploaded_files = request.FILES.getlist("bulk_files")
-    if not uploaded_files:
-        return JsonResponse({"error": "No se recibieron archivos para analizar."}, status=400)
-
-    return JsonResponse(detect_and_align_clp_files(uploaded_files))
+    """Inspects the uploaded Excel files and aligns them against the 3 required CLP roles."""
+    return handle_detect_files_api(request, detect_and_align_clp_files)
 
 
 @login_required(login_url="login")
@@ -127,26 +125,26 @@ def clp_preview_view(request):
         enrich_clp_preview_with_suggestions(preview)
         request.session[CLP_SESSION_KEY] = preview
 
-    all_cashiers = sorted({
-        r.get("cashier_username", "").strip()
-        for r in (
-            preview.get("matched_vouchers", [])
-            + preview.get("discrepancy_vouchers", [])
-            + preview.get("orphan_vouchers", [])
-            + preview.get("out_of_period_vouchers", [])
-        )
-        if r.get("cashier_username") and r.get("cashier_username") != "—"
-    })
+    all_cashiers = extract_unique_cashiers(
+        preview.get("matched_vouchers", []),
+        preview.get("discrepancy_vouchers", []),
+        preview.get("orphan_vouchers", []),
+        preview.get("out_of_period_vouchers", []),
+    )
 
     counts = preview.get("counts", {})
     total = counts.get("total", 0)
     match_rate = round(counts.get("matched", 0) / total * 100, 1) if total else 0.0
 
-    # Summary of the 3 Transbank deposits for the bank KPI card (same layout as the USD preview)
+    # Summary of the active Transbank deposits for the bank KPI card (same layout as the USD preview)
     bank_validations = preview.get("bank_validations", [])
+    active_banks = [
+        b for b in bank_validations
+        if b.get("calculated_deposit") or b.get("total_sales") or b.get("bank_deposit_amount")
+    ] or bank_validations
     bank_summary = {
-        "matched": sum(1 for b in bank_validations if b.get("is_matched")),
-        "total": len(bank_validations),
+        "matched": sum(1 for b in active_banks if b.get("is_matched")),
+        "total": len(active_banks),
         "calculated": sum(b.get("calculated_deposit") or 0 for b in bank_validations),
         "deposited": sum(b.get("bank_deposit_amount") or 0 for b in bank_validations),
     }
@@ -163,9 +161,10 @@ def clp_preview_view(request):
         "orphan_vouchers": preview.get("orphan_vouchers", []),
         "out_of_period_vouchers": preview.get("out_of_period_vouchers", []),
         "cashiers": all_cashiers,
+        "all_cashiers": all_cashiers,
         "counts": preview.get("counts", {}),
         "suggestion_counts": preview.get("suggestion_counts", {}),
-        "all_banks_matched": all(b.get("is_matched") for b in preview.get("bank_validations", [])),
+        "all_banks_matched": all(b.get("is_matched") for b in active_banks),
     }
     return render(request, "clp_preview.html", context)
 
@@ -173,9 +172,12 @@ def clp_preview_view(request):
 @login_required(login_url="login")
 def clp_discard_view(request):
     """Step 3A: Discard the CLP preview without touching the database."""
-    request.session.pop(CLP_SESSION_KEY, None)
-    messages.info(request, "La previsualización fue descartada. La base de datos no fue modificada.")
-    return redirect("clp_upload")
+    return handle_discard_preview(
+        request,
+        session_key=CLP_SESSION_KEY,
+        upload_url_name="clp_upload",
+        info_message="La previsualización fue descartada. La base de datos no fue modificada.",
+    )
 
 
 @login_required(login_url="login")
@@ -184,56 +186,26 @@ def clp_commit_view(request):
     Step 3B: Confirm and persist the previewed CLP reconciliation into the database.
     Returns JSON (process ID and Excel download URL) when called via AJAX from the commit modal.
     """
-    if request.method != "POST":
-        return redirect("clp_preview")
-
-    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-    preview = request.session.get(CLP_SESSION_KEY)
-    if not preview:
-        if is_ajax:
-            return JsonResponse({"error": "No hay datos en memoria para guardar."}, status=400)
-        messages.error(request, "No hay datos en memoria para guardar.")
-        return redirect("clp_upload")
-
-    try:
-        process = commit_clp_preview_to_database(request.user, preview)
-    except Exception as error:
-        if is_ajax:
-            return JsonResponse({"error": f"Error al guardar en base de datos: {error}"}, status=500)
-        messages.error(request, f"Error al guardar el proceso en base de datos: {error}")
-        return redirect("clp_preview")
-
-    request.session.pop(CLP_SESSION_KEY, None)
-
-    if is_ajax:
-        return JsonResponse({
-            "success": True,
-            "process_id": process.id,
-            "accounting_period": process.accounting_period or "Cierre Pesos (CLP)",
-            "execution_date": process.execution_date.strftime("%d/%m/%Y %H:%M:%S") if process.execution_date else "",
-            "auditor": process.user.username,
-            "total_vouchers": process.cross_match_results.count(),
-            "matched_count": process.cross_match_results.filter(system_result="MATCHED").count(),
-            "export_url": reverse("clp_export_committed", args=[process.id]),
-            "upload_url": reverse("clp_upload"),
-        })
-
-    messages.success(request, f"¡Cierre en Pesos #{process.id} guardado formalmente con éxito en la base de datos!")
-    return redirect("clp_upload")
+    return handle_commit_preview(
+        request,
+        session_key=CLP_SESSION_KEY,
+        commit_fn=commit_clp_preview_to_database,
+        upload_url_name="clp_upload",
+        preview_url_name="clp_preview",
+        export_url_name="clp_export_committed",
+        default_period_label="Cierre Pesos (CLP)",
+        currency_label="Pesos",
+    )
 
 
 @login_required(login_url="login")
 def clp_export_committed_view(request, process_id: int):
     """Step 4: Download the official CLP Excel report (with the exception report) from the database."""
-    try:
-        excel_stream = generate_committed_clp_excel_bytes(process_id)
-    except ReconciliationProcess.DoesNotExist:
-        messages.error(request, f"El proceso en pesos #{process_id} no existe en la base de datos.")
-        return redirect("clp_upload")
-
-    response = HttpResponse(
-        excel_stream.getvalue(),
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    return handle_export_committed(
+        request,
+        process_id=process_id,
+        export_fn=generate_committed_clp_excel_bytes,
+        upload_url_name="clp_upload",
+        filename_prefix="reporte_oficial_pesos_proceso",
+        not_found_label="proceso en pesos",
     )
-    response["Content-Disposition"] = f'attachment; filename="reporte_oficial_pesos_proceso_{process_id}.xlsx"'
-    return response

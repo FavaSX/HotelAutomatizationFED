@@ -13,7 +13,7 @@ import pandas as pd
 from ..models import CardType, ErpTransaction, SystemConfiguration
 from .column_detector import (
     TRANSBANK_USD_COLUMN_RULES,
-    clean_code_string,
+    clean_code_string, normalize_auth_code,
     resolve_dataframe_columns,
     safe_cell,
     safe_date,
@@ -299,8 +299,9 @@ def calculate_usd_preview(
 
         matching_erp_records = erp_by_auth_code.get(auth_code, [])
         if not matching_erp_records:
+            norm_auth = normalize_auth_code(auth_code)
             matching_erp_records = next(
-                (recs for erp_key, recs in erp_by_auth_code.items() if auth_code in erp_key), []
+                (recs for erp_key, recs in erp_by_auth_code.items() if norm_auth and normalize_auth_code(erp_key) == norm_auth), []
             )
 
         if matching_erp_records:

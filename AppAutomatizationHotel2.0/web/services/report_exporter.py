@@ -1,54 +1,55 @@
 """
-Excel Report Exporter for Hotel Plaza San Francisco Reconciliation.
-Generates styled multi-sheet Excel workbooks directly from persisted database records.
+Excel Report Exporter for Hotel Plaza San Francisco USD Reconciliation (Phase 1).
+Generates styled multi-sheet Excel workbooks directly from persisted database records,
+using shared styling helpers from `excel_styles.py`.
 """
 
 import io
 import json
 from typing import Iterable, List, Sequence
 import openpyxl
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ..models import CrossMatchResult, ReconciliationProcess, ReconciliationSummary
 from ..templatetags.currency_filters import format_observation
-
-NAVY_FILL = PatternFill(start_color="0C0C42", end_color="0C0C42", fill_type="solid")
-GOLD_FILL = PatternFill(start_color="996909", end_color="996909", fill_type="solid")
-LIGHT_FILL = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
-WHITE_BOLD = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-NAVY_BOLD = Font(name="Calibri", size=11, bold=True, color="0C0C42")
-DIFF_ALERT_FONT = Font(bold=True, color="DC2626")
-THIN_BORDER = Border(
-    left=Side(style="thin", color="CBD5E1"), right=Side(style="thin", color="CBD5E1"),
-    top=Side(style="thin", color="CBD5E1"), bottom=Side(style="thin", color="CBD5E1"),
+from .excel_styles import (
+    CLP_FORMAT,
+    DIFF_ALERT_FONT,
+    GOLD_FILL,
+    LIGHT_FILL,
+    NAVY_BOLD,
+    NAVY_FILL,
+    THIN_BORDER,
+    USD_FORMAT,
+    auto_adjust_columns,
+    write_header_row,
 )
 
 
-def _write_header_row(
-    ws: Worksheet, row_idx: int, headers: Sequence[str], fill: PatternFill = NAVY_FILL, center: bool = False
-) -> None:
-    alignment = Alignment(horizontal="center", vertical="center") if center else None
-    for col_idx, header_text in enumerate(headers, 1):
-        cell = ws.cell(row=row_idx, column=col_idx, value=header_text)
-        cell.fill, cell.font = fill, WHITE_BOLD
-        if alignment:
-            cell.alignment = alignment
-
-
 def _write_summary_table(
-    ws: Worksheet, start_row: int, title: str, headers: Sequence[str],
-    summaries: Iterable[ReconciliationSummary], total_label: str, num_fmt: str, decimals: int,
+    ws: Worksheet,
+    start_row: int,
+    title: str,
+    headers: Sequence[str],
+    summaries: Iterable[ReconciliationSummary],
+    total_label: str,
+    num_fmt: str,
+    decimals: int,
 ) -> int:
     """Writes a currency summary table (USD or CLP) and returns the last row index written."""
     ws.cell(row=start_row, column=1, value=title).font = NAVY_BOLD
-    _write_header_row(ws, start_row + 1, headers, fill=NAVY_FILL, center=True)
+    write_header_row(ws, start_row + 1, headers, fill=NAVY_FILL, center=True)
 
     curr_row = start_row + 2
     total_col2 = total_col3 = total_diff = 0.0
 
     for item in summaries:
-        val_col2, val_col3, diff_val = float(item.erp_sales_total), float(item.transbank_sales_total), float(item.difference)
+        val_col2, val_col3, diff_val = (
+            float(item.erp_sales_total),
+            float(item.transbank_sales_total),
+            float(item.difference),
+        )
         total_col2 += val_col2
         total_col3 += val_col3
         total_diff += diff_val
@@ -76,7 +77,7 @@ def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]
         "Fecha", "Cruce Voucher (TBK = ERP)", "Cruce Documento (ERP = OP)", "Cajero", "Tarjeta",
         "Monto TBK USD", "Monto Operador USD", "Diferencia USD", "Monto ERP CLP", "Diagnóstico",
     ]
-    _write_header_row(ws, 1, headers, fill=NAVY_FILL)
+    write_header_row(ws, 1, headers, fill=NAVY_FILL)
 
     for r_idx, v in enumerate((m for m in cross_matches if m.system_result == "MATCHED"), 2):
         ws.cell(row=r_idx, column=1, value=v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—")
@@ -84,10 +85,10 @@ def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]
         ws.cell(row=r_idx, column=3, value=f"ERP: {v.document_number} = OP: {v.document_number}" if v.document_number else "")
         ws.cell(row=r_idx, column=4, value=v.cashier_username or "")
         ws.cell(row=r_idx, column=5, value=v.card_type.name if v.card_type else "")
-        ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = "$#,##0.00"
-        ws.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = "$#,##0.00"
-        ws.cell(row=r_idx, column=8, value=float(v.difference_usd)).number_format = "$#,##0.00"
-        ws.cell(row=r_idx, column=9, value=float(v.erp_amount_clp)).number_format = "$#,##0"
+        ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = USD_FORMAT
+        ws.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
+        ws.cell(row=r_idx, column=8, value=float(v.difference_usd)).number_format = USD_FORMAT
+        ws.cell(row=r_idx, column=9, value=float(v.erp_amount_clp)).number_format = CLP_FORMAT
         ws.cell(row=r_idx, column=10, value=format_observation(v.system_observation or ""))
 
 
@@ -96,7 +97,7 @@ def _populate_discrepancies_sheet(ws: Worksheet, cross_matches: List[CrossMatchR
         "Autorización", "Documento", "Huésped", "Habitación", "Tarjeta",
         "Monto TBK USD", "Monto Operador USD", "Diferencia USD", "Diagnóstico",
     ]
-    _write_header_row(ws, 1, headers, fill=GOLD_FILL)
+    write_header_row(ws, 1, headers, fill=GOLD_FILL)
 
     for r_idx, v in enumerate((m for m in cross_matches if m.system_result != "MATCHED"), 2):
         ws.cell(row=r_idx, column=1, value=v.authorization_code or "")
@@ -104,9 +105,9 @@ def _populate_discrepancies_sheet(ws: Worksheet, cross_matches: List[CrossMatchR
         ws.cell(row=r_idx, column=3, value=v.guest_name or "")
         ws.cell(row=r_idx, column=4, value=v.room_number or "")
         ws.cell(row=r_idx, column=5, value=v.card_type.name if v.card_type else "")
-        ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = "$#,##0.00"
-        ws.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = "$#,##0.00"
-        ws.cell(row=r_idx, column=8, value=float(v.difference_usd)).number_format = "$#,##0.00"
+        ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = USD_FORMAT
+        ws.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
+        ws.cell(row=r_idx, column=8, value=float(v.difference_usd)).number_format = USD_FORMAT
         ws.cell(row=r_idx, column=9, value=format_observation(v.system_observation or ""))
 
 
@@ -117,7 +118,7 @@ def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchRes
         "Doc. Operadora", "Monto Op. (US$)", "Saldo Op. (CLP)", "Confianza",
         "Diagnóstico Sugerido", "Motivos Coincidencia", "Nota de Auditoría",
     ]
-    _write_header_row(ws, 1, headers, fill=NAVY_FILL, center=True)
+    write_header_row(ws, 1, headers, fill=NAVY_FILL, center=True)
 
     center_align = Alignment(horizontal="center")
     sug_count, curr_sug_row = 0, 2
@@ -149,15 +150,15 @@ def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchRes
         ws.cell(row=curr_sug_row, column=2, value=v.authorization_code or "").alignment = center_align
         ws.cell(row=curr_sug_row, column=3, value=case_type)
         ws.cell(row=curr_sug_row, column=4, value=v.card_type.name if v.card_type else "")
-        ws.cell(row=curr_sug_row, column=5, value=float(v.transbank_amount)).number_format = "$#,##0.00"
+        ws.cell(row=curr_sug_row, column=5, value=float(v.transbank_amount)).number_format = USD_FORMAT
         ws.cell(row=curr_sug_row, column=6, value=sale_date_str).alignment = center_align
         ws.cell(row=curr_sug_row, column=7, value=r_auth.get("erp_value", "—")).alignment = center_align
         ws.cell(row=curr_sug_row, column=8, value=r_doc.get("erp_value", "—"))
-        ws.cell(row=curr_sug_row, column=9, value=float(v.erp_amount_clp)).number_format = "$#,##0"
+        ws.cell(row=curr_sug_row, column=9, value=float(v.erp_amount_clp)).number_format = CLP_FORMAT
         ws.cell(row=curr_sug_row, column=10, value=sug.get("erp_cashier", v.cashier_username or "—"))
         ws.cell(row=curr_sug_row, column=11, value=guest_str)
         ws.cell(row=curr_sug_row, column=12, value=r_doc.get("op_value", "—"))
-        ws.cell(row=curr_sug_row, column=13, value=float(v.operator_amount_usd)).number_format = "$#,##0.00"
+        ws.cell(row=curr_sug_row, column=13, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
         ws.cell(row=curr_sug_row, column=14, value=r_clp.get("op_value", ""))
 
         c_conf = ws.cell(row=curr_sug_row, column=15, value=confidence)
@@ -174,18 +175,11 @@ def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchRes
 
     if sug_count == 0:
         c_empty = ws.cell(
-            row=2, column=1,
+            row=2,
+            column=1,
             value="No se detectaron sugerencias asistidas secundarias para los vouchers con diferencia o no ubicados.",
         )
         c_empty.font = Font(italic=True, color="64748B")
-
-
-def _auto_adjust_columns(worksheets: Iterable[Worksheet]) -> None:
-    for ws in worksheets:
-        for col in ws.columns:
-            col_letter = col[0].column_letter
-            max_len = max((len(str(cell.value or "")) for cell in col[:40]), default=0)
-            ws.column_dimensions[col_letter].width = max(12, min(max_len + 3, 45))
 
 
 def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
@@ -201,7 +195,8 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
     ws_summary.title = "Resumen Dólares"
 
     ws_summary.cell(
-        row=1, column=1,
+        row=1,
+        column=1,
         value=f"HOTEL PLAZA SAN FRANCISCO — REPORTE OFICIAL CONCILIACIÓN DÓLARES (PROCESO #{process.id})",
     ).font = Font(size=14, bold=True, color="0C0C42")
 
@@ -209,7 +204,8 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
     bank_status = "Confirmado en Cartola" if (bank_val and bank_val.is_matched) else "Pendiente en Cartola"
     deposit_usd = float(bank_val.transbank_calculated_deposit) if bank_val else 0.0
     ws_summary.cell(
-        row=2, column=1,
+        row=2,
+        column=1,
         value=(
             f"Periodo: {process.accounting_period or 'Cierre USD'} | "
             f"Auditor: {process.user.username} | "
@@ -219,14 +215,24 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
     ).font = Font(size=10, italic=True)
 
     last_usd_row = _write_summary_table(
-        ws_summary, 4, "1. CUADRATURA POR OPERADOR EN DÓLARES (US$)",
+        ws_summary,
+        4,
+        "1. CUADRATURA POR OPERADOR EN DÓLARES (US$)",
         ["Operador", "Total TBK (US$)", "Total Operador (US$)", "Diferencia (US$)"],
-        usd_summaries, "TOTAL GENERAL USD", "$#,##0.00", 2,
+        usd_summaries,
+        "TOTAL GENERAL USD",
+        USD_FORMAT,
+        2,
     )
     _write_summary_table(
-        ws_summary, last_usd_row + 3, "2. CUADRATURA EN MONEDA NACIONAL (PESOS CLP)",
+        ws_summary,
+        last_usd_row + 3,
+        "2. CUADRATURA EN MONEDA NACIONAL (PESOS CLP)",
         ["Operador", "Total ERP (CLP)", "Total Operador (CLP)", "Diferencia (CLP)"],
-        clp_summaries, "TOTAL GENERAL CLP", "$#,##0", 0,
+        clp_summaries,
+        "TOTAL GENERAL CLP",
+        CLP_FORMAT,
+        0,
     )
     for col_letter in ("A", "B", "C", "D"):
         ws_summary.column_dimensions[col_letter].width = 28
@@ -240,7 +246,7 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
     ws_sug = wb.create_sheet(title="Sugerencias Asistidas")
     _populate_suggestions_sheet(ws_sug, cross_matches)
 
-    _auto_adjust_columns((ws_matched, ws_disc, ws_sug))
+    auto_adjust_columns((ws_matched, ws_disc, ws_sug))
 
     stream = io.BytesIO()
     wb.save(stream)

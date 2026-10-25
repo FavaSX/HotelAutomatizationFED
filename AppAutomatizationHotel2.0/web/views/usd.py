@@ -7,10 +7,8 @@ US Dollars (USD) reconciliation workflow:
 """
 
 from django.shortcuts import render, redirect
-from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import HttpResponse, JsonResponse
 
 from ..models import ReconciliationProcess, SystemConfiguration
 from ..services import (
@@ -20,7 +18,14 @@ from ..services import (
     detect_and_align_usd_files,
     enrich_preview_with_suggestions,
 )
-from .common import USD_SESSION_KEY
+from .common import (
+    USD_SESSION_KEY,
+    extract_unique_cashiers,
+    handle_commit_preview,
+    handle_detect_files_api,
+    handle_discard_preview,
+    handle_export_committed,
+)
 
 
 USD_FILE_INPUTS = {
@@ -83,15 +88,11 @@ def usd_preview_view(request):
         preview["tolerance"] = float(SystemConfiguration.get_solo().usd_rounding_tolerance)
         request.session[USD_SESSION_KEY] = preview
 
-    all_cashiers = sorted({
-        v.get("cashier_username", "").strip()
-        for v in (
-            preview.get("matched_vouchers", [])
-            + preview.get("discrepancy_vouchers", [])
-            + preview.get("orphan_vouchers", [])
-        )
-        if v.get("cashier_username") and v.get("cashier_username") != "—"
-    })
+    all_cashiers = extract_unique_cashiers(
+        preview.get("matched_vouchers", []),
+        preview.get("discrepancy_vouchers", []),
+        preview.get("orphan_vouchers", []),
+    )
 
     # One row per franchise with both the USD and CLP squaring side by side
     clp_by_code = {row["card_code"]: row for row in preview.get("clp_table", [])}
@@ -123,6 +124,7 @@ def usd_preview_view(request):
         "discrepancy_vouchers": preview.get("discrepancy_vouchers", []),
         "orphan_vouchers": preview.get("orphan_vouchers", []),
         "counts": counts,
+        "cashiers": all_cashiers,
         "all_cashiers": all_cashiers,
         "tolerance": preview.get("tolerance", 0.0),
         "suggestion_counts": preview.get("suggestion_counts", {}),
@@ -133,10 +135,13 @@ def usd_preview_view(request):
 @login_required(login_url="login")
 def usd_discard_view(request):
     """Step 3A: Discard the in-memory reconciliation and return to upload."""
-    if request.method == "POST":
-        request.session.pop(USD_SESSION_KEY, None)
-        messages.info(request, "Proceso descartado de la memoria. Puede cargar un nuevo lote de archivos.")
-    return redirect("usd_upload")
+    return handle_discard_preview(
+        request,
+        session_key=USD_SESSION_KEY,
+        upload_url_name="usd_upload",
+        info_message="Proceso descartado de la memoria. Puede cargar un nuevo lote de archivos.",
+        require_post=True,
+    )
 
 
 @login_required(login_url="login")
@@ -145,68 +150,32 @@ def usd_commit_view(request):
     Step 3B: Confirm and persist the previewed reconciliation into the database.
     Returns JSON confirmation (process ID and Excel download URL) when called via AJAX.
     """
-    if request.method != "POST":
-        return redirect("usd_preview")
-
-    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-    preview = request.session.get(USD_SESSION_KEY)
-    if not preview:
-        if is_ajax:
-            return JsonResponse({"error": "No hay datos en memoria para guardar."}, status=400)
-        messages.error(request, "No hay datos en memoria para guardar.")
-        return redirect("usd_upload")
-
-    try:
-        process = commit_usd_preview_to_database(request.user, preview)
-    except Exception as error:
-        if is_ajax:
-            return JsonResponse({"error": f"Error al guardar en base de datos: {error}"}, status=500)
-        messages.error(request, f"Error al guardar el proceso en base de datos: {error}")
-        return redirect("usd_preview")
-
-    request.session.pop(USD_SESSION_KEY, None)
-    if is_ajax:
-        return JsonResponse({
-            "success": True,
-            "process_id": process.id,
-            "accounting_period": process.accounting_period or "Cierre Dólares (USD)",
-            "execution_date": process.execution_date.strftime("%d/%m/%Y %H:%M:%S") if process.execution_date else "",
-            "auditor": process.user.username,
-            "total_vouchers": process.cross_match_results.count(),
-            "matched_count": process.cross_match_results.filter(system_result="MATCHED").count(),
-            "export_url": reverse("usd_export_committed", args=[process.id]),
-            "upload_url": reverse("usd_upload"),
-        })
-
-    messages.success(request, f"¡Cierre en Dólares #{process.id} guardado formalmente con éxito en la base de datos!")
-    return redirect("usd_upload")
+    return handle_commit_preview(
+        request,
+        session_key=USD_SESSION_KEY,
+        commit_fn=commit_usd_preview_to_database,
+        upload_url_name="usd_upload",
+        preview_url_name="usd_preview",
+        export_url_name="usd_export_committed",
+        default_period_label="Cierre Dólares (USD)",
+        currency_label="Dólares",
+    )
 
 
 @login_required(login_url="login")
 def usd_export_committed_view(request, process_id: int):
     """Step 4: Download the official styled Excel report generated from persisted DB records."""
-    try:
-        excel_stream = generate_committed_usd_excel_bytes(process_id)
-    except ReconciliationProcess.DoesNotExist:
-        messages.error(request, f"El proceso #{process_id} no existe en la base de datos.")
-        return redirect("usd_upload")
-
-    response = HttpResponse(
-        excel_stream.getvalue(),
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    return handle_export_committed(
+        request,
+        process_id=process_id,
+        export_fn=generate_committed_usd_excel_bytes,
+        upload_url_name="usd_upload",
+        filename_prefix="reporte_oficial_dolares_proceso",
+        not_found_label="proceso",
     )
-    response["Content-Disposition"] = f'attachment; filename="reporte_oficial_dolares_proceso_{process_id}.xlsx"'
-    return response
 
 
 @login_required(login_url="login")
 def usd_detect_files_view(request):
     """Inspects the internal cell structure of uploaded Excel files and aligns them to the 7 USD roles."""
-    if request.method != "POST":
-        return JsonResponse({"error": "Método no permitido."}, status=405)
-
-    uploaded_files = request.FILES.getlist("bulk_files")
-    if not uploaded_files:
-        return JsonResponse({"error": "No se recibieron archivos para analizar."}, status=400)
-
-    return JsonResponse(detect_and_align_usd_files(uploaded_files))
+    return handle_detect_files_api(request, detect_and_align_usd_files)
