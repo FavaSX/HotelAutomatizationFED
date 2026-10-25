@@ -1011,6 +1011,10 @@ body.table-focus-mode #voucherSectionCard > .card-header {
   padding: 0.85rem 1.5rem 0 1.5rem !important;
   border-radius: 0 !important;
 }
+/* USD header holds a segmented control (not tabs resting on the border): keep its bottom spacing */
+body.table-focus-mode #voucherSectionCard > .card-header.panel-head {
+  padding-bottom: 0.9rem !important;
+}
 body.table-focus-mode #voucherSectionCard > #voucherToolbar {
   flex: 0 0 auto !important;
   background-color: var(--surface-2) !important;
@@ -1397,6 +1401,30 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
 }
 .filter-chip:hover { color: var(--text); border-color: var(--brand-border); }
 .filter-chip.active { background: var(--brand-subtle); color: var(--brand-text); border-color: var(--brand-border); }
+
+/* "Filtros" dropdown of the voucher toolbar: date range, cashier, Transbank amount range.
+   Card children each get z-index 1 (.card-executive > *), so the table would paint over the menu:
+   lift the toolbar above the table body. */
+#voucherToolbar { z-index: 5; }
+.filters-menu {
+  width: 300px; max-width: calc(100vw - 2rem);
+  padding: 1rem;
+  border-radius: 14px;
+  background: var(--glass-modal-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  color: var(--text);
+}
+.filters-menu-section { margin-bottom: .85rem; }
+.filters-menu-label {
+  display: block;
+  font-size: .72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .03em;
+  color: var(--text-muted);
+  margin-bottom: .35rem;
+}
 
 /* Voucher tables */
 .table-scroll { max-height: 560px; overflow-y: auto; }
