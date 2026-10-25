@@ -18,7 +18,7 @@
       <i class="bi bi-shield-check me-1"></i> Flujo Inteligente: Auto-Detección ➔ Previsualización en Memoria ➔ Confirmación en BD
     </span>
     <h3 class="fw-bold mb-0">Conciliación en Pesos (CLP) — Carga y Auto-Detección</h3>
-    <p class="text-muted small mb-0">El motor inspecciona los reportes Excel (Borderó, Cartola y abonos Transbank), los alinea automáticamente agrupando múltiples archivos si es necesario y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
+    <p class="text-muted small mb-0">El motor inspecciona los 5 reportes Excel (Borderó, Cartola y los 3 abonos Transbank), los alinea automáticamente y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
   </div>
 
   <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
@@ -77,13 +77,13 @@
       data-role-inputs='{"erp": "input_clp_erp", "bank": "input_clp_bank", "tbk_credit": "input_clp_tbk_credit", "tbk_debit": "input_clp_tbk_debit", "tbk_prepaid": "input_clp_tbk_prepaid"}'>
   {% csrf_token %}
 
-  <!-- Hidden file inputs populated automatically upon alignment confirmation (supports multiple files per role) -->
-  <input type="file" name="clp_erp_file" id="input_clp_erp" class="d-none" accept=".xls,.xlsx" multiple>
+  <!-- Hidden file inputs populated automatically upon alignment confirmation -->
+  <input type="file" name="clp_erp_file" id="input_clp_erp" class="d-none" accept=".xls,.xlsx">
   <input type="file" name="clp_extra_erp_files" id="input_clp_extra_erp" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="clp_bank_file" id="input_clp_bank" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="clp_tbk_credit_file" id="input_clp_tbk_credit" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="clp_tbk_debit_file" id="input_clp_tbk_debit" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="clp_tbk_prepaid_file" id="input_clp_tbk_prepaid" class="d-none" accept=".xls,.xlsx" multiple>
+  <input type="file" name="clp_bank_file" id="input_clp_bank" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_tbk_credit_file" id="input_clp_tbk_credit" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_tbk_debit_file" id="input_clp_tbk_debit" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="clp_tbk_prepaid_file" id="input_clp_tbk_prepaid" class="d-none" accept=".xls,.xlsx">
 
 
   <div class="card card-executive p-4 mb-4">
@@ -101,10 +101,11 @@
             <i class="bi bi-cloud-arrow-up-fill fs-2"></i>
           </span>
         </div>
-        <h5 class="fw-bold mb-1">Arrastre aquí sus archivos Excel o haga clic para seleccionarlos</h5>
+        <h5 class="fw-bold mb-1">Arrastre aquí los 5 archivos Excel o haga clic para seleccionarlos</h5>
         <p class="text-muted small mb-3">
-          Soporta reportes individuales o lotes de varios días/semanas. El sistema agrupa automáticamente archivos de
-          <strong>Borderó ERP, Cartola Bancaria y los abonos Transbank de Crédito, Débito y Prepago</strong>.
+          El sistema identificará automáticamente cuál corresponde a
+          <strong>Borderó ERP, Cartola Bancaria y los abonos Transbank de Crédito, Débito y Prepago</strong>
+          (los 3 abonos se distinguen por la celda "Medio de pago").
         </p>
         <span class="btn btn-brand rounded-pill px-4 py-2 fw-semibold shadow-sm">
           <i class="bi bi-folder2-open me-1"></i> Seleccionar Archivos (.xls / .xlsx)
@@ -128,7 +129,7 @@
         </span>
         <h5 class="fw-bold mb-0">Revise y confirme la alineación de los archivos detectados</h5>
         <p class="text-muted small mb-0">
-          Verifique que cada rol tenga asignado(s) el o los archivos correctos. Si subió varios archivos para un mismo rol (ej. múltiples días de Transbank o Borderó), se concatenarán automáticamente.
+          Verifique que cada rol tenga asignado el archivo correcto. Si se equivocó en uno o le faltó alguno, puede usar el botón <strong>"Subir"</strong> de esa fila sin volver a cargar todo.
         </p>
       </div>
 
@@ -139,7 +140,7 @@
           <thead class="alignment-thead">
             <tr class="text-uppercase text-muted">
               <th class="ps-3 py-2">Rol Requerido por el Sistema</th>
-              <th class="py-2">Archivo(s) Asignado(s)</th>
+              <th class="py-2">Archivo Asignado (Elegir o Subir Individual)</th>
               <th class="py-2">Evidencia / Huella Interna Detectada</th>
               <th class="text-center pe-3 py-2">Certeza</th>
             </tr>
@@ -152,8 +153,8 @@
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
           <div>
-            <div class="fw-bold small">¿La alineación de los archivos es correcta?</div>
-            <div class="text-muted small">Al confirmar, los archivos se concatenarán y deduplicarán automáticamente abriendo la previsualización en memoria.</div>
+            <div class="fw-bold small">¿La alineación de los 5 archivos es correcta?</div>
+            <div class="text-muted small">Al confirmar, los archivos se procesarán y se abrirá la previsualización en memoria.</div>
           </div>
         </div>
         <div class="d-flex gap-2">
@@ -172,5 +173,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=6"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=4"></script>
 {% endblock %}

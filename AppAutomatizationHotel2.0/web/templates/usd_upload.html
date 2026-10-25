@@ -16,7 +16,7 @@
       <i class="bi bi-shield-check me-1"></i> Flujo Inteligente: Auto-Detección ➔ Previsualización en Memoria ➔ Confirmación en BD
     </span>
     <h3 class="fw-bold mb-0">Conciliación en Dólares (USD) — Carga y Auto-Detección</h3>
-    <p class="text-muted small mb-0">El motor inspecciona la estructura interna de los reportes Excel, agrupa automáticamente lotes de múltiples archivos por rol y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
+    <p class="text-muted small mb-0">El motor inspecciona la estructura interna de los 7 reportes Excel, los alinea automáticamente y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
   </div>
 
   <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
@@ -72,14 +72,14 @@
 <form method="post" enctype="multipart/form-data" id="usdUploadForm" data-detect-url="{% url 'usd_detect_files' %}">
   {% csrf_token %}
 
-  <!-- Hidden file inputs populated automatically upon alignment confirmation (supports multiple files per role) -->
-  <input type="file" name="usd_erp_file" id="input_usd_erp" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="usd_transbank_file" id="input_usd_tbk" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="usd_bank_file" id="input_usd_bank" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="usd_amex_file" id="input_usd_ax" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="usd_diners_file" id="input_usd_di" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="usd_visa_file" id="input_usd_vi" class="d-none" accept=".xls,.xlsx" multiple>
-  <input type="file" name="usd_mastercard_file" id="input_usd_mc" class="d-none" accept=".xls,.xlsx" multiple>
+  <!-- Hidden file inputs populated automatically upon alignment confirmation -->
+  <input type="file" name="usd_erp_file" id="input_usd_erp" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_transbank_file" id="input_usd_tbk" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_bank_file" id="input_usd_bank" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_amex_file" id="input_usd_ax" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_diners_file" id="input_usd_di" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_visa_file" id="input_usd_vi" class="d-none" accept=".xls,.xlsx">
+  <input type="file" name="usd_mastercard_file" id="input_usd_mc" class="d-none" accept=".xls,.xlsx">
 
   <div class="card card-executive p-4 mb-4">
     <!-- FASE 1: Zona de Carga Masiva -->
@@ -96,9 +96,9 @@
             <i class="bi bi-cloud-arrow-up-fill fs-2"></i>
           </span>
         </div>
-        <h5 class="fw-bold mb-1">Arrastre aquí sus archivos Excel o haga clic para seleccionarlos</h5>
+        <h5 class="fw-bold mb-1">Arrastre aquí los 7 archivos Excel o haga clic para seleccionarlos</h5>
         <p class="text-muted small mb-3">
-          Soporta reportes individuales o lotes de varios días/semanas. El sistema agrupa automáticamente archivos de
+          El sistema identificará automáticamente cuál corresponde a
           <strong>ERP Hotel, Transbank, Cartola Bancaria, Visa, MasterCard, American Express y Diners Club</strong>.
         </p>
         <span class="btn btn-brand rounded-pill px-4 py-2 fw-semibold shadow-sm">
@@ -123,7 +123,7 @@
         </span>
         <h5 class="fw-bold mb-0">Revise y confirme la alineación de los archivos detectados</h5>
         <p class="text-muted small mb-0">
-          Verifique que cada rol tenga asignado(s) el o los archivos correctos. Si subió varios archivos para un mismo rol (ej. múltiples días de Transbank o MasterCard), se concatenarán automáticamente.
+          Verifique que cada rol tenga asignado el archivo correcto. Si se equivocó en uno o le faltó alguno, puede usar el botón <strong>"Subir"</strong> de esa fila sin volver a cargar todo.
         </p>
       </div>
 
@@ -136,7 +136,7 @@
           <thead class="alignment-thead">
             <tr class="text-uppercase text-muted">
               <th class="ps-3 py-2">Rol Requerido por el Sistema</th>
-              <th class="py-2">Archivo(s) Asignado(s)</th>
+              <th class="py-2">Archivo Asignado (Elegir o Subir Individual)</th>
               <th class="py-2">Evidencia / Huella Interna Detectada</th>
               <th class="text-center pe-3 py-2">Certeza</th>
             </tr>
@@ -150,8 +150,8 @@
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
           <div>
-            <div class="fw-bold small">¿La alineación de los archivos es correcta?</div>
-            <div class="text-muted small">Al confirmar, los archivos se concatenarán y deduplicarán automáticamente abriendo la previsualización en memoria.</div>
+            <div class="fw-bold small">¿La alineación de los 7 archivos es correcta?</div>
+            <div class="text-muted small">Al confirmar, los archivos se procesarán en este orden y se abrirá la previsualización en memoria.</div>
           </div>
         </div>
         <div class="d-flex gap-2">
@@ -170,5 +170,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=6"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=5"></script>
 {% endblock %}

@@ -1,11 +1,10 @@
 """
-Shared Excel Parsers for Hotel Plaza San Francisco USD and CLP Reconciliation.
-Extracts, cleans, and indexes records in memory from ERP/Bordero, Bank Statement, Transbank CLP, and Card Operator files.
+Shared Excel Parsers for Hotel Plaza San Francisco USD Reconciliation.
+Extracts, cleans, and indexes records in memory from ERP/Bordero, Bank Statement, and Card Operator files.
 """
 
-from datetime import date
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 import pandas as pd
 
 from ..models import (
@@ -18,11 +17,9 @@ from .column_detector import (
     ERP_COLUMN_RULES,
     BANK_STATEMENT_COLUMN_RULES,
     CARD_OPERATOR_COLUMN_RULES,
-    TRANSBANK_CLP_COLUMN_RULES,
     resolve_dataframe_columns,
     clean_code_string,
     normalize_auth_code,
-    normalize_text,
     safe_decimal,
     safe_date,
     safe_time,
@@ -322,115 +319,3 @@ def parse_bordero_clp_transactions(
 
     return rows, rows_by_auth_code
 
-
-# ------------------------------------------------------------------------------
-# Transbank CLP ("Abonos por día") Parser
-# ------------------------------------------------------------------------------
-
-TBK_HEADER_AMOUNT_LABELS = {
-    "total ventas (+)": "total_sales",
-    "devolucion comision por anulacion (+)": "commission_refund",
-    "iva devolucion comision por anulacion (+)": "commission_refund_vat",
-    "comision transbank (-)": "commission",
-    "iva de comision transbank (-)": "commission_vat",
-    "ventas anuladas (-)": "voided_sales",
-    "cobros por servicio (-)": "service_charges",
-    "iva de cobros por servicio (-)": "service_charges_vat",
-    "total abono": "total_deposit",
-}
-
-TBK_HEADER_BELOW_LABELS = {
-    "empresa:": "company",
-    "cuenta corriente:": "bank_account",
-    "moneda:": "currency",
-    "medio de pago:": "payment_medium",
-}
-
-
-def card_code_from_masked_number(masked_card: str) -> str:
-    """Infers the card brand from the BIN of a masked card number ('5525 61** **** 5410' -> 'MC')."""
-    digits = "".join(ch for ch in masked_card if ch.isdigit())[:2]
-    if not digits:
-        return ""
-    if digits.startswith("4"):
-        return "VI"
-    if digits[0] in ("2", "5"):
-        return "MC"
-    if digits in ("34", "37"):
-        return "AX"
-    if digits in ("30", "36", "38"):
-        return "DI"
-    return ""
-
-
-def _find_detail_header_row(dataframe: pd.DataFrame) -> int:
-    for row_index in range(min(len(dataframe), 80)):
-        if any(normalize_text(val) == "fecha de venta" for val in dataframe.iloc[row_index].values):
-            return row_index
-    return min(len(dataframe), 28)
-
-
-def parse_transbank_clp_settlement(dataframe: pd.DataFrame, modality: str) -> Dict[str, Any]:
-    """
-    Reads one Transbank 'Abonos por día' settlement (Crédito, Débito or Prepago):
-    the header block (period, account, medium, totals) and every sale in the voucher detail.
-    """
-    detail_header_row = _find_detail_header_row(dataframe)
-    header: Dict[str, Any] = {key: Decimal("0") for key in TBK_HEADER_AMOUNT_LABELS.values()}
-    header.update({key: "" for key in TBK_HEADER_BELOW_LABELS.values()})
-    header["settlement_date"] = None
-
-    for row_index in range(detail_header_row):
-        row = dataframe.iloc[row_index]
-        cells = [(col, val) for col, val in enumerate(row.values) if pd.notna(val) and str(val).strip()]
-        for position, (col, val) in enumerate(cells):
-            label = normalize_text(val)
-            if label.startswith("periodo de consulta") and position + 1 < len(cells):
-                header["settlement_date"] = safe_date(cells[position + 1][1])
-            elif label in TBK_HEADER_BELOW_LABELS and row_index + 1 < len(dataframe):
-                below = safe_cell(dataframe.iloc[row_index + 1], col)
-                header[TBK_HEADER_BELOW_LABELS[label]] = str(below or "").strip()
-            elif label in TBK_HEADER_AMOUNT_LABELS and position + 1 < len(cells):
-                header[TBK_HEADER_AMOUNT_LABELS[label]] = safe_decimal(cells[position + 1][1])
-
-    columns = resolve_dataframe_columns(dataframe, TRANSBANK_CLP_COLUMN_RULES, max_scan_rows=detail_header_row + 3)
-    sales: List[Dict[str, Any]] = []
-    skipped_movements = 0
-
-    for row_index in range(detail_header_row + 1, len(dataframe)):
-        row = dataframe.iloc[row_index]
-        movement_type = normalize_text(safe_cell(row, columns["movement_type"]))
-        auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
-        gross_amount = safe_decimal(safe_cell(row, columns["gross_amount"]))
-        if not auth_code or gross_amount <= 0:
-            continue
-        if movement_type and not movement_type.startswith("venta"):
-            skipped_movements += 1
-            continue
-
-        sale_date = safe_date(safe_cell(row, columns["sale_date"]))
-        masked_card = str(safe_cell(row, columns["masked_card_number"]) or "").strip()
-        location = str(safe_cell(row, columns["merchant_location"]) or "").split(",")[0].strip()
-        installment_number = clean_code_string(safe_cell(row, columns["installment_number"]))
-
-        sales.append({
-            "excel_row": row_index + 1,
-            "payment_modality": modality,
-            "card_code": card_code_from_masked_number(masked_card),
-            "sale_date": sale_date,
-            "merchant_code": clean_code_string(safe_cell(row, columns["merchant_code"])),
-            "merchant_location": location,
-            "gross_amount": gross_amount,
-            "installment_type": str(safe_cell(row, columns["installment_type"]) or "").strip(),
-            "installment_number": installment_number,
-            "valid_amount": safe_decimal(safe_cell(row, columns["valid_amount"])),
-            "commission": safe_decimal(safe_cell(row, columns["commission"])),
-            "commission_vat": safe_decimal(safe_cell(row, columns["commission_vat"])),
-            "net_deposit": safe_decimal(safe_cell(row, columns["net_deposit"])),
-            "masked_card": masked_card,
-            "authorization_code": auth_code,
-            "transaction_identifier": clean_code_string(safe_cell(row, columns["transaction_identifier"])),
-            "receipt_number": clean_code_string(safe_cell(row, columns["receipt_number"])),
-        })
-
-    return {"header": header, "sales": sales, "skipped_movements": skipped_movements}

@@ -1,7 +1,7 @@
 """
 Phase 1: US Dollars (USD) Financial Reconciliation Calculation Service.
 Executes the in-memory triple cross-match (Transbank vs. ERP vs. Card Operators + Bank Statement)
-without writing to the database. Supports multi-file batches for multi-day/weekly/monthly periods.
+without writing to the database.
 """
 
 from decimal import Decimal
@@ -12,16 +12,15 @@ from ..models import CardType, SystemConfiguration
 from .column_detector import (
     TRANSBANK_USD_COLUMN_RULES,
     clean_code_string,
+    resolve_dataframe_columns,
+    safe_cell,
     safe_date,
+    safe_decimal,
 )
-from .excel_parsers import serialize_bank_movement
-from .file_merger import (
-    ensure_file_list,
-    merge_and_parse_bank_statements,
-    merge_and_parse_card_operators,
-    merge_and_parse_transbank_usd,
-    merge_and_parse_usd_erp,
-    validate_multi_deposit_bank_movements,
+from .excel_parsers import (
+    parse_and_validate_bank_deposits,
+    parse_card_operator_statements,
+    parse_erp_transactions,
 )
 from .suggestion_engine import enrich_preview_with_suggestions
 
@@ -30,6 +29,39 @@ BANK_KEYWORDS = (
     "banco de chile", "banco santander", "banco bci",
     "scotiabank", "banco estado", "itau", "itaú",
 )
+
+
+def _extract_bank_and_settlement_metadata(
+    tbk_df: pd.DataFrame, bank_df: pd.DataFrame
+) -> Tuple[Decimal, str, str, Any]:
+    """Extracts calculated deposit, bank name, account number, and settlement date from header rows."""
+    calc_deposit, bank_name, account_num, settlement_date = Decimal("0.00"), "", "", None
+
+    for _, row in tbk_df.iloc[:38].iterrows():
+        label_col = str(safe_cell(row, 1) or "").strip().lower()
+        val_col = str(safe_cell(row, 2) or "").strip()
+        if "abono calculado" in label_col:
+            calc_deposit = safe_decimal(safe_cell(row, 2))
+        elif label_col.startswith("banco") and val_col and val_col.lower() != "nan":
+            bank_name = val_col.title().replace("De ", "de ")
+        elif ("numero" in label_col or "número" in label_col) and val_col and not account_num:
+            account_num = clean_code_string(val_col)
+        elif "fecha abono" in label_col and not settlement_date:
+            settlement_date = safe_date(safe_cell(row, 2))
+
+    for _, row in bank_df.iloc[:15].iterrows():
+        non_empty = [str(c).strip() for c in row if pd.notna(c) and str(c).strip()]
+        for idx, cell_text in enumerate(non_empty):
+            lower_text = cell_text.lower()
+            if "cuenta" in lower_text and idx + 1 < len(non_empty):
+                account_num = non_empty[idx + 1]
+            if not bank_name:
+                for kw in BANK_KEYWORDS:
+                    if kw in lower_text:
+                        bank_name = kw.title().replace("De ", "de ")
+                        break
+
+    return calc_deposit, bank_name, account_num, settlement_date
 
 
 def _resolve_operator_for_erp(
@@ -119,16 +151,10 @@ def _format_accounting_period(
         min_s, max_s = valid_dates[0].strftime("%d/%m/%Y"), valid_dates[-1].strftime("%d/%m/%Y")
         range_str = min_s if min_s == max_s else f"{min_s} al {max_s}"
 
-    dt_str = ""
-    if hasattr(settlement_dt, "strftime"):
-        dt_str = settlement_dt.strftime("%d/%m/%Y")
-    elif settlement_dt:
-        dt_str = str(settlement_dt)
-
-    if dt_str and range_str:
-        return f"Cierre Dólares — Abono {dt_str} (Ventas {range_str})"
-    if dt_str:
-        return f"Cierre Dólares — Abono {dt_str}"
+    if settlement_dt and range_str:
+        return f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')} (Ventas {range_str})"
+    if settlement_dt:
+        return f"Cierre Dólares — Abono {settlement_dt.strftime('%d/%m/%Y')}"
     return f"Cierre Dólares — Ventas {range_str}" if range_str else "Cierre Dólares (USD)"
 
 
@@ -137,58 +163,37 @@ def calculate_usd_preview(
     amex_file, diners_file, visa_file, mastercard_file,
     accounting_period: str = "",
 ) -> Dict[str, Any]:
-    """
-    Executes the complete US Dollars reconciliation workflow purely in memory.
-    Supports either a single file or a list of files per argument to reconcile multi-day batches.
-    """
+    """Executes the complete US Dollars reconciliation workflow purely in memory."""
     usd_tolerance = SystemConfiguration.get_solo().usd_rounding_tolerance
     card_types = {card.code: card for card in CardType.objects.all()}
 
-    # 1. Parse & Merge Bank Statement Movements
-    bank_movements = merge_and_parse_bank_statements(bank_statement_file)
+    for f in (erp_file, transbank_file, bank_statement_file, amex_file, diners_file, visa_file, mastercard_file):
+        if hasattr(f, "seek"):
+            f.seek(0)
 
-    # 2. Parse & Merge Transbank USD settlement files
-    tbk_data = merge_and_parse_transbank_usd(transbank_file)
-    calc_deposit = tbk_data["total_calc_deposit"]
-    individual_deposits = tbk_data["individual_deposits"]
-    bank_name = tbk_data["bank_name"]
-    account_num = tbk_data["account_num"]
-    settlement_dates = tbk_data["settlement_dates"]
-    settlement_date = settlement_dates[-1] if settlement_dates else None
+    erp_df = pd.read_excel(erp_file)
+    tbk_df = pd.read_excel(transbank_file)
+    bank_df = pd.read_excel(bank_statement_file)
+    operator_dfs = {
+        "AX": pd.read_excel(amex_file), "DI": pd.read_excel(diners_file),
+        "VI": pd.read_excel(visa_file), "MC": pd.read_excel(mastercard_file),
+    }
 
-    # Detect bank name from movements if missing in TBK header
-    if not bank_name:
-        for m in bank_movements[:20]:
-            lower_desc = (m.description or "").lower()
-            for kw in BANK_KEYWORDS:
-                if kw in lower_desc:
-                    bank_name = kw.title().replace("De ", "de ")
-                    break
-            if bank_name:
-                break
-
-    # Validate bank deposits (supports individual daily deposits or combined bulk sum)
-    expected_deposits = [("USD_GENERAL", dep) for dep, _ in individual_deposits] or [("USD_GENERAL", calc_deposit)]
-    bank_validations, claimed_indices = validate_multi_deposit_bank_movements(
-        bank_movements,
-        expected_deposits=expected_deposits,
-        total_consolidated=calc_deposit,
+    # 1. Bank Statement Abono & Metadata
+    calc_deposit, bank_name, account_num, settlement_date = _extract_bank_and_settlement_metadata(tbk_df, bank_df)
+    bank_validations = parse_and_validate_bank_deposits(
+        bank_dataframe=bank_df,
+        expected_deposits=[("USD_GENERAL", calc_deposit)],
         tolerance=usd_tolerance,
     )
     first_bv = bank_validations[0] if bank_validations else {}
     bank_movement_date = first_bv.get("movement_date")
-    all_banks_matched = all(bv.get("is_matched") for bv in bank_validations)
 
-    bank_movements_data = [
-        serialize_bank_movement(m, idx in claimed_indices) for idx, m in enumerate(bank_movements)
-    ]
-
-    # 3. Parse & Merge ERP and Card Operator files
-    erp_instances, erp_by_auth_code = merge_and_parse_usd_erp(erp_file, card_types)
-    operator_files_map = {
-        "AX": amex_file, "DI": diners_file, "VI": visa_file, "MC": mastercard_file,
-    }
-    card_operator_index = merge_and_parse_card_operators(operator_files_map, card_types)
+    # 2. Parse Card Operator Statements & ERP Transactions
+    card_operator_index = parse_card_operator_statements(operator_dfs, card_types)
+    erp_instances, erp_by_auth_code = parse_erp_transactions(erp_df, card_types)
+    for idx, erp_item in enumerate(erp_instances):
+        erp_item._memory_index = idx
 
     card_operator_transactions_data: List[Dict[str, Any]] = []
     for card_code, doc_dict in card_operator_index.items():
@@ -206,20 +211,26 @@ def calculate_usd_preview(
                     "corrected_balance_amount": float(op_inst.corrected_balance_amount),
                 })
 
-    # 4. Cross-Match Transbank (Source of Truth) -> ERP -> Card Operator
+    # 3. Cross-Match Transbank -> ERP -> Card Operator
+    tbk_cols = resolve_dataframe_columns(tbk_df, TRANSBANK_USD_COLUMN_RULES)
     matched_vouchers, discrepancy_vouchers, orphan_vouchers, tbk_txs_data = [], [], [], []
     summary_accumulators = {
         code: {k: Decimal("0.00") for k in ("usd_erp_total", "usd_tbk_total", "clp_erp_total", "clp_tbk_total")}
         for code in CARD_CODES
     }
 
-    for item in tbk_data["all_rows"]:
-        raw_card_type = item["raw_card_type"]
-        auth_code = item["auth_code"]
-        gross_amount_usd = item["gross_amount_usd"]
-        sale_date = item["sale_date"]
-        masked_card = item["masked_card"]
+    for _, row in tbk_df.iterrows():
+        raw_card_type = str(safe_cell(row, tbk_cols["card_type"]) or "").strip().upper()
+        if raw_card_type not in summary_accumulators:
+            continue
 
+        auth_code = clean_code_string(safe_cell(row, tbk_cols["authorization_code"]))
+        gross_amount_usd = safe_decimal(safe_cell(row, tbk_cols["gross_amount"]))
+        if not auth_code or gross_amount_usd <= 0:
+            continue
+
+        sale_date = safe_date(safe_cell(row, tbk_cols["sale_date"]))
+        masked_card = str(safe_cell(row, tbk_cols["masked_card_number"]) or "").strip()
         card_model = card_types.get(raw_card_type)
         card_name = card_model.name if card_model else raw_card_type
         tbk_index = len(tbk_txs_data)
@@ -307,11 +318,11 @@ def calculate_usd_preview(
         sale_date_str = sale_date.strftime("%d/%m/%Y") if sale_date else None
         tbk_txs_data.append({
             "card_code": raw_card_type, "payment_modality": "CREDIT",
-            "merchant_code": item.get("merchant_code", "HOTEL PLAZA SAN FRANCISCO"),
+            "merchant_code": clean_code_string(safe_cell(row, tbk_cols.get("merchant_code", 1))),
             "merchant_location_name": "HOTEL PLAZA SAN FRANCISCO",
             "masked_card_number": masked_card,
-            "installment_type": item.get("installment_type", ""),
-            "installment_number": item.get("installment_number", ""),
+            "installment_type": str(safe_cell(row, tbk_cols.get("installment_type", 5)) or "").strip(),
+            "installment_number": clean_code_string(safe_cell(row, tbk_cols.get("installment_number", 8))),
             "authorization_code": auth_code, "sale_date": sale_date_str,
             "original_sale_amount": float(gross_amount_usd), "reconciled": is_within_tolerance,
         })
@@ -355,20 +366,16 @@ def calculate_usd_preview(
         accounting_period, settlement_date, bank_movement_date, tbk_txs_data
     )
 
-    def _file_label(files_arg, fallback: str) -> str:
-        fl = ensure_file_list(files_arg)
-        return ", ".join(getattr(f, "name", fallback) for f in fl) if fl else fallback
-
     preview_payload = {
         "accounting_period": accounting_period,
         "file_names": {
-            "erp": _file_label(erp_file, "TERJETAS ERP.xlsx"),
-            "transbank": _file_label(transbank_file, "ABONO TBK.xlsx"),
-            "bank": _file_label(bank_statement_file, "cartola.xls"),
-            "amex": _file_label(amex_file, "AMEX DOLAR.XLS"),
-            "diners": _file_label(diners_file, "DINERS DOLAR.XLS"),
-            "visa": _file_label(visa_file, "VISA DOLAR.XLS"),
-            "mastercard": _file_label(mastercard_file, "MASTERCARD DOLAR.XLS"),
+            "erp": getattr(erp_file, "name", "TERJETAS ERP.xlsx"),
+            "transbank": getattr(transbank_file, "name", "ABONO TBK.xlsx"),
+            "bank": getattr(bank_statement_file, "name", "cartola.xls"),
+            "amex": getattr(amex_file, "name", "AMEX DOLAR.XLS"),
+            "diners": getattr(diners_file, "name", "DINERS DOLAR.XLS"),
+            "visa": getattr(visa_file, "name", "VISA DOLAR.XLS"),
+            "mastercard": getattr(mastercard_file, "name", "MASTERCARD DOLAR.XLS"),
         },
         "bank_validation": {
             "deposit_modality": "USD_GENERAL",
@@ -376,12 +383,10 @@ def calculate_usd_preview(
             "bank_account_number": account_num,
             "calculated_deposit": float(calc_deposit),
             "bank_deposit_amount": float(first_bv.get("bank_deposit", 0.0)),
-            "bank_movement_date": bank_movement_date.strftime("%d/%m/%Y") if hasattr(bank_movement_date, "strftime") else (bank_movement_date or None),
-            "is_matched": all_banks_matched,
-            "validations_count": len(bank_validations),
+            "bank_movement_date": bank_movement_date.strftime("%d/%m/%Y") if bank_movement_date else None,
+            "is_matched": first_bv.get("is_matched", False),
         },
-        "bank_validations": bank_validations,
-        "bank_movements": bank_movements_data,
+        "bank_movements": first_bv.get("movements_data", []),
         "erp_transactions": erp_transactions_data,
         "transbank_transactions": tbk_txs_data,
         "card_operator_transactions": card_operator_transactions_data,
