@@ -410,9 +410,6 @@
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="suggestion-badge-tag"><i class="bi bi-stars"></i> Nivel 2</span>
           <span class="fw-bold small">Asistente de Cruce para Vouchers con Diferencia:</span>
-          <span class="reason-chip reason-emerald">
-            <i class="bi bi-check2-circle"></i> {{ suggestion_counts.discrepancies_with }} con sugerencia asistida
-          </span>
           <span class="reason-chip reason-gold">
             <i class="bi bi-slash-circle"></i> {{ suggestion_counts.discrepancies_without }} sin sugerencia
           </span>
@@ -556,9 +553,6 @@
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="suggestion-badge-tag"><i class="bi bi-stars"></i> Nivel 2</span>
           <span class="fw-bold small">Asistente de Cruce para Vouchers en TBK pero NO en ERP:</span>
-          <span class="reason-chip reason-emerald">
-            <i class="bi bi-check2-circle"></i> {{ suggestion_counts.orphans_with }} con sugerencia asistida
-          </span>
           <span class="reason-chip reason-gold">
             <i class="bi bi-slash-circle"></i> {{ suggestion_counts.orphans_without }} sin coincidencia en archivos
           </span>
@@ -651,7 +645,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_preview.js' %}?v=31"></script>
+<script src="{% static 'js/usd_preview.js' %}?v=32"></script>
 <script src="{% static 'js/usd_suggestions.js' %}?v=5"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab
