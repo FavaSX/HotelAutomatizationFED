@@ -5,159 +5,213 @@
 [![Python](https://img.shields.io/badge/Python-3.12+-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Bootstrap 5](https://img.shields.io/badge/Bootstrap-5.3-7952b3?style=for-the-badge&logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 
-Plataforma web corporativa de alta precisión diseñada para automatizar, auditar y persistir el proceso de conciliación bancaria y cuadratura de tarjetas de crédito y débito del **Hotel Plaza San Francisco (HPSF)**.
-
-El sistema procesa y cruza masivamente la información transaccional proveniente del sistema hotelero (**FrontOffice ERP**), las liquidaciones de **Transbank**, las **cartolas bancarias** (Banco de Chile y BancoEstado) y los reportes de franquicias internacionales (*Visa, MasterCard, American Express y Diners Club*), resolviendo automáticamente ventas en cuotas, desfases de turnos y errores tipográficos.
+El **Sistema de Conciliación Financiera ERP** es una plataforma web corporativa desarrollada en **Django** y diseñada para automatizar, auditar y persistir el cruce masivo de datos financieros entre el sistema central del hotel (ERP), los abonos de **Transbank**, las **cartolas bancarias** y los reportes de liquidación de los **operadores de tarjetas de crédito internacionales** (*Visa, MasterCard, American Express y Diners Club*).
 
 > 🌐 **Entorno de Producción Activo:** [https://hotelsanfrancisco.pythonanywhere.com/](https://hotelsanfrancisco.pythonanywhere.com/)
 
 ---
 
-## 📌 Tabla de Contenidos
-1. [Descripción General y Dominio de Negocio](#-descripción-general-y-dominio-de-negocio)
-2. [Arquitectura del Sistema y Principios de Diseño](#-arquitectura-del-sistema-y-principios-de-diseño)
-3. [Tecnologías Utilizadas](#-tecnologías-utilizadas)
-4. [Módulos y Funcionalidades Implementadas](#-módulos-y-funcionalidades-implementadas)
-   * [Fase 1: Módulo Dólares (USD - Tarjetas Internacionales)](#fase-1-módulo-dólares-usd---tarjetas-internacionales)
-   * [Fase 2: Módulo Pesos (CLP - Tarjetas Nacionales)](#fase-2-módulo-pesos-clp---tarjetas-nacionales)
-   * [Motor de Sugerencias Asistidas (Nivel 2)](#motor-de-sugerencias-asistidas-nivel-2)
-   * [Panel de Control Ejecutivo (Dashboard)](#panel-de-control-ejecutivo-dashboard)
-   * [Exportación de Reportes Oficiales en Excel](#exportación-de-reportes-oficiales-en-excel)
-5. [Seguridad y Protección del Sistema](#-seguridad-y-protección-del-sistema)
-6. [Instrucciones de Instalación y Ejecución Local](#-instrucciones-de-instalación-y-ejecución-local)
-7. [Configuración y Despliegue en Producción](#-configuración-y-despliegue-en-producción)
-
----
-
-## 🏢 Descripción General y Dominio de Negocio
-
-El Hotel Plaza San Francisco gestiona diariamente cientos de transacciones tanto de huéspedes extranjeros como nacionales. Tradicionalmente, la cuadratura contable demandaba largas horas de digitación manual en hojas de cálculo, con riesgos de diferencias por redondeo, comisiones bancarias no conciliadas y desfases de fechas por turnos de recepción.
-
-La plataforma v2.0 sustituye por completo el proceso manual y corrige las fallas críticas del sistema heredado (v1.0), proporcionando:
-* **Cuadratura Matemática Exacta:** Cálculo de comisiones, retenciones de IVA, ventas brutas, cuotas y abonos netos en cuenta corriente.
-* **Ciclo Estricto en Memoria (*Zero-Write Preview*):** Toda la lectura, normalización y análisis ocurre en memoria RAM dentro de la sesión de Django; nada se escribe en la base de datos hasta que el auditor revisa la previsualización y confirma explícitamente el cierre.
-* **Trazabilidad y Auditoría Inmutable:** Registro histórico de cierres con bitácoras de auditoría (`AuditResolutionLog`) para cada excepción resuelta.
-
----
-
-## 🏛 Arquitectura del Sistema y Principios de Diseño
-
-El sistema está estructurado bajo principios de **Clean Architecture**, **Alta Cohesión** y **Separación Estricta de Responsabilidades (SRP / DRY)**:
-
-```mermaid
-flowchart TD
-    subgraph UI ["Capa de Presentación (UI/UX)"]
-        A[Dashboard Ejecutivo]
-        B[Zona de Carga Masiva Drag & Drop]
-        C[Previsualización en Memoria con Paginación a 25]
-        D[Modal de Sugerencias Asistidas Nivel 2]
-    end
-
-    subgraph Controllers ["Capa de Vistas y Controladores (Thin Views)"]
-        E[web/views/usd.py]
-        F[web/views/clp.py]
-        G[web/views/common.py]
-    end
-
-    subgraph DomainServices ["Capa de Lógica de Negocio y Dominio"]
-        H[file_detector.py: Clasificación Estructural]
-        I[excel_parsers.py: Lectura y Sanitización]
-        J[usd_reconciliation.py: Motor USD]
-        K[clp_reconciliation.py: Motor CLP]
-        L[suggestion_engine.py & clp_suggestion_engine.py]
-    end
-
-    subgraph Persistence ["Capa de Persistencia y Exportación"]
-        M[persistence_common.py: Deduplicación por Clave Natural]
-        N[excel_styles.py: Paleta Corporativa Navy/Gold]
-        O[report_exporter.py & clp_report_exporter.py]
-        P[(Base de Datos: SQLite / PostgreSQL)]
-    end
-
-    UI --> Controllers
-    Controllers --> DomainServices
-    DomainServices --> Persistence
-```
-
-1. **Capa de Lectura y Detección (`file_detector.py`, `excel_parsers.py`):** Desacopla la manipulación de DataFrames y el manejo de celdas combinadas de la lógica contable. Detecta automáticamente roles por contenido sin depender del nombre del archivo.
-2. **Capa de Conciliación de Dominio (`usd_reconciliation.py`, `clp_reconciliation.py`):** Aplica las reglas contables puras, matching por tuplas, resolución de facturas divididas y balanceo de depósitos bancarios.
-3. **Capa de Persistencia Común (`persistence_common.py`):** Centraliza la deduplicación atómica mediante claves naturales compuestas y transacciones seguras (`transaction.atomic()`).
-4. **Capa de Estilos y Reportes Corporativos (`excel_styles.py`, `report_exporter.py`, `clp_report_exporter.py`):** Genera exportables oficiales en formato Excel (`.xlsx`) multi-hoja bajo el libro de marca del hotel.
-
----
-
 ## 🛠 Tecnologías Utilizadas
 
-### Backend & Procesamiento de Datos
-* **[Python 3.12+](https://www.python.org/):** Lenguaje base del proyecto.
-* **[Django 5.1+ / 6.1+](https://www.djangoproject.com/):** Framework web robusto con ORM relacional y motor de plantillas.
-* **[Pandas 3.0+](https://pandas.pydata.org/):** Ingesta, saneamiento y manipulación masiva de datos en memoria.
-* **[OpenPyXL 3.1+](https://openpyxl.readthedocs.io/):** Generación de libros Excel multi-hoja de alta fidelidad estética y fórmulas contables.
-* **[xlrd 2.0+](https://xlrd.readthedocs.io/):** Soporte de lectura de archivos heredados con formato Excel 97-2003 (`.xls`).
-* **[SQLite 3](https://www.sqlite.org/) / [PostgreSQL](https://www.postgresql.org/):** Motor de persistencia relacional con transacciones ACID.
-
-### Frontend & Interfaz de Usuario
-* **[Bootstrap 5.3](https://getbootstrap.com/):** Componentes responsive, modales, alertas y diseño de grillas.
-* **[Bootstrap Icons 1.11](https://icons.getbootstrap.com/):** Iconografía corporativa.
-* **JavaScript ES6+ Nativo:** Drag & Drop, consumo de endpoints AJAX, filtros y paginación en memoria sin dependencias externas pesadas.
-* **CSS3 Custom Variables (`theme.css`):** Paleta institucional de HPSF (Navy `#0C0C42`, Gold `#996909`), compatible con Modo Claro y Modo Oscuro persistente.
-
-### Seguridad & Infraestructura
-* **[django-axes 8.3+](https://django-axes.readthedocs.io/):** Detección y bloqueo automático contra ataques de fuerza bruta por IP y usuario.
-* **[PythonAnywhere](https://www.pythonanywhere.com/):** Infraestructura en la nube con soporte WSGI, HTTPS/SSL y cabeceras de proxy seguro.
+* **Lenguaje & Framework:** Python 3.12+, Django 5.1+ / 6.1+.
+* **Procesamiento de Datos:** Pandas 3.0+, OpenPyXL 3.1+ (reportes con fórmulas y estilos corporativos), xlrd 2.0+ (lectura de archivos heredados `.xls`).
+* **Base de Datos:** SQLite 3 (desarrollo y despliegue rápido) / compatible con PostgreSQL para entornos de alta concurrencia.
+* **Interfaz de Usuario (Frontend):** Bootstrap 5.3, Bootstrap Icons 1.11, JavaScript ES6+ nativo (arrastrar y soltar, peticiones asíncronas AJAX, filtros en tiempo real y paginación cliente), CSS3 con soporte de variables y Modo Claro / Oscuro.
+* **Seguridad & Auditoría:** `django-axes` (protección contra ataques de fuerza bruta), sesiones seguras en memoria y middleware de seguridad HTTPS.
 
 ---
 
-## 🚀 Módulos y Funcionalidades Implementadas
+## Fase 1: Conciliación de Transacciones Internacionales en Dólares (USD)
 
-### Fase 1: Módulo Dólares (USD - Tarjetas Internacionales)
-* **Ingesta Multi-Archivo (7 Insumos):** FrontOffice ERP del hotel, Abono Transbank Divisas, Cartola Bancaria en USD (Banco de Chile) y 4 operadores de franquicias internacionales (*Visa, MasterCard, American Express y Diners Club*).
-* **Cruce Triple en Cascada:**
-  1. Transbank POS vs. ERP Hotel (con soporte de *Split Invoices* / facturas divididas).
-  2. ERP Hotel vs. Liquidación de la Operadora en USD y verificación de conversión cambiaria en pesos (`SALDO` vs `SALDO CORREGIDO`).
-  3. Validación del depósito neto esperado contra los abonos reales de la cartola en dólares.
+La primera fase del proyecto automatiza el cierre y cuadratura de transacciones internacionales en **moneda extranjera (Dólares - USD)** y su correspondiente liquidación en **Pesos Chilenos (CLP)**. Su propósito es eliminar el cruce manual de planillas, detectar cobros omitidos o con diferencias de tipo de cambio/redondeo y garantizar que cada dólar procesado por Transbank esté respaldado en el ERP del hotel y depositado íntegramente en la cuenta corriente bancaria.
 
-### Fase 2: Módulo Pesos (CLP - Tarjetas Nacionales)
-* **Ingesta Flexible y Unificada:**
-  * **Borderó ERP:** Soporta múltiples archivos correspondientes a distintos turnos de recepción, excluyendo cargos en divisa extranjera y deduplicando tuplas naturales.
-  * **Abonos Transbank CLP (Categoría Unificada):** Soporta tanto la carga de **1 único archivo consolidado** (*"Todos los medios de pago"*) como la de **2 a 3 archivos individuales** separados por modalidad (*Crédito*, *Débito* y *Prepago*).
-  * **Cartola Bancaria Multibanco:** Admite cartolas de **Banco de Chile** y cartolas históricas de **BancoEstado** (lectura automática de la hoja `'Movimientos'` y extracción de folios de operación).
-* **Gestión de Ventas en Cuotas:**  
-  Distingue con precisión matemática el *Monto Original de Compra* frente al *Monto Válido para Abono* en compras en cuotas (ej. cuota `3/3`), evitando descuadres artificiales frente a la cartola bancaria.
-* **Tratamiento de Excepciones Contables:**
-  * `CARD_TYPE_MISMATCH`: Detección de ventas digitadas en el ERP con un medio de pago erróneo (ej. tarjeta de crédito digitada como Redcompra débito).
-  * `OUT_OF_PERIOD`: Clasificación aislada de cuotas plurimensuales anteriores o ventas desfasadas por turnos nocturnos de recepción.
+### 1. Archivos de Entrada (Los 7 Insumos Diarios)
+En cada proceso de conciliación, el departamento de finanzas carga **7 archivos Excel** (`.xlsx` / `.xls`) exportados desde distintas plataformas externas e internas. El motor de lectura limpia automáticamente encabezados decorativos, celdas combinadas y filas de subtotales para extraer las columnas contables y operativas clave:
 
-### Motor de Sugerencias Asistidas (Nivel 2)
-* Diagnóstico consultivo que cruza vouchers huérfanos y discrepancias contra registros no reclamados del ERP o de la **base de datos histórica**.
-* Algoritmo de similitud de caracteres tipográficos / OCR (`O↔0`, `I↔1`, `8↔6`, ceros a la izquierda) y detección de diferencias por propinas omitidas.
-* Consulta SQL pre-cargada optimizada (prevención de cuellos de botella $N+1$).
-* Modales interactivos con texto de advertencia formal y visualización lado a lado.
+* **A. Consolidado ERP del Hotel (`TERJETAS ERP.xlsx`)**
+  * **Origen:** Sistema interno de gestión hotelera / recepción (Borderó de tarjetas).
+  * **Datos extraídos:** Código de Autorización, N° de Cuenta/Documento (Folio de traspaso a operadores), N° de Factura, Monto cobrado, Fecha y Hora de emisión, Tipo de Tarjeta, **Nombre del Huésped**, **N° de Habitación** y **Usuario Cajero/Recepcionista** (estos últimos vitales para que contabilidad identifique al responsable ante cualquier descuadre).
 
-### Panel de Control Ejecutivo (Dashboard)
-* Alternancia fluida entre paneles **Dólares (USD)** y **Pesos (CLP)** con un clic.
-* Métricas en tiempo real: tasa de conciliación porcentual, monto total auditado, resumen de excepciones pendientes y tabla de los últimos cierres guardados.
-* Acciones rápidas en el encabezado: *"Nueva conciliación"* y *"Reporte del último cierre"* sincronizadas dinámicamente con la moneda activa.
+* **B. Abono General Transbank (`ABONO TBK.xlsx`)**
+  * **Origen:** Portal Privado de Transbank (detalle de ventas en dólares).
+  * **Datos extraídos:** **Código de Autorización** (fuente de verdad de la máquina POS), Marca de Tarjeta (`Visa`, `MasterCard`, `American Express`, `Diners Club`), Monto Bruto en USD, Fecha de Venta, Número de Tarjeta Enmascarado (BIN) y Local/Comercio.
 
-### Exportación de Reportes Oficiales en Excel
-* Generación bajo demanda de libros `.xlsx` estilizados con cabeceras corporativas, formato numérico chileno (`$ #.##0` / `US$ #.##0,00`), alerta roja para discrepancias y autoajuste inteligente de columnas.
-* Estructura multi-hoja: Resumen Ejecutivo, Vouchers Conciliados y Detalle de Excepciones con glosa del auditor.
+* **C. Reportes de Operadoras Internacionales (`VISA`, `MASTERCARD`, `AMEX`, `DINERS`)**
+  * **Origen:** Portales de liquidación de cada franquicia de tarjeta de crédito.
+  * **Datos extraídos:** N° de Documento (enlace directo con la columna *Cuenta* del ERP), N° de Secuencia, Monto original en Moneda Extranjera (USD), **Saldo en Pesos (`SALDO`)** y **Saldo Corregido en Pesos (`SALDO CORREGIDO`)**.
+
+* **D. Cartola Bancaria (`cartola.xls`)**
+  * **Origen:** Portal corporativo del banco del hotel.
+  * **Datos extraídos:** Fecha de movimiento, Descripción, N° de Documento, Cargos, **Abonos** y Saldo contable, identificando de forma automática las transferencias correspondientes a liquidaciones de Transbank.
 
 ---
 
-## 🔒 Seguridad y Protección del Sistema
+### 2. Flujo de Cruce Triple y Reglas de Negocio
+El motor financiero ejecuta la conciliación en **tres niveles de validación simultáneos**:
 
-* **Protección contra Fuerza Bruta (`django-axes`):** Bloqueo automático temporal tras 5 intentos fallidos consecutivos de inicio de sesión por combinación *Usuario + IP*.
-* **Auditoría de Sesiones:** Decorador `@login_required` obligatorio en todas las vistas operativas y de exportación.
-* **Políticas HTTPS y Cookies:** Flags `SESSION_COOKIE_HTTPONLY`, expiración de sesión por inactividad y soporte de cabeceras seguras detrás de proxy inverso (`X-Forwarded-Proto`, `X-Real-IP`).
-* **Protección CSRF:** Tokens de seguridad validados en todos los formularios y peticiones AJAX.
+1. **Cruce Transbank vs. ERP (con soporte de Facturas Divididas):**
+   * Tomando a **Transbank como fuente de verdad**, el algoritmo busca cada código de autorización dentro del ERP del hotel.
+   * Si en el ERP existen registros preliminares sin facturar y registros definitivos con factura para una misma operación, el sistema prioriza automáticamente las líneas facturadas.
+   * Si una reserva divide un único cobro de tarjeta en **múltiples facturas parciales** bajo el mismo código de autorización (*Split Invoices*), el motor agrupa y suma las facturas del ERP para cuadrar el monto exacto del voucher y enlazar todos los números de documento involucrados.
+2. **Cruce en Cascada contra Operadoras (USD y CLP):**
+   * Utilizando el N° de Cuenta/Documento obtenido del ERP, el sistema localiza la transacción en el archivo de su operadora correspondiente (*Visa, MasterCard, Amex o Diners*).
+   * Valida primero el monto en dólares (**Monto TBK USD vs. Monto Operador USD**) aplicando la tolerancia de redondeo configurada en el sistema.
+   * En paralelo, valida la conversión a pesos chilenos en cascada: compara el monto CLP del ERP primero contra la columna **`SALDO`** de la operadora y, si hubo ajuste cambiario, contra la columna **`SALDO CORREGIDO`**.
+3. **Confirmación de Abono en Cartola Bancaria:**
+   * Suma la totalidad de las liquidaciones netas del cierre y escanea la cartola bancaria buscando el abono exacto en cuenta corriente, emitiendo un dictamen inmediato de **Abono Bancario Confirmado** o **Alerta de Diferencia Bancaria**.
+4. **Motor de Sugerencia Asistida Nivel 2 (`suggestion_engine.py`):**
+   * Para aquellos vouchers que no logran un cruce automático en el Nivel 1 (pestañas *Con Diferencia* y *En TBK pero NO en ERP*), el sistema ejecuta un segundo motor analítico de carácter **consultivo** (nunca fuerza ni altera la conciliación automática).
+   * Cruza los vouchers pendientes contra la totalidad de filas disponibles del ERP y de los operadores aplicando algoritmos de similitud de texto (`difflib`), normalización de confusiones visuales de lectura POS/OCR (`G↔6`, `O↔0`, `B↔8`, `T/Z↔7`, `S↔5`, `I↔1`), detección de errores humanos de digitación de 1 o 2 caracteres, cercanía de fechas y correlación de montos en USD y CLP.
+
+---
+
+### 3. Flujo de Trabajo del Contador: Previsualización, Asistente Nivel 2 y Persistencia Oficial
+A diferencia del esquema tradicional a ciegas, el sistema opera bajo una arquitectura de **Dos Fases (Preview & Commit)**:
+
+1. **Dashboard Interactivo de Previsualización (En Memoria):**
+   Al subir los 7 archivos, el contador accede inmediatamente a una vista preliminar con KPIs ejecutivos (porcentaje de conciliación automática con barra de progreso interactiva, diferencia total y tarjeta de confirmación del abono en cartola bancaria con número de cuenta detectado), las **dos tablas paralelas de cuadratura** (**2A. Cuadratura por Operador en Dólares US$** y **2B. Cuadratura en Moneda Nacional Pesos CLP**) y el desglose línea por línea clasificado en **3 pestañas de auditoría**:
+   * **Ubicadas Exactas:** Transacciones que cuadran tanto en ERP como en la operadora (incluyendo el detalle de Cruce de Vouchers `TBK ⇄ ERP`, Cruce de Documentos `ERP ⇄ OP`, Fecha, Cajero, Tarjeta, Monto TBK, Monto Operador, Diferencia USD, Monto CLP y Diagnóstico).
+   * **Con Diferencia:** Vouchers ubicados en el ERP pero que presentan diferencias monetarias en dólares o pesos fuera del rango de tolerancia (`±US$ 0,50 USD`), o cuyo documento aún no figura en la liquidación del operador.
+   * **En TBK pero NO en ERP:** Cobros reales procesados en la máquina de Transbank cuyo código de autorización no fue ingresado con coincidencia exacta al sistema del hotel por recepción.
+2. **Asistente de Cruce Secundario (Modal Nivel 2):**
+   En las pestañas *Con Diferencia* y *En TBK pero NO en ERP*, un banner ejecutivo informa cuántos casos cuentan con **sugerencia asistida** y permite abrir un modal interactivo con tablas comparativas lado a lado (`Transbank ⇄ ERP Hotel ⇄ Operadora`), nivel de confianza (`Alta / Media`) y la acción contable sugerida para corregir el dato en recepción.
+3. **Confirmación en Base de Datos y Descarga de Excel Oficial en 2 Pasos:**
+   Una vez revisados los datos, el contador presiona **"Guardar cierre"**. Mediante una petición asíncrona (AJAX), el sistema persiste atómicamente toda la operación en la base de datos y transforma el modal al **Paso 2**, habilitando el botón de descarga del **Reporte Excel Oficial Multi-Hoja** (*Resumen Dólares*, *Vouchers Ubicados* y *Discrepancias y No Ubicados*) respaldado por el registro histórico recién creado.
+
+---
+
+## Hito 1: Auditoría del Sistema Legacy y Reingeniería Total (Plataforma v2.0)
+
+El punto de partida del proyecto fue la recepción de un prototipo heredado (**Sistema Legacy v1.0**). Antes de avanzar hacia nuevas fases, el equipo realizó una auditoría forense de código, arquitectura, seguridad y precisión matemática sobre dicho proyecto original.
+
+Debido a la magnitud de la deuda técnica y a que el proyecto antiguo carecía por completo de base de datos para almacenar el historial contable, se tomó la decisión de ingeniería de **reconstruir la plataforma desde cero (`AppAutomatizationHotel2.0`)**, corrigiendo todos los defectos de raíz e incorporando capacidades empresariales de auditoría.
+
+### 1. Diagnóstico del Proyecto Antiguo (Por qué se reconstruyó desde cero)
+Durante la auditoría del código original se detectaron fallas críticas que impedían su uso confiable en producción:
+* **Pérdida Silenciosa del ~35% de las Transacciones (Bug de Punteros `seek(0)`):** El código antiguo leía los archivos `InMemoryUploadedFile` dentro de bucles sin reiniciar el puntero de lectura. Tras la primera pasada, los archivos se leían como vacíos, enviando decenas de transacciones válidas a la lista de *"No Encontradas"*.
+* **Corrupción de Totales por Valores `NaN`:** Cuando una celda de moneda extranjera venía vacía en los reportes de operadoras (frecuente en *MasterCard*), Pandas la interpretaba como `NaN`. Como en Python `float(NaN)` no lanza excepción `ValueError`, el valor `NaN` ingresaba a las sumatorias contaminando el total general (`Total = NaN`).
+* **Falso Negativo en Facturas Divididas (*Split Invoices*):** El sistema antiguo tomaba únicamente la primera fila coincidente del ERP. Cuando recepción dividía el pago de una habitación en dos o más facturas con el mismo código de autorización, el sistema reportaba una diferencia falsa o ignoraba las facturas secundarias.
+* **Fragilidad ante Cambios de Columnas:** Toda la lectura dependía de índices numéricos fijos (`row[7]`, `row[24]`), por lo que cualquier columna nueva en un reporte de Transbank o del ERP rompía el cruce.
+* **Ausencia Total de Persistencia y Auditoría:** El sistema antiguo funcionaba únicamente como un convertidor efímero de archivos que sobrescribía 2 Excels locales en disco, sin guardar procesos, transacciones ni historial de quién resolvió una discrepancia.
+* **Vulnerabilidades de Seguridad y Código Basura:** Existían claves de API de Google Maps expuestas en el código fuente, peticiones síncronas a APIs externas que bloqueaban la carga de páginas y más de 30 plantillas HTML residuales sin relación con el sistema.
+
+---
+
+### 2. Nueva Arquitectura de Base de Datos Relacional y Motor Anti-Duplicados
+Se diseñó e implementó desde cero un modelo relacional normalizado en Django compuesto por **11 modelos (3 catálogos base y 8 tablas operativas de conciliación)**:
+* **Catálogos y Configuración:** `CardType` (franquicias y prefijos BIN), `ReconciliationStatus` (estados de gestión contable) y `SystemConfiguration` (tolerancias de redondeo en USD y CLP editables por administración).
+* **Cabecera y Resúmenes del Cierre:** `ReconciliationProcess` (registro maestro de ejecución), `BankDepositValidation` (validación del abono bancario por modalidad: `USD_GENERAL`, `CLP_CREDIT`, `CLP_DEBIT`, `CLP_PREPAID`) y `ReconciliationSummary` (cuadraturas consolidadas por tarjeta y modalidad en tablas USD y CLP).
+* **Almacén de Transacciones Limpias:** `BankStatementMovement`, `ErpTransaction`, `TransbankTransaction` y `CardOperatorTransaction`.
+* **Auditoría y Gestión de Discrepancias:** `CrossMatchResult` (resultado individual por cada voucher con diagnóstico del sistema y estado de resolución) y `AuditResolutionLog` (bitácora inmutable de cambios de estado).
+
+#### Blindaje contra Duplicidad (Idempotencia en las 8 Tablas Operativas)
+Para evitar que la base de datos se infle si un contador guarda dos veces el mismo proceso o si vuelve a subir los archivos tras corregir una factura en el ERP, se construyó un **motor de deduplicación inteligente**:
+1. **Llaves Naturales Únicas por Tabla:** Cada movimiento bancario, cobro ERP, voucher Transbank y liquidación de operadora se identifica por su huella contable real (ej. *Tarjeta + Código de Autorización + Monto + Fecha + BIN* en Transbank, o *Cuenta + Factura + Autorización + Monto + Fecha + Hora* en ERP).
+2. **Detección Inteligente del Mismo Cierre Contable:** El sistema evalúa si la mayoría ($\ge 80\%$) de los vouchers del archivo de abono Transbank entrante y el monto total de liquidación coinciden con un proceso ya registrado de la misma moneda. Si es el mismo cierre, reutiliza y actualiza el proceso existente en lugar de duplicar resúmenes; si es un cierre de otro día que solo comparte 1 o 2 filas por solapamiento de fechas de descarga, crea un proceso nuevo sin sobrescribir el historial del día anterior.
+3. **Consultas SQL Focalizadas (`.filter(...__in=...)`):** En vez de cargar tablas históricas completas en memoria, el motor filtra en SQL únicamente los lotes de fechas, números de documento y códigos de autorización presentes en los archivos subidos, garantizando tiempos de respuesta constantes aunque la base de datos acumule años de operación.
+4. **Resolución y Trazabilidad Automática (`AuditResolutionLog`):** La tabla `CrossMatchResult` mantiene una relación 1 a 1 con cada voucher de Transbank. Si un voucher había quedado como `NOT_FOUND_IN_ERP`, `AMOUNT_MISMATCH`, `CARD_TYPE_MISMATCH` o `OUT_OF_PERIOD` y, al re-subir el archivo ERP corregido, pasa a `MATCHED`, el sistema actualiza el registro existente a conciliado, asigna automáticamente el usuario y fecha de resolución, e inserta una entrada en `AuditResolutionLog` dejando constancia de la corrección.
+
+---
+
+### 3. Motor de Cálculo en Memoria, Auto-Detección y Arquitectura Modular
+* **Auto-Detección de Archivos por Huella Interna (`file_detector.py`):** En versiones anteriores el usuario debía subir manualmente cada archivo en casilleros separados, con el riesgo de equivocarse de casilla entre operadoras o modalidades de pago. En la nueva versión se reemplazó ese esquema por una **Zona Única de Carga Masiva en 2 Pasos** tanto para Dólares (7 archivos) como para Pesos (archivos unificados o separados + Borderós históricos opcionales):
+  1. **Paso 1 (Selección Masiva):** El contador arrastra o selecciona todos los archivos juntos en cualquier orden e incluso con nombres distintos. El sistema abre las primeras 45 filas de cada Excel en memoria e identifica su **huella contable interna** (por ejemplo, leyendo `Cliente: TRANSBANK - TARJETA MASTERCARD US$`, el campo `Medio de pago: Crédito / Débito / Prepago` en liquidaciones CLP, o los encabezados `Cargos de Débitos y Créditos` del Borderó FrontOffice).
+  2. **Paso 2 (Tabla de Alineación y Confirmación):** El sistema presenta los roles requeridos alineados junto con la evidencia interna encontrada, el período de fechas detectado, el conteo de filas, el nivel de certeza (`100% Seguro`) y un selector desplegable en cada fila que permite cambiar o reasignar manualmente cualquier archivo antes de ejecutar la conciliación.
+* **Previsualización Instantánea (`Zero-Write`):** Toda la lectura y cruce matemático (`calculate_usd_preview` y `calculate_clp_preview`) se ejecuta 100% en memoria RAM en fracciones de segundo y se almacena temporalmente en la sesión del usuario, permitiendo auditar sin tocar la base de datos hasta la confirmación explícita (`commit_usd_preview_to_database` / `commit_clp_preview_to_database`) protegida con `transaction.atomic()`.
+* **Detector Híbrido de Columnas (`column_detector.py`) y Precisión `Decimal`:** Escanea las primeras filas de cada Excel buscando coincidencias por nombres de encabezado normalizados (sin tildes ni ruido), utiliza índices posicionales como respaldo secundario y reemplaza los flotantes inexactos por aritmética `Decimal` libre de errores `NaN`.
+* **Arquitectura Modular por Responsabilidad Única (Clean Architecture & DRY):**
+  * `persistence_common.py`: Módulo transversal que centraliza la sincronización atómica de movimientos bancarios, transacciones ERP y vouchers Transbank mediante llaves naturales compuestas.
+  * `excel_parsers.py` y `column_detector.py`: Capa especializada de lectura, sanitización e inferencia de tarjetas por BIN (Visa, MasterCard, Amex, Diners, Redcompra), desacoplada de la lógica contable.
+  * `excel_styles.py`: Constantes corporativas de OpenPyXL (paleta Navy `#0C0C42`, Gold `#996909`, alertas rojas, bordes y formatos numéricos) compartidas por los exportadores.
+  * `usd_reconciliation.py` y `clp_reconciliation.py`: Motores matemáticos de conciliación en memoria para Dólares (USD) y Pesos (CLP).
+  * `suggestion_engine.py` y `clp_suggestion_engine.py`: Motores de sugerencia asistida Nivel 2 para análisis de discrepancias, errores tipográficos/OCR y búsqueda en transacciones históricas pre-cargadas (sin consultas $N+1$).
+  * `reconciliation_persistence.py` y `clp_persistence.py`: Orquestadores específicos de persistencia para USD y CLP que delegan la deduplicación a `persistence_common.py`.
+  * `report_exporter.py` y `clp_report_exporter.py`: Generación de reportes Excel oficiales multi-hoja estilizados.
+  * `file_detector.py`: Clasificación y alineación automática de lotes de archivos por huella estructural interna.
+  * `web/views/common.py`: Controladores reutilizables para descarte de previsualizaciones, APIs de detección, confirmación en BD y streaming de reportes.
+
+---
+
+### 4. Rediseño de Interfaz (UI/UX) y Estandarización Contable Chilena
+* **Sistema de Diseño Corporativo con Modo Claro y Oscuro (`theme.css`):** Interfaz ejecutiva inspirada en la identidad del **Hotel Plaza San Francisco** (azul marino profundo `#0C0C42` y dorado `#996909`), equipada con barra lateral colapsable, selector de **Modo Claro / Modo Oscuro** persistente, alertas dinámicas y pantalla de bloqueo de carga (*Loading Overlay*) para impedir envíos dobles.
+* **Herramientas Avanzadas de Productividad en Tablas (`usd_preview.js` y `clp_preview.js`):**
+  * **Filtros Instantáneos Combinables:** Buscador en tiempo real por código de voucher, documento, cuenta, factura o huésped; filtro rápido por franquicia de tarjeta (*Visa, MasterCard, Amex, Diners, Redcompra*); filtro por modalidad (*Crédito, Débito, Prepago*) y selector específico por **Usuario Cajero**.
+  * **Ordenamiento Dinámico y Modo Pantalla Completa:** Ordenamiento ascendente/descendente (`Mayor a Menor / Menor a Mayor`) en columnas de montos y diferencias, junto con un botón de **Pantalla Completa** (`Esc`) que maximiza el área de trabajo para auditorías extensas.
+  * **Paginación Estandarizada en 25 Registros:** Todas las tablas de vouchers (USD y CLP) y los listados dentro de los modales de **Sugerencias Asistidas Nivel 2** cuentan con paginación cliente predeterminada en **25 registros por página**, con ventana compacta de 3 números y selector adaptable (`10`, `25`, `50`, `100` o `Todas`).
+* **Formato Numérico y Diagnósticos Claros (`currency_filters.py`):** Librería única de formateo bajo el estándar chileno (**`.`** para separador de miles y **`,`** para decimales, tanto en USD como en CLP), píldoras visuales duales de comparación (`TBK = ERP` / `TBK ≠ ERP`) y diagnósticos legibles sin jerga técnica.
+
+---
+
+## Fase 2: Conciliación de Transacciones Nacionales en Pesos Chilenos (CLP)
+
+La segunda fase del proyecto automatiza el cierre y cuadratura de las transacciones en **moneda nacional (Pesos Chilenos - CLP)** procesadas a través de las tres modalidades de pago de Transbank (**Crédito**, **Débito** y **Prepago**) frente al **Borderó de Cargos de Débitos y Créditos** del ERP del hotel y los depósitos efectivos en la **Cartola Bancaria en Pesos**.
+
+Su objetivo es validar que los **3 abonos diarios independientes** de Transbank hayan ingresado exactamente a la cuenta corriente del hotel (descontando comisiones e IVA), y verificar que cada voucher cobrado en los terminales POS del hotel esté debidamente registrado por recepción en el Borderó con su código de autorización, monto y medio de pago correctos.
+
+### 1. Archivos de Entrada (Insumos Diarios + Borderós Históricos Opcionales)
+Para ejecutar un cierre en pesos, el contador arrastra en la zona única de carga los archivos correspondientes al período, admitiendo archivos adicionales de turnos o meses pasados:
+
+* **A. Borderó ERP del Hotel (`BORDERO.XLS` / `.xlsx`)**
+  * **Origen:** Sistema FrontOffice del hotel (*Reporte de Cargos de Débitos y Créditos*).
+  * **Datos extraídos:** Rango de fechas del período consultado, Código de Medio de Pago (`VI` Visa, `MC` MasterCard, `AX` Amex, `DI` Diners, `RC` Redcompra Débito), Código de Autorización normalizado, Monto en CLP, Fecha y Hora de transacción, N° de Cuenta, N° de Factura, Reserva, Habitación, **Nombre del Huésped**, **Usuario Cajero** y detección automática de **reversas o anulaciones** (montos negativos). El parser filtra y excluye automáticamente los cargos en moneda extranjera (`AME$`, `VIS$`, `MAS$`, `DIN$`) para aislar exclusivamente la operación en pesos.
+
+* **B. Liquidaciones de Transbank (Categoría Unificada CLP)**
+  * **Origen:** Portal Privado de Transbank (*Reportes de Abonos*).
+  * **Flexibilidad de Entrada:** El sistema soporta **dos modalidades de carga**:
+    1. **1 Archivo Único Consolidado:** Descargado con *"Todos los medios de pago"*, donde el parser extrae y clasifica automáticamente los bloques de Crédito, Débito y Prepago.
+    2. **2 a 3 Archivos Individuales:** Descargados por separado (`CREDITOS TBK.xlsx`, `DEBITOS TBK.xlsx`, `PREPAGO TBK.xlsx`).
+  * **Datos extraídos:**
+    * **Cabecera Financiera:** *Fecha de Liquidación*, *Cuenta Corriente*, *Medio de Pago*, *Total Ventas (+)*, *Comisión Transbank (−)*, *IVA de Comisión (−)*, *Ventas Anuladas (−)* y **Total Abono Neto (=)**.
+    * **Detalle de Vouchers:** *Código de Autorización*, *Monto Original de Venta*, *Monto Válido para Abono* (cuota del día), *Comisión*, *IVA*, *Abono Neto*, *Fecha de Venta*, *Tipo y N° de Cuota* (`1/3`, `2/6`, etc.), *Identificador de Transacción* y *Número de Tarjeta Enmascarado (BIN)* con inferencia automática de franquicia.
+
+* **C. Cartola Bancaria en Pesos (Soporte Multibanco: Banco de Chile y BancoEstado)**
+  * **Origen:** Portal bancario corporativo (Cuenta Corriente en Pesos Chilenos).
+  * **Compatibilidad Multibanco:** Lee tanto cartolas estándar de **Banco de Chile** como cartolas históricas de **BancoEstado** (abriendo dinámicamente la hoja `'Movimientos'` y extrayendo el número de operación).
+  * **Datos extraídos:** Número de cuenta corriente, Fecha de movimiento, Descripción (`TC TBK`, `ABONOS REALIZADOS POR TRANSBANK`, etc.), Cargos, **Abonos** y Saldo contable.
+
+* **D. Soporte Automático para Borderós Históricos Adicionales (Archivos Extra)**
+  * Permite subir archivos Borderó adicionales de turnos pasados. El detector (`file_detector.py`) compara las fechas de cobertura, asigna el más reciente como **Borderó Principal** del cierre e ingiere los restantes como **Fuentes Históricas Auxiliares**, poniéndolos a disposición del motor de sugerencias Nivel 2 para localizar ventas fuera de período.
+
+---
+
+### 2. Flujo de Cruce en Dos Pasadas, Validación Triple de Cartola y Reglas de Negocio
+El motor financiero de Pesos (`clp_reconciliation.py`) aplica las reglas contables del hotel en **cuatro etapas sucesivas**:
+
+1. **Validación Independiente de los 3 Abonos en Cartola Bancaria:**
+   * Para cada modalidad (**Crédito**, **Débito** y **Prepago**), comprueba primero que la suma del detalle de vouchers cuadre con la cabecera (`Total Ventas − Comisión − IVA = Total Abono`).
+   * A continuación, busca en la cartola bancaria los **3 depósitos independientes**, aplicando la tolerancia parametrizada en pesos (por defecto $\pm \$1.000\text{ CLP}$) y verificando que un mismo movimiento bancario no sea reclamado dos veces. Si una modalidad no tuvo movimientos en el día (\$0), se marca neutralmente como *"Sin movimientos"*.
+2. **Algoritmo de Cruce Transbank vs. Borderó en Dos Pasadas:**
+   * **Pasada 1 (Prioridad de Monto Exacto):** Procesa primero los vouchers cuyo código de autorización normalizado tiene una fila en el Borderó con **monto exacto** dentro de la tolerancia, evitando que códigos cortos o repetidos consuman filas de otras ventas exactas.
+   * **Pasada 2 (Neto de Reversas y Discrepancias):** Cuando un código aparece en múltiples líneas del Borderó (cobros seguidos de reversas negativas), calcula la **suma neta de todas las filas del código** antes de evaluar si existe diferencia monetaria.
+3. **Tipificación Contable de Excepciones (`CARD_TYPE_MISMATCH` y `OUT_OF_PERIOD`):**
+   * **Discrepancia de Medio de Pago (`CARD_TYPE_MISMATCH`):** Si el código y monto cuadran, pero recepción registró la venta bajo un medio incompatible en el ERP (ej. tarjeta de crédito digitada como Redcompra débito), se separa en la pestaña *Con Diferencia* indicando el código erróneo.
+   * **Separación de Ventas Fuera de Período (`OUT_OF_PERIOD`):** Si un voucher no se encuentra en el Borderó principal, evalúa su **Fecha de Venta original** y su **Número de Cuota**. Si la fecha está fuera del rango del Borderó o corresponde a una cuota posterior (`2/3`, `3/3`), se clasifica como **Fuera de Período** sin contaminar los extravíos del día.
+4. **Motor de Sugerencia Asistida Nivel 2 para Pesos (`clp_suggestion_engine.py`):**
+   * Inspecciona vouchers en *Con Diferencia*, *En TBK pero NO en Borderó* y *Fuera de Período* contra filas no reclamadas del **Borderó principal**, **Borderós históricos adicionales** y la **base de datos histórica de Django** (mediante una consulta única pre-cargada libre de $N+1$).
+
+---
+
+### 3. Flujo de Trabajo del Contador en CLP: Previsualización, Asistente Nivel 2 y Cierre Oficial
+
+1. **Dashboard Interactivo de Previsualización CLP (`clp_preview.html`):**
+   * **1. Validación de Abonos en Cartola Bancaria:** Muestra el número de cuenta corriente detectado y **3 tarjetas ejecutivas lado a lado** (*Crédito*, *Débito* y *Prepago*) con la fecha de liquidación, el desglose de `Ventas − Comisión − IVA`, el abono neto esperado frente al encontrado en cartola y su estado (`Cuadrado`, `Pendiente` o `Sin movimientos`).
+   * **2. Cuadratura por Medio de Pago (Transbank vs. Borderó):** Tabla resumen por modalidad sumando montos válidos de abono en cuotas, Ventas TBK, Ventas Borderó, Diferencia, Comisión + IVA y Abono Neto.
+   * **3. Cuatro Pestañas de Auditoría de Vouchers:**
+     * **Ubicadas Exactas:** Vouchers conciliados 1:1 o por neto de reversas dentro de la tolerancia.
+     * **Con Diferencia:** Vouchers cuyo código existe en el Borderó pero presentan diferencias de monto (`AMOUNT_MISMATCH`) o medio de pago (`CARD_TYPE_MISMATCH`).
+     * **En TBK pero NO en Borderó:** Vouchers del período cuyo código no figura en el Borderó.
+     * **Fuera de Período:** Vouchers correspondientes a fechas de venta anteriores o cobros de cuotas plurimensuales posteriores.
+2. **Asistente Interactivo Nivel 2 en las 3 Pestañas de Excepción:**
+   * Cada pestaña de excepción incorpora su propio botón de **Sugerencias Asistidas Nivel 2**, abriendo un modal comparativo detallado con texto de precaución unificado, chips de motivos y enlaces a la fila del Excel original.
+3. **Confirmación Atómica y Descarga de Excel Oficial en 2 Pasos (`clp_persistence.py` y `clp_report_exporter.py`):**
+   * Al hacer clic en **"Confirmar y Guardar en BD"**, el sistema persiste atómicamente el proceso, actualiza estados en `AuditResolutionLog` y habilita la descarga inmediata del **Reporte Excel Oficial de Pesos** estructurado en 3 hojas (*Resumen Pesos*, *Vouchers Cuadrados* y *Excepciones*).
 
 ---
 
 ## 💻 Instrucciones de Instalación y Ejecución Local
 
 ### Prerrequisitos
-* **Python 3.12** o superior instalado en el sistema.
+* **Python 3.12** o superior instalado.
 * **Git** para clonar el repositorio.
 
 ### 1. Clonar el repositorio
@@ -188,37 +242,39 @@ pip install -r requirements.txt
 ```bash
 python manage.py migrate
 ```
-*(Esto creará la base de datos relacional y precargará los catálogos de tipos de tarjetas y estados de conciliación).*
+*(Crea la base de datos relacional y carga los catálogos base de franquicias `CardType` y estados `ReconciliationStatus`).*
 
 ### 5. Crear usuario administrador
 ```bash
 python manage.py createsuperuser
 ```
 
-### 6. Iniciar el servidor de desarrollo
+### 6. Iniciar el servidor local
 ```bash
 python manage.py runserver
 ```
-Abre tu navegador en: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+Accede desde tu navegador a: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 
 ---
 
-## 🌐 Configuración y Despliegue en Producción
+## Seguridad del Despliegue (PythonAnywhere)
 
-El proyecto se encuentra desplegado de forma continua en **PythonAnywhere**:
+* **Protección contra fuerza bruta (`django-axes`):** tras **5 intentos fallidos** se bloquea la combinación *usuario + IP* durante **15 minutos**, tanto en `/login/` como en el login del admin. El bloqueo es por par usuario/IP, por lo que un atacante no puede dejar sin acceso a un usuario legítimo desde otra IP. La IP real del visitante se obtiene de la cabecera `X-Real-IP` del proxy de PythonAnywhere (`web/security.py`). Los intentos quedan registrados en el admin (*Access attempts* / *Access failures*).
+  * Desbloquear a un usuario: `python manage.py axes_reset_username <usuario>` (o `axes_reset` para limpiar todos).
+* **Configuración segura por defecto:** `DEBUG` está desactivado salvo `DJANGO_DEBUG=True`, y la aplicación no arranca en producción sin `DJANGO_SECRET_KEY`. `ALLOWED_HOSTS` ya no acepta cualquier host.
+* **Ruta del admin no predecible:** se define con `DJANGO_ADMIN_URL`, así los bots que prueban `/admin/` reciben un 404.
+* **HTTPS y sesiones:** HSTS, cookies seguras, redirección a HTTPS y sesiones que expiran al cerrar el navegador o tras 8 horas.
+* No existe registro público: solo un superusuario puede crear cuentas desde el admin.
 
-### Variables de Entorno Recomendadas
-Para entornos productivos, configurar las siguientes variables de entorno:
-
-| Variable | Descripción | Valor de Ejemplo |
+### Variables de Entorno en el Archivo WSGI de PythonAnywhere:
+| Variable | Descripción | Ejemplo |
 | :--- | :--- | :--- |
-| `DJANGO_DEBUG` | Activa o desactiva el modo depuración | `False` |
-| `DJANGO_SECRET_KEY` | Clave secreta criptográfica de Django | `(Cadena aleatoria de 50+ caracteres)` |
-| `DJANGO_ALLOWED_HOSTS` | Hosts permitidos separados por coma | `hotelsanfrancisco.pythonanywhere.com,localhost` |
+| `DJANGO_DEBUG` | Control de modo depuración | `False` |
+| `DJANGO_SECRET_KEY` | Clave secreta criptográfica de Django | `(Cadena aleatoria segura)` |
+| `DJANGO_ALLOWED_HOSTS` | Dominios autorizados separados por coma | `hotelsanfrancisco.pythonanywhere.com` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Orígenes confiables para CSRF | `https://hotelsanfrancisco.pythonanywhere.com` |
 
-### Enlace Oficial del Despliegue:
-👉 **[https://hotelsanfrancisco.pythonanywhere.com/](https://hotelsanfrancisco.pythonanywhere.com/)**
+> 🌐 **Acceso al Despliegue en Vivo:** [https://hotelsanfrancisco.pythonanywhere.com/](https://hotelsanfrancisco.pythonanywhere.com/)
 
 ---
 
@@ -226,3 +282,4 @@ Para entornos productivos, configurar las siguientes variables de entorno:
 * **Fabián Araya** — *Lead Software Architect & Backend Developer*
 * **Eva González** — *Project Manager & Quality Assurance Documentation*
 * **Diego Reyes** — *Data Engineer & Database Administrator*
+
