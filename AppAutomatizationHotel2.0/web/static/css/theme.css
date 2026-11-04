@@ -1382,6 +1382,7 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
   transition: background-color .15s ease, color .15s ease;
 }
 .segmented-item:hover { color: var(--text); }
+a.segmented-item { text-decoration: none; }
 .segmented-item.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
 .segmented-count {
   font-size: .72rem; font-weight: 700;
@@ -1627,3 +1628,14 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
   background: rgba(255, 255, 255, .20);
   color: #FFFFFF;
 }
+
+/* "Pendientes" inbox */
+.sidebar-count-badge { background: rgba(var(--accent-rgb), .14); color: var(--brand); font-size: .72rem; font-weight: 700; }
+.sidebar-link.active .sidebar-count-badge { background: rgba(255, 255, 255, .22); color: var(--on-accent); }
+.age-pill { display: inline-block; min-width: 2.4rem; text-align: center; padding: .15rem .5rem; border-radius: 999px; font-weight: 600; font-size: .8rem; }
+.age-ok { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); }
+.age-warn { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
+.age-late { background: var(--bs-danger-bg-subtle); color: var(--bs-danger-text-emphasis); }
+.status-muted { background: var(--surface-2); color: var(--text-muted); border-color: var(--border); }
+.exception-history { border-left: 2px solid var(--border); padding-left: .9rem; }
+.exception-history li + li { margin-top: .6rem; }

@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% load currency_filters %}
+
+{% block module_subtitle %}Pendientes{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <span class="badge rounded-pill px-3 py-1 mb-1 badge-brand-pill">
+      <i class="bi bi-inbox me-1"></i> Bandeja de excepciones
+    </span>
+    <h3 class="fw-bold mb-0">Pendientes de conciliación</h3>
+    <p class="text-muted small mb-0">Vouchers de todos los cierres guardados que no cuadraron. Resuelve cada caso indicando qué se hizo; queda registrado quién y cuándo.</p>
+  </div>
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <div class="segmented currency-switch" role="tablist" aria-label="Moneda de la bandeja">
+      <a href="{% url 'exceptions' %}?moneda=usd{% if tab_query %}&{{ tab_query }}{% endif %}" role="tab"
+         class="segmented-item {% if currency == 'usd' %}active{% endif %}" aria-selected="{% if currency == 'usd' %}true{% else %}false{% endif %}">
+        <i class="bi bi-currency-dollar"></i>Dólares
+        <span class="segmented-count">{{ pending_counts.usd }}</span>
+      </a>
+      <a href="{% url 'exceptions' %}?moneda=clp{% if tab_query %}&{{ tab_query }}{% endif %}" role="tab"
+         class="segmented-item {% if currency == 'clp' %}active{% endif %}" aria-selected="{% if currency == 'clp' %}true{% else %}false{% endif %}">
+        <i class="bi bi-cash-stack"></i>Pesos
+        <span class="segmented-count">{{ pending_counts.clp }}</span>
+      </a>
+    </div>
+    <a href="{% url 'exceptions_export' %}?{{ query_string }}" class="btn btn-outline-primary rounded-pill fw-semibold">
+      <i class="bi bi-file-earmark-excel me-1"></i> Exportar a Excel
+    </a>
+  </div>
+</div>
+
+<!-- Totals of the current filter (active currency only) -->
+<div class="row g-3 mb-3">
+  <div class="col-sm-4">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Casos</div>
+      <div class="stat-value">{{ totals.count }}</div>
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Monto Transbank {% if currency == "clp" %}en pesos{% else %}en dólares{% endif %}</div>
+      {% if currency == "clp" %}
+      <div class="stat-value"><span class="stat-unit">$</span> {{ totals.amount|default:0|num_clp }}</div>
+      {% else %}
+      <div class="stat-value"><span class="stat-unit">US$</span> {{ totals.amount|default:0|num_usd }}</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-sm-4">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Caso más antiguo</div>
+      <div class="stat-value">{% if totals.oldest_days is not None %}{{ totals.oldest_days }} <span class="stat-unit">día{{ totals.oldest_days|pluralize }}</span>{% else %}—{% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Filters -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <input type="hidden" name="moneda" value="{{ currency }}">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label small fw-semibold mb-1" for="f-estado">Estado</label>
+      <select id="f-estado" name="estado" class="form-select form-select-sm">
+        <option value="pendientes" {% if filters.estado == "pendientes" %}selected{% endif %}>Pendientes</option>
+        <option value="resueltas" {% if filters.estado == "resueltas" %}selected{% endif %}>Resueltas</option>
+        <option value="todas" {% if filters.estado == "todas" %}selected{% endif %}>Todas</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label small fw-semibold mb-1" for="f-tipo">Tipo</label>
+      <select id="f-tipo" name="tipo" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        {% for code, label in type_choices %}
+        <option value="{{ code }}" {% if filters.tipo == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label small fw-semibold mb-1" for="f-cajero">Cajero</label>
+      <select id="f-cajero" name="cajero" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="__none__" {% if filters.cajero == "__none__" %}selected{% endif %}>Sin cajero (no está en ERP)</option>
+        {% for c in cashiers %}
+        <option value="{{ c }}" {% if filters.cajero == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-xl-1">
+      <label class="form-label small fw-semibold mb-1" for="f-tarjeta">Tarjeta</label>
+      <select id="f-tarjeta" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-xl-1">
+      <label class="form-label small fw-semibold mb-1" for="f-desde">Venta desde</label>
+      <input id="f-desde" type="date" name="desde" value="{{ filters.desde }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-6 col-md-3 col-xl-1">
+      <label class="form-label small fw-semibold mb-1" for="f-hasta">Hasta</label>
+      <input id="f-hasta" type="date" name="hasta" value="{{ filters.hasta }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-12 col-md-6 col-xl-3">
+      <label class="form-label small fw-semibold mb-1" for="f-q">Buscar</label>
+      <input id="f-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Voucher, documento, hab., huésped">
+    </div>
+    <div class="col-12 col-md-3 col-xl-12 d-flex gap-2 justify-content-end">
+      <a href="{% url 'exceptions' %}?moneda={{ currency }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
+    </div>
+  </div>
+</form>
+
+<!-- Inbox -->
+<section class="card card-executive">
+  {% if rows %}
+  <div class="table-responsive">
+    <table class="table table-dash align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Voucher</th>
+          <th>Tipo</th>
+          <th class="d-none d-lg-table-cell">Huésped / Cajero</th>
+          <th class="text-end">Monto</th>
+          <th class="text-center">Días</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in rows %}
+        <tr>
+          <td>
+            <div class="fw-semibold font-mono">{{ e.authorization_code|default:"—" }}</div>
+            <div class="text-muted small">
+              {{ e.card_type.name }}{% if e.sale_date %} · <span class="text-nowrap">{{ e.sale_date|date:"d/m/Y" }}</span>{% endif %}
+            </div>
+          </td>
+          <td>
+            <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}">{{ e.type_label }}</span>
+          </td>
+          <td class="d-none d-lg-table-cell">
+            {% if e.guest_name and e.guest_name != "—" %}
+            <div class="text-truncate" style="max-width: 200px;">{{ e.guest_name }}{% if e.room_number and e.room_number != "—" %} · Hab. {{ e.room_number }}{% endif %}</div>
+            {% endif %}
+            <div class="text-muted small"><i class="bi bi-person me-1"></i>{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}Sin cajero{% endif %}</div>
+          </td>
+          <td class="text-end fw-semibold text-nowrap">
+            {% if e.is_clp %}$ {{ e.transbank_amount|num_clp }}{% else %}US$ {{ e.transbank_amount|num_usd }}{% endif %}
+          </td>
+          <td class="text-center">
+            <span class="age-pill age-{{ e.age_level }}" title="Cierre del {{ e.process.execution_date|date:'d/m/Y' }}">{{ e.days_open }}</span>
+          </td>
+          <td>
+            {% if e.is_pending %}
+            <span class="status-chip status-muted">Pendiente</span>
+            {% else %}
+            <span class="status-chip status-success" title="{{ e.resolved_by.first_name|default:e.resolved_by.username }} · {{ e.resolution_date|date:'d/m/Y H:i' }}">{{ e.management_status.display_name }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <button type="button" class="btn btn-sm {% if e.is_pending %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#exc-{{ e.id }}">
+              {% if e.is_pending %}Resolver{% else %}Ver{% endif %}
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page.paginator.num_pages > 1 %}
+  <div class="border-top px-4 py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div class="small text-muted">Mostrando <strong>{{ page.start_index }}–{{ page.end_index }}</strong> de <strong>{{ page.paginator.count }}</strong></div>
+    <nav aria-label="Paginación de excepciones">
+      <ul class="pagination pagination-sm mb-0">
+        {% if page.has_previous %}
+        <li class="page-item"><a class="page-link" href="?{{ query_string }}&page={{ page.previous_page_number }}">‹</a></li>
+        {% endif %}
+        <li class="page-item active"><span class="page-link">{{ page.number }} / {{ page.paginator.num_pages }}</span></li>
+        {% if page.has_next %}
+        <li class="page-item"><a class="page-link" href="?{{ query_string }}&page={{ page.next_page_number }}">›</a></li>
+        {% endif %}
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="text-center text-muted small py-5">
+    <i class="bi bi-check2-circle fs-3 d-block mb-2" style="color: var(--success);"></i>
+    {% if filters.estado == "pendientes" %}No hay excepciones pendientes en {% if currency == "clp" %}pesos{% else %}dólares{% endif %} con estos filtros.{% else %}No hay excepciones en {% if currency == "clp" %}pesos{% else %}dólares{% endif %} con estos filtros.{% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<!-- One modal per row: detail, history and resolution form -->
+{% for e in rows %}
+<div class="modal fade" id="exc-{{ e.id }}" tabindex="-1" aria-labelledby="exc-{{ e.id }}-title" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="exc-{{ e.id }}-title">
+          Voucher <span class="font-mono">{{ e.authorization_code|default:"—" }}</span>
+          <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %} ms-2">{{ e.type_label }}</span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3 small mb-3">
+          <div class="col-6 col-md-3"><div class="text-muted">Cierre</div><div class="fw-semibold">#{{ e.process_id }} · {{ e.process.execution_date|date:"d/m/Y" }}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Documento ERP</div><div class="fw-semibold font-mono">{{ e.document_number|default:"—" }}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Tarjeta</div><div class="fw-semibold">{{ e.card_type.name }}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Fecha venta</div><div class="fw-semibold">{{ e.sale_date|date:"d/m/Y"|default:"—" }}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Huésped</div><div class="fw-semibold">{% if e.guest_name and e.guest_name != "—" %}{{ e.guest_name }}{% else %}—{% endif %}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Habitación</div><div class="fw-semibold">{% if e.room_number and e.room_number != "—" %}{{ e.room_number }}{% else %}—{% endif %}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Cajero</div><div class="fw-semibold">{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}Sin cajero{% endif %}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Días pendiente</div><div><span class="age-pill age-{{ e.age_level }}">{{ e.days_open }}</span></div></div>
+        </div>
+
+        <table class="table table-sm small mb-3">
+          <tbody>
+            {% if e.is_clp %}
+            <tr><td class="text-muted">Monto Transbank</td><td class="text-end fw-semibold">$ {{ e.transbank_amount|num_clp }}</td></tr>
+            <tr><td class="text-muted">Monto ERP</td><td class="text-end fw-semibold">$ {{ e.erp_amount_clp|num_clp }}</td></tr>
+            <tr><td class="text-muted">Diferencia</td><td class="text-end fw-bold">$ {{ e.difference_clp|num_clp }}</td></tr>
+            {% else %}
+            <tr><td class="text-muted">Monto Transbank</td><td class="text-end fw-semibold">US$ {{ e.transbank_amount|num_usd }}</td></tr>
+            <tr><td class="text-muted">Monto operadora</td><td class="text-end fw-semibold">US$ {{ e.operator_amount_usd|num_usd }}</td></tr>
+            <tr><td class="text-muted">Diferencia USD</td><td class="text-end fw-bold">US$ {{ e.difference_usd|num_usd }}</td></tr>
+            <tr><td class="text-muted">Monto ERP (CLP)</td><td class="text-end fw-semibold">$ {{ e.erp_amount_clp|num_clp }}</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+
+        {% if e.system_observation %}
+        <p class="small mb-2"><span class="text-muted">Diagnóstico del sistema:</span> {{ e.system_observation|format_observation }}</p>
+        {% endif %}
+        {% if e.action %}
+        <div class="alert alert-info small py-2"><i class="bi bi-lightbulb me-1"></i><strong>Acción sugerida:</strong> {{ e.action }}</div>
+        {% elif e.suggestion %}
+        <div class="alert alert-info small py-2">
+          <i class="bi bi-lightbulb me-1"></i><strong>Sugerencia nivel 2 ({{ e.suggestion.confidence|default:"MEDIA"|lower }}):</strong> {{ e.suggestion.headline }}
+          {% if e.suggestion.manual_check_note %}<div class="mt-1">{{ e.suggestion.manual_check_note }}</div>{% endif %}
+        </div>
+        {% endif %}
+
+        <h6 class="fw-bold mt-3">Historial</h6>
+        {% if e.history %}
+        <ul class="list-unstyled small exception-history mb-3">
+          {% for log in e.history %}
+          <li>
+            <div><strong>{{ log.user.first_name|default:log.user.username }}</strong> · <span class="text-muted">{{ log.created_at|date:"d/m/Y H:i" }}</span></div>
+            <div>{{ log.previous_status.display_name|default:"—" }} → <strong>{{ log.new_status.display_name }}</strong></div>
+            {% if log.comment %}<div class="text-muted">{{ log.comment }}</div>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted small">Sin movimientos todavía.</p>
+        {% endif %}
+
+        {% if e.is_pending %}
+        <form method="post" action="{% url 'exception_resolve' e.id %}" class="border-top pt-3">
+          {% csrf_token %}
+          <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold" for="status-{{ e.id }}">{{ form.status.label }}</label>
+            <select name="status" id="status-{{ e.id }}" class="form-select" required>
+              {% for value, label in form.fields.status.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold" for="comment-{{ e.id }}">{{ form.comment.label }}</label>
+            <textarea name="comment" id="comment-{{ e.id }}" class="form-control" rows="3" maxlength="1000" placeholder="Qué se hizo, N° de documento del ajuste, quién lo informó… (obligatorio si aceptas la diferencia)"></textarea>
+          </div>
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-success rounded-pill px-4 fw-semibold"><i class="bi bi-check2-circle me-1"></i>Marcar como resuelto</button>
+          </div>
+        </form>
+        {% else %}
+        <form method="post" action="{% url 'exception_reopen' e.id %}" class="border-top pt-3">
+          {% csrf_token %}
+          <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+          <label class="form-label small fw-semibold" for="reopen-{{ e.id }}">¿Por qué se reabre?</label>
+          <textarea name="comment" id="reopen-{{ e.id }}" class="form-control mb-3" rows="2" maxlength="1000" required></textarea>
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-outline-danger rounded-pill px-4 fw-semibold"><i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir caso</button>
+          </div>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}
