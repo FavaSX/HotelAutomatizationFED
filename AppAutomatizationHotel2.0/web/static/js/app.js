@@ -2,7 +2,7 @@
  * Global Application Shell Logic (base.html & login.html)
  * Handles:
  *  - Light / Dark theme toggle
- *  - Mobile responsive sidebar drawer
+ *  - Collapsible sidebar (icon rail on desktop, drawer on mobile)
  *  - Elevating Bootstrap modals to document.body to prevent stacking context locks
  *  - Live USD/CLP exchange rate badge with post-login count-up animation
  *  - Login password visibility toggle
@@ -34,22 +34,59 @@
 })();
 
 (function () {
-  const menuBtn = document.getElementById('mobileMenuBtn');
+  const menuBtn = document.getElementById('sidebarToggleBtn');
   const sidebar = document.getElementById('sidebarPanel');
   const scrim = document.getElementById('sidebarScrim');
   if (!menuBtn || !sidebar || !scrim) return;
 
+  // Same breakpoint as the drawer layout in theme.css
+  const mobile = window.matchMedia('(max-width: 991.98px)');
+  const root = document.documentElement;
+
+  function syncExpanded() {
+    const expanded = mobile.matches
+      ? sidebar.classList.contains('open')
+      : root.getAttribute('data-sidebar') !== 'collapsed';
+    menuBtn.setAttribute('aria-expanded', String(expanded));
+  }
+
   function openSidebar() {
     sidebar.classList.add('open');
     scrim.classList.add('open');
+    syncExpanded();
   }
 
   function closeSidebar() {
     sidebar.classList.remove('open');
     scrim.classList.remove('open');
+    syncExpanded();
   }
 
-  menuBtn.addEventListener('click', openSidebar);
+  // Desktop: collapse to an icon rail and remember it; mobile: slide-in drawer
+  function toggleCollapsed() {
+    const collapsed = root.getAttribute('data-sidebar') !== 'collapsed';
+    if (collapsed) {
+      root.setAttribute('data-sidebar', 'collapsed');
+    } else {
+      root.removeAttribute('data-sidebar');
+    }
+    try {
+      localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+    } catch (_) {}
+    syncExpanded();
+  }
+
+  menuBtn.addEventListener('click', function () {
+    if (!mobile.matches) {
+      toggleCollapsed();
+    } else if (sidebar.classList.contains('open')) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
+  });
+  mobile.addEventListener('change', closeSidebar);
+  syncExpanded();
   scrim.addEventListener('click', closeSidebar);
   sidebar.querySelectorAll('a').forEach(function (a) {
     a.addEventListener('click', closeSidebar);
