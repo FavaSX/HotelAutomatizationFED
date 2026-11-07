@@ -10,6 +10,7 @@ from typing import Iterable, List, Sequence
 import openpyxl
 from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.worksheet import Worksheet
+from django.utils import timezone
 
 from ..models import CrossMatchResult, ReconciliationProcess, ReconciliationSummary
 from ..templatetags.currency_filters import format_observation
@@ -252,3 +253,59 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
     wb.save(stream)
     stream.seek(0)
     return stream
+
+
+def generate_exceptions_excel_bytes(exceptions: List[CrossMatchResult]) -> io.BytesIO:
+    """
+    The "Pendientes" inbox as one sheet, already filtered by the view (e.g. one cashier),
+    so the accountant can send reception the vouchers to fix in the ERP.
+    Rows come decorated by the view with type_label, days_open and action.
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Excepciones"
+    headers = [
+        "Cierre", "Moneda", "Voucher TBK", "Documento", "Fecha venta", "Tarjeta", "Tipo de excepción",
+        "Huésped", "Habitación", "Cajero", "Monto TBK", "Diferencia", "Días pendiente",
+        "Estado", "Resuelto por", "Fecha resolución", "Acción sugerida",
+    ]
+    write_header_row(ws, 1, headers, fill=NAVY_FILL, center=True)
+
+    for r_idx, v in enumerate(exceptions, 2):
+        is_clp = v.process.process_currency == "CLP"
+        num_fmt = "$#,##0" if is_clp else "$#,##0.00"
+        resolved_by = v.resolved_by.get_full_name() or v.resolved_by.username if v.resolved_by else ""
+        values = [
+            v.process_id, v.process.process_currency, v.authorization_code or "", v.document_number or "",
+            v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "", v.card_type.name if v.card_type else "",
+            v.type_label, v.guest_name if v.guest_name != "—" else "", v.room_number if v.room_number != "—" else "",
+            v.cashier_username if v.cashier_username != "—" else "", float(v.transbank_amount),
+            float(v.difference_clp if is_clp else v.difference_usd), v.days_open,
+            v.management_status.display_name if v.management_status else "Pendiente", resolved_by,
+            _local_naive(v.resolution_date), v.action or (v.suggestion or {}).get("headline", ""),
+        ]
+        for c_idx, value in enumerate(values, 1):
+            cell = ws.cell(row=r_idx, column=c_idx, value=value)
+            cell.border = THIN_BORDER
+            if c_idx in (11, 12):
+                cell.number_format = num_fmt
+            if c_idx == 16 and value:
+                cell.number_format = "dd/mm/yyyy hh:mm"
+
+    if not exceptions:
+        ws.cell(row=2, column=1, value="No hay excepciones con los filtros aplicados.")
+
+    for col_letter, width in zip("ABCDEFGHIJKLMNOPQ", (8, 8, 14, 14, 12, 16, 26, 26, 11, 14, 14, 12, 10, 30, 18, 16, 50)):
+        ws.column_dimensions[col_letter].width = width
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return stream
+
+
+def _local_naive(value):
+    """openpyxl can't write aware datetimes: convert to local time and drop the tzinfo."""
+    return timezone.localtime(value).replace(tzinfo=None) if value else None

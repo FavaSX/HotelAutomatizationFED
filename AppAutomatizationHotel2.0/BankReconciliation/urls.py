@@ -27,6 +27,10 @@ urlpatterns = [
     path('reconciliation/clp/discard/', views.clp_discard_view, name='clp_discard'),
     path('reconciliation/clp/export/<int:process_id>/', views.clp_export_committed_view, name='clp_export_committed'),
     path('reconciliation/clp/detect-files/', views.clp_detect_files_view, name='clp_detect_files'),
+    path('excepciones/', views.exceptions_view, name='exceptions'),
+    path('excepciones/exportar/', views.exceptions_export_view, name='exceptions_export'),
+    path('excepciones/<int:match_id>/resolver/', views.exception_resolve_view, name='exception_resolve'),
+    path('excepciones/<int:match_id>/reabrir/', views.exception_reopen_view, name='exception_reopen'),
     path('settings/', views.settings_view, name='settings'),
     path('reconciliation/clear-test-db/', views.clear_test_database_view, name='clear_test_db'),
 ]

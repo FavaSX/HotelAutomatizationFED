@@ -258,6 +258,18 @@ Accede desde tu navegador a: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 
 ---
 
+## Bandeja de Excepciones ("Pendientes")
+
+Detectar una diferencia es solo la mitad del trabajo: el contador también tiene que cerrarla. La sección **Pendientes** (`/excepciones/`) reúne los vouchers sin cuadrar de **todos** los cierres guardados, en dólares y en pesos:
+
+* **Dólares y Pesos por separado:** un selector *Dólares / Pesos* (igual al del Inicio) muestra cuántos casos pendientes tiene cada moneda; la tabla, los totales, los filtros y la exportación trabajan siempre sobre la moneda activa.
+* **Filtros:** estado (pendientes / resueltas / todas), tipo de excepción, cajero (incluye *Sin cajero* para los vouchers que no están en el ERP), tarjeta, rango de fechas de venta y búsqueda por voucher, documento, habitación o huésped. La columna **Días** muestra la antigüedad desde el cierre (verde < 3, ámbar < 7, rojo ≥ 7).
+* **Resolución con motivo:** cada caso se cierra eligiendo un motivo (*Corregido en ERP*, *Ajuste contable registrado*, *Anulación / contracargo*, *Informado a recepción*, *Diferencia aceptada*) y un comentario, obligatorio al aceptar una diferencia o al reabrir un caso. El cambio queda en `AuditResolutionLog` con usuario y fecha, y el historial se ve en el detalle del voucher (`web/services/exception_resolution.py`).
+* **Coherencia con el dashboard:** al resolver un caso deja de contarse en *Excepciones pendientes*, y una resolución manual se mantiene aunque se vuelvan a subir los mismos archivos. Los bloques de excepciones del Inicio enlazan a la bandeja ya filtrada.
+* **Exportar a Excel:** descarga la lista filtrada, por ejemplo los casos de un cajero, para enviarla a recepción.
+
+---
+
 ## Seguridad del Despliegue (PythonAnywhere)
 
 * **Protección contra fuerza bruta (`django-axes`):** tras **5 intentos fallidos** se bloquea la combinación *usuario + IP* durante **15 minutos**, tanto en `/login/` como en el login del admin. El bloqueo es por par usuario/IP, por lo que un atacante no puede dejar sin acceso a un usuario legítimo desde otra IP. La IP real del visitante se obtiene de la cabecera `X-Real-IP` del proxy de PythonAnywhere (`web/security.py`). Los intentos quedan registrados en el admin (*Access attempts* / *Access failures*).

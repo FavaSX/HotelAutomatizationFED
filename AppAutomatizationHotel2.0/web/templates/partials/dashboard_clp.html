@@ -36,13 +36,16 @@
       <ul class="list-unstyled small mb-0 mt-2">
         {% for t in clp.pending_by_type %}
         <li class="d-flex justify-content-between py-1 {% if not forloop.last %}border-bottom-soft{% endif %}">
-          <span class="text-muted">{{ t.label }}</span>
+          <a href="{% url 'exceptions' %}?moneda=clp&tipo={{ t.code }}" class="text-muted text-decoration-none">{{ t.label }}</a>
           <strong>{{ t.count }}</strong>
         </li>
         {% empty %}
         <li class="text-muted"><i class="bi bi-check2-circle me-1" style="color: var(--success);"></i>Todo revisado</li>
         {% endfor %}
       </ul>
+      {% if clp.pending_count %}
+      <a href="{% url 'exceptions' %}?moneda=clp" class="small fw-semibold text-decoration-none mt-2 d-inline-block">Ir a la bandeja <i class="bi bi-arrow-right"></i></a>
+      {% endif %}
     </div>
   </div>
 
@@ -181,6 +184,7 @@
           <h2 class="panel-title">Excepciones de mayor monto</h2>
           <p class="panel-sub">Prioriza estas para cerrar la mayor diferencia</p>
         </div>
+        <a href="{% url 'exceptions' %}?moneda=clp" class="small fw-semibold text-decoration-none text-nowrap">Ver todas <i class="bi bi-arrow-right"></i></a>
       </header>
       {% if clp.largest_exceptions %}
       <div class="table-responsive">

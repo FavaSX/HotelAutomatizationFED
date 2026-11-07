@@ -19,6 +19,7 @@ from .services import calculate_clp_preview, commit_clp_preview_to_database, det
 from .services.clp_reconciliation import get_clp_tolerance
 from .services.column_detector import normalize_auth_code, safe_date
 from .services.clp_report_exporter import generate_committed_clp_excel_bytes
+from .services.exception_resolution import resolve_exception
 
 
 # ------------------------------------------------------------------------------
@@ -534,3 +535,114 @@ class BruteForceProtectionTests(TestCase):
             self._login(admin_login, "mala")
 
         self.assertEqual(self._login(admin_login, "clave-correcta-123").status_code, 429)
+
+
+class ExceptionInboxTests(TestCase):
+    """The "Pendientes" inbox: the accountant resolves, reopens, filters and exports exceptions."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="contador", password="clave-de-prueba-123")
+        self.process = DashboardViewTests._clp_closing(self)
+        self.orphan = self.process.cross_match_results.get(system_result="NOT_FOUND_IN_ERP")
+        self.out_of_period = self.process.cross_match_results.get(system_result="OUT_OF_PERIOD")
+        self.out_of_period.cashier_username = "jperez"
+        self.out_of_period.save()
+        self.client.force_login(self.user)
+
+    def _resolve(self, match, status, comment=""):
+        return self.client.post(
+            reverse("exception_resolve", args=[match.id]),
+            {"status": status, "comment": comment, "return_query": "estado=pendientes"},
+        )
+
+    def test_inbox_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("exceptions"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("login"), response.url)
+
+    def test_inbox_lists_pending_exceptions_only(self):
+        response = self.client.get(reverse("exceptions"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({r.id for r in response.context["rows"]}, {self.orphan.id, self.out_of_period.id})
+        self.assertEqual(response.context["sidebar_pending_count"], 2)
+
+    def test_inbox_shows_one_currency_per_tab(self):
+        # Only pesos have pending cases, so the inbox opens on the Pesos tab
+        response = self.client.get(reverse("exceptions"))
+        self.assertEqual(response.context["currency"], "clp")
+        self.assertEqual(response.context["pending_counts"], {"usd": 0, "clp": 2})
+        self.assertEqual(response.context["totals"]["amount"], 255000)
+
+        usd = self.client.get(reverse("exceptions"), {"moneda": "usd"})
+        self.assertEqual(usd.context["currency"], "usd")
+        self.assertEqual(list(usd.context["rows"]), [])
+        self.assertNotIn("OUT_OF_PERIOD", dict(usd.context["type_choices"]))
+
+    def test_resolving_logs_it_and_lowers_the_dashboard_counter(self):
+        response = self._resolve(self.orphan, "RESOLVED_ERP_FIXED", "Registrada en ERP con folio 8841")
+        self.assertRedirects(response, f"{reverse('exceptions')}?estado=pendientes")
+
+        self.orphan.refresh_from_db()
+        self.assertEqual(self.orphan.management_status.code, "RESOLVED_ERP_FIXED")
+        self.assertEqual(self.orphan.resolved_by, self.user)
+        self.assertIsNotNone(self.orphan.resolution_date)
+        log = self.orphan.audit_logs.get()
+        self.assertEqual((log.previous_status.code, log.new_status.code), ("PENDING", "RESOLVED_ERP_FIXED"))
+        self.assertEqual(log.comment, "Registrada en ERP con folio 8841")
+
+        dashboard = self.client.get(reverse("dashboard"), {"moneda": "clp"})
+        self.assertEqual(dashboard.context["clp"]["pending_count"], 1)
+
+    def test_accepting_a_difference_needs_a_comment(self):
+        self._resolve(self.orphan, "RESOLVED_ACCEPTED")
+        self.orphan.refresh_from_db()
+        self.assertEqual(self.orphan.management_status.code, "PENDING")
+        self.assertFalse(self.orphan.audit_logs.exists())
+
+    def test_reopen_needs_a_comment_and_returns_to_pending(self):
+        self._resolve(self.orphan, "RESOLVED_CASHIER")
+        url = reverse("exception_reopen", args=[self.orphan.id])
+
+        self.client.post(url, {"comment": ""})
+        self.orphan.refresh_from_db()
+        self.assertEqual(self.orphan.management_status.code, "RESOLVED_CASHIER")
+
+        self.client.post(url, {"comment": "Recepción no lo corrigió"})
+        self.orphan.refresh_from_db()
+        self.assertEqual(self.orphan.management_status.code, "PENDING")
+        self.assertIsNone(self.orphan.resolved_by)
+        self.assertEqual(self.orphan.audit_logs.count(), 2)
+
+    def test_filters_by_type_cashier_and_state(self):
+        def ids(**params):
+            return {r.id for r in self.client.get(reverse("exceptions"), params).context["rows"]}
+
+        self.assertEqual(ids(tipo="OUT_OF_PERIOD"), {self.out_of_period.id})
+        self.assertEqual(ids(cajero="jperez"), {self.out_of_period.id})
+        self.assertEqual(ids(cajero="__none__"), {self.orphan.id})
+        self.assertEqual(ids(moneda="usd"), set())
+        self._resolve(self.orphan, "RESOLVED_ERP_FIXED")
+        self.assertEqual(ids(), {self.out_of_period.id})
+        self.assertEqual(ids(estado="resueltas"), {self.orphan.id})
+        self.assertEqual(ids(estado="todas"), {self.orphan.id, self.out_of_period.id})
+
+    def test_export_contains_the_filtered_rows(self):
+        response = self.client.get(reverse("exceptions_export"), {"cajero": "jperez"})
+        self.assertEqual(response.status_code, 200)
+        sheet = openpyxl.load_workbook(io.BytesIO(response.content))["Excepciones"]
+        self.assertEqual(sheet.max_row, 2)
+        self.assertEqual(sheet["C2"].value, self.out_of_period.authorization_code)
+        self.assertEqual(sheet["J2"].value, "jperez")
+
+
+class ExceptionResolutionSurvivesReuploadTests(TestCase):
+    def test_reupload_keeps_a_manual_resolution(self):
+        user = User.objects.create_user("auditor", password="x")
+        process = commit_clp_preview_to_database(user, calculate_clp_preview(**build_clp_files()))
+        exception = process.cross_match_results.exclude(system_result="MATCHED").first()
+        resolve_exception(exception, "RESOLVED_ADJUSTMENT", "Ajuste 2026-114", user)
+
+        commit_clp_preview_to_database(user, calculate_clp_preview(**build_clp_files()))
+        exception.refresh_from_db()
+        self.assertEqual(exception.management_status.code, "RESOLVED_ADJUSTMENT")

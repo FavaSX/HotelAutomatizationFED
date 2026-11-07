@@ -4,6 +4,7 @@ Views for the US Dollars (USD) and Chilean Pesos (CLP) Financial Reconciliation 
   - Home dashboard with the Dólares / Pesos panels (`dashboard.py`)
   - USD workflow: upload, preview, commit, discard, export, file detection (`usd.py`)
   - CLP workflow, same lifecycle (`clp.py`)
+  - Pendientes inbox: review, resolve, reopen and export exceptions (`exceptions.py`)
   - Superuser tools: tolerance settings and test database cleanup (`admin_tools.py`)
 """
 
@@ -25,6 +26,12 @@ from .clp import (
     clp_commit_view,
     clp_export_committed_view,
 )
+from .exceptions import (
+    exceptions_view,
+    exceptions_export_view,
+    exception_resolve_view,
+    exception_reopen_view,
+)
 from .admin_tools import clear_test_database_view, settings_view
 
 __all__ = [
@@ -43,6 +50,10 @@ __all__ = [
     "clp_discard_view",
     "clp_commit_view",
     "clp_export_committed_view",
+    "exceptions_view",
+    "exceptions_export_view",
+    "exception_resolve_view",
+    "exception_reopen_view",
     "clear_test_database_view",
     "settings_view",
 ]
