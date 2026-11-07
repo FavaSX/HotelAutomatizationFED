@@ -1,45 +1,78 @@
 {% extends "base.html" %}
+{% load static %}
+{% block main_class %}p-0{% endblock %}
+{% block footer %}{% endblock %}
 {% block content %}
-<div class="row justify-content-center align-items-center login-row">
-  <div class="col-md-5 col-lg-4">
-    <div class="card-executive border-0 rounded-4 overflow-hidden">
-      <div class="p-4 text-center text-white login-header-navy">
-        <i class="bi bi-building-lock display-4 text-primary"></i>
-        <h4 class="fw-bold mt-2 mb-0">Plaza San Francisco</h4>
-        <small class="text-white-50">Suite de Conciliación Financiera v2.0</small>
-      </div>
-      <div class="card-body p-4">
-        <form method="post" action="{% url 'login' %}" id="loginForm">
-          {% csrf_token %}
-          <div class="form-floating mb-3">
-            <input type="text" class="form-control" id="username" name="username" placeholder="Usuario" value="{{ username|default:'' }}" required {% if not username %}autofocus{% endif %}>
-            <label for="username"><i class="bi bi-person me-2"></i>Usuario Auditor</label>
-          </div>
-          <div class="mb-4 position-relative">
-            <div class="form-floating">
-              <input type="password" class="form-control pe-5" id="password" name="password" placeholder="Contraseña" required {% if username %}autofocus{% endif %}>
-              <label for="password"><i class="bi bi-key me-2"></i>Contraseña</label>
-            </div>
-            <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y me-2 border-0 bg-transparent" onclick="togglePass()">
-              <i class="bi bi-eye text-muted" id="eyeIcon"></i>
-            </button>
-          </div>
-          <button type="submit" class="btn btn-brand w-100 py-3 rounded-pill fw-bold">
-            Ingresar al Sistema <i class="bi bi-arrow-right ms-2"></i>
-          </button>
-        </form>
-
-        {% if remaining_attempts is not None %}
-        <div class="login-attempts mt-3" role="alert">
-          <span class="login-attempts-dots" aria-hidden="true">{% for _ in failed_attempts %}<span></span>{% endfor %}</span>
-          <span>
-            Credenciales incorrectas ·
-            {% if remaining_attempts == 1 %}<strong>último intento</strong>{% else %}quedan <strong>{{ remaining_attempts }} intentos</strong>{% endif %}
-          </span>
+<div class="login-split">
+  <!-- Left: sign-in form, always on a light background -->
+  <section class="login-form-panel" data-bs-theme="light">
+    <div class="login-form-inner">
+      <div class="login-brand">
+        <img src="{% static 'img/logo-hotel-azul.png' %}" alt="" width="52" height="52">
+        <div>
+          <span class="fw-bold d-block lh-1 brand-word">PLAZA SAN FRANCISCO</span>
+          <small>Suite de Conciliación Financiera</small>
         </div>
-        {% endif %}
+      </div>
+
+      <h1 class="login-title">Iniciar sesión</h1>
+      <p class="login-subtitle">Ingresa con tu usuario de auditor para continuar.</p>
+
+      <form method="post" action="{% url 'login' %}" id="loginForm">
+        {% csrf_token %}
+        <div class="form-floating mb-3">
+          <input type="text" class="form-control" id="username" name="username" placeholder="Usuario" value="{{ username|default:'' }}" autocomplete="username" required {% if not username %}autofocus{% endif %}>
+          <label for="username"><i class="bi bi-person me-2"></i>Usuario Auditor</label>
+        </div>
+        <div class="mb-4 position-relative">
+          <div class="form-floating">
+            <input type="password" class="form-control pe-5" id="password" name="password" placeholder="Contraseña" autocomplete="current-password" required {% if username %}autofocus{% endif %}>
+            <label for="password"><i class="bi bi-key me-2"></i>Contraseña</label>
+          </div>
+          <button type="button" class="btn position-absolute top-50 end-0 translate-middle-y me-2 border-0 bg-transparent" onclick="togglePass()" aria-label="Mostrar u ocultar la contraseña">
+            <i class="bi bi-eye text-muted" id="eyeIcon"></i>
+          </button>
+        </div>
+        <button type="submit" class="btn btn-brand w-100 py-3 rounded-pill fw-bold">
+          Ingresar al Sistema <i class="bi bi-arrow-right ms-2"></i>
+        </button>
+      </form>
+
+      {% if remaining_attempts is not None %}
+      <div class="login-attempts mt-3" role="alert">
+        <span class="login-attempts-dots" aria-hidden="true">{% for _ in failed_attempts %}<span></span>{% endfor %}</span>
+        <span>
+          Credenciales incorrectas ·
+          {% if remaining_attempts == 1 %}<strong>último intento</strong>{% else %}quedan <strong>{{ remaining_attempts }} intentos</strong>{% endif %}
+        </span>
+      </div>
+      {% endif %}
+
+      <p class="login-footnote">Hotel Plaza San Francisco — Sistema de Conciliación Financiera ERP v2.0</p>
+    </div>
+  </section>
+
+  <!-- Right: animated fountain on liquid glass, dark background -->
+  <section class="login-visual-panel" data-bs-theme="dark" aria-hidden="true">
+    <span class="login-blob login-blob-1"></span>
+    <span class="login-blob login-blob-2"></span>
+    <span class="login-blob login-blob-3"></span>
+
+    <div class="fountain-glass">
+      <div class="fountain-stage">
+        <img src="{% static 'img/logo-hotel-blanco.svg' %}" alt="" class="fountain-logo">
+        <canvas id="fountainCanvas" class="fountain-canvas"></canvas>
       </div>
     </div>
-  </div>
+
+    <div class="login-visual-caption">
+      <span class="brand-word">PLAZA SAN FRANCISCO</span>
+      <small>Santiago de Chile</small>
+    </div>
+  </section>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/login_fountain.js' %}?v=2"></script>
 {% endblock %}
