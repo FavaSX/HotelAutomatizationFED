@@ -31,14 +31,14 @@ function getUsdActionText(sug, v) {
   const docOp = String(rDoc.op_value || '').replace(/\(Sec\..*?\)/, '').trim();
   const docErp = String(rDoc.erp_value || '').replace(/\(Fact\..*?\)/, '').trim();
 
-  if (goldReason.includes('Doc. Operadora') || (docOp && docErp && docOp !== docErp)) {
-    return `Validar folio ${docOp || 'en Operadora'} y vincular con ${docErp || 'en ERP'}`;
+  if (goldReason.includes('Pos. Clientes') || goldReason.includes('Doc. Operadora') || (docOp && docErp && docOp !== docErp)) {
+    return `Validar folio ${docOp || 'en Posición por Clientes'} y vincular con ${docErp || 'en ERP'}`;
   }
   if (goldReason.includes('Col. USD en 0') || String(rUsd.op_value || '').includes('0,00')) {
-    return `Verificar columna USD en archivo Operadora para ${docErp || 'documento ERP'}; el saldo CLP cuadra exactamente`;
+    return `Verificar columna USD en archivo Posición por Clientes para ${docErp || 'documento ERP'}; el saldo CLP cuadra exactamente`;
   }
   if (goldReason.includes('Variación Cambiaria')) {
-    return `Ajustar diferencia cambiaria entre POS Transbank (${formatUsdClient(v.gross_amount_usd)}) y Operadora`;
+    return `Ajustar diferencia cambiaria entre POS Transbank (${formatUsdClient(v.gross_amount_usd)}) y Posición por Clientes`;
   }
   if (goldReason.includes('Cobro Parcial') || goldReason.includes('Dif:')) {
     return `Revisar cobro parcial o propina por diferencia de monto con el cajero`;
@@ -50,7 +50,7 @@ function getUsdActionText(sug, v) {
     return `Unir facturas divididas bajo el voucher ${v.authorization_code} en el ERP`;
   }
   if (sug?.headline && sug.headline.includes('No facturado')) {
-    return `Ingresar cobro de ${docOp || 'Operadora'} en ERP Hotel o verificar omisión de facturación`;
+    return `Ingresar cobro de ${docOp || 'Posición por Clientes'} en ERP Hotel o verificar omisión de facturación`;
   }
   if (sug?.headline) {
     return sug.headline;
@@ -255,7 +255,7 @@ function renderModalSuggestionsPage() {
                   `${colErpHtml}` +
                 `</div>` +
                 `<div class="suggestion-col-box">` +
-                  `<div class="suggestion-col-title">3. Operadora (${escapeHtmlStr(files.op || 'DOLAR.XLS')})</div>` +
+                  `<div class="suggestion-col-title">3. Posición por Clientes (${escapeHtmlStr(files.op || 'DOLAR.XLS')})</div>` +
                   `${colOpHtml}` +
                 `</div>` +
               `</div>` +
@@ -314,7 +314,7 @@ function renderModalSuggestionsPage() {
               `<td class="text-end fw-bold">${escapeHtmlStr(formatUsdClient(v.gross_amount_usd))}</td>` +
               `<td class="pe-3 small text-muted">` +
                 `<i class="bi bi-slash-circle text-warning me-1"></i>` +
-                `Sin coincidencias en ERP ni Operadora (no existe ningún cobro libre con ese monto en dólares, saldo equivalente en pesos ni código similar en los archivos cargados).` +
+                `Sin coincidencias en ERP ni Posición por Clientes (no existe ningún cobro libre con ese monto en dólares, saldo equivalente en pesos ni código similar en los archivos cargados).` +
               `</td>` +
             `</tr>`
           );

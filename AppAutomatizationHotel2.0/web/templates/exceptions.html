@@ -231,7 +231,7 @@
             <tr><td class="text-muted">Diferencia</td><td class="text-end fw-bold">$ {{ e.difference_clp|num_clp }}</td></tr>
             {% else %}
             <tr><td class="text-muted">Monto Transbank</td><td class="text-end fw-semibold">US$ {{ e.transbank_amount|num_usd }}</td></tr>
-            <tr><td class="text-muted">Monto operadora</td><td class="text-end fw-semibold">US$ {{ e.operator_amount_usd|num_usd }}</td></tr>
+            <tr><td class="text-muted">Monto Posición por Clientes</td><td class="text-end fw-semibold">US$ {{ e.operator_amount_usd|num_usd }}</td></tr>
             <tr><td class="text-muted">Diferencia USD</td><td class="text-end fw-bold">US$ {{ e.difference_usd|num_usd }}</td></tr>
             <tr><td class="text-muted">Monto ERP (CLP)</td><td class="text-end fw-semibold">$ {{ e.erp_amount_clp|num_clp }}</td></tr>
             {% endif %}
