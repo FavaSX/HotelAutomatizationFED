@@ -1,0 +1,21 @@
+{% load currency_filters %}
+{% with c=preview.erp_corrections_applied %}
+{% if c.corrected or c.deleted or c.manual %}
+<div class="alert alert-info small border-0 mb-3" role="status">
+  <i class="bi bi-shield-check me-1"></i><strong>Se aplicaron las correcciones guardadas del ERP.</strong>
+  {% if c.corrected %}{{ c.corrected }} fila{{ c.corrected|pluralize }} corregida{{ c.corrected|pluralize }}{% endif %}{% if c.corrected and c.deleted %} · {% endif %}{% if c.deleted %}{{ c.deleted }} fila{{ c.deleted|pluralize }} eliminada{{ c.deleted|pluralize }} quedan fuera del cruce{% endif %}{% if c.manual %}{% if c.corrected or c.deleted %} · {% endif %}{{ c.manual }} fila{{ c.manual|pluralize }} agregada{{ c.manual|pluralize }} a mano{% endif %}.
+  El cruce usa los valores corregidos, no los del Excel.
+</div>
+{% endif %}
+{% if c.possible_duplicates %}
+<div class="alert alert-warning small border-0 mb-3" role="alert">
+  <i class="bi bi-exclamation-triangle me-1"></i><strong>Posible duplicado:</strong>
+  {{ c.possible_duplicates|length }} fila{{ c.possible_duplicates|length|pluralize }} del Excel se parece{{ c.possible_duplicates|length|pluralize:"n" }} a una fila que se agregó a mano. Si es el mismo pago, elimina una de las dos desde Pendientes después de guardar.
+  <ul class="mb-0 mt-1">
+    {% for d in c.possible_duplicates %}
+    <li>{{ d.excel_row }} ↔ fila manual #{{ d.manual_id }} · código <span class="font-mono">{{ d.authorization_code }}</span> · $ {{ d.amount|num_clp }} · {{ d.transaction_date }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endwith %}

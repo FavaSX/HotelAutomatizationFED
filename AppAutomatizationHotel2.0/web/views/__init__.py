@@ -27,6 +27,9 @@ from .clp import (
     clp_export_committed_view,
 )
 from .exceptions import (
+    exception_erp_add_view,
+    exception_erp_delete_view,
+    exception_erp_edit_view,
     exceptions_view,
     exceptions_export_view,
     exception_resolve_view,
@@ -54,6 +57,9 @@ __all__ = [
     "exceptions_export_view",
     "exception_resolve_view",
     "exception_reopen_view",
+    "exception_erp_edit_view",
+    "exception_erp_add_view",
+    "exception_erp_delete_view",
     "clear_test_database_view",
     "settings_view",
 ]

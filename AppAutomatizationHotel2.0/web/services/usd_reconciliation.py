@@ -246,7 +246,14 @@ def calculate_usd_preview(
             erp_instances.append(inst)
 
     # Corrections saved in the DB win over the Excel, so a re-upload does not undo them
-    erp_instances, corrected_erp_count, deleted_erp_count = overlay_on_instances(erp_instances, source_currency="USD")
+    tbk_cols = resolve_dataframe_columns(tbk_df, TRANSBANK_USD_COLUMN_RULES)
+    voucher_codes = {
+        normalize_auth_code(clean_code_string(safe_cell(row, tbk_cols["authorization_code"])))
+        for _, row in tbk_df.iterrows()
+    }
+    erp_instances, erp_corrections = overlay_on_instances(
+        erp_instances, source_currency="USD", voucher_codes=voucher_codes - {""}
+    )
 
     for inst in erp_instances:
         if inst.authorization_code:
@@ -427,6 +434,7 @@ def calculate_usd_preview(
             "cashier_username": e.cashier_username, "guest_name": e.guest_name,
             "amount": float(e.amount), "source_currency": e.source_currency, "reconciled": e.reconciled,
             "source_key": e.source_key, "is_corrected": getattr(e, "is_corrected", False),
+            "manual_id": e.pk if e.origin == ErpTransaction.ORIGIN_MANUAL else None,
         }
         for e in erp_instances
     ]
@@ -471,7 +479,7 @@ def calculate_usd_preview(
         "discrepancy_vouchers": discrepancy_vouchers,
         "orphan_vouchers": orphan_vouchers,
         "tolerance": float(usd_tolerance),
-        "erp_corrections_applied": {"corrected": corrected_erp_count, "deleted": deleted_erp_count},
+        "erp_corrections_applied": erp_corrections,
         "counts": {
             "matched": len(matched_vouchers),
             "discrepancies": len(discrepancy_vouchers),

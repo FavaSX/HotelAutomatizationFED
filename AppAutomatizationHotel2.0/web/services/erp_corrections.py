@@ -6,17 +6,21 @@ corrects or soft-deletes a row, the fingerprint stays the same, so on the next u
   - the row is recognized instead of being inserted again with the typo, and
   - `apply_saved_corrections` puts the corrected values (or drops the deleted row) BEFORE the cross-match,
     so the voucher stays matched instead of falling back to a mismatch.
+Rows the accountant added by hand have no fingerprint. They join the cross-match of a new upload when one
+of its vouchers carries their code, and a new Excel row that looks like one of them is flagged as a
+possible duplicate for the accountant to decide.
 """
 
 import hashlib
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from ..models import ErpTransaction
-from .column_detector import safe_date, safe_time
+from .column_detector import normalize_auth_code, safe_date, safe_time
 
 # Fields the accountant may correct; their DB value replaces the Excel value on a new upload
 CORRECTABLE_FIELDS = ("amount", "authorization_code", "transaction_date", "payment_code", "document_number")
+MANUAL_SOURCE_LABEL = "Agregada a mano"
 
 
 def erp_source_key(
@@ -77,38 +81,131 @@ def _corrected_rows_by_key(source_currency: str, keys: Iterable[str]) -> Dict[st
     return {row.source_key: row for row in rows}
 
 
+def _manual_rows_for_codes(source_currency: str, voucher_codes: Optional[Set[str]]) -> List[ErpTransaction]:
+    """Active hand-added rows whose authorization code belongs to one of the uploaded vouchers."""
+    if not voucher_codes:
+        return []
+    rows = ErpTransaction.objects.filter(
+        source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL
+    ).select_related("card_type")
+    return [r for r in rows if normalize_auth_code(r.authorization_code or "") in voucher_codes]
+
+
+def _same_sale(a_code: Any, a_amount: Any, a_date: Any, row: ErpTransaction) -> bool:
+    return (
+        normalize_auth_code(a_code or "") == normalize_auth_code(row.authorization_code or "")
+        and abs(Decimal(str(a_amount or 0)) - row.amount) < 1
+        and safe_date(a_date) == row.transaction_date
+    )
+
+
+def _possible_duplicates(
+    source_currency: str, candidates: List[Tuple[str, Any, Any, Any, str]]
+) -> List[Dict[str, Any]]:
+    """
+    candidates = (source_key, code, amount, date, excel_label) of the uploaded rows.
+    A NEW Excel row (fingerprint not in the DB) that matches a hand-added row is a possible duplicate.
+    """
+    manual = list(ErpTransaction.objects.filter(source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL))
+    if not manual:
+        return []
+    known = set(
+        ErpTransaction.all_objects.filter(source_key__in=[c[0] for c in candidates]).values_list("source_key", flat=True)
+    )
+    duplicates = []
+    for key, code, amount, tx_date, excel_label in candidates:
+        if key in known:
+            continue
+        for row in manual:
+            if _same_sale(code, amount, tx_date, row):
+                duplicates.append({
+                    "manual_id": row.id,
+                    "authorization_code": row.authorization_code or "",
+                    "amount": float(row.amount),
+                    "transaction_date": row.transaction_date.strftime("%d/%m/%Y") if row.transaction_date else "",
+                    "excel_row": excel_label,
+                })
+                break
+    return duplicates
+
+
+# ------------------------------------------------------------------------------
+# CLP: preview rows are dictionaries
+# ------------------------------------------------------------------------------
+
+def _clp_raw_from_model(row: ErpTransaction) -> Dict[str, Any]:
+    """A hand-added CLP row in the same shape as a parsed Bordero row."""
+    card_code = row.card_type.code if row.card_type else ""
+    is_redcompra = row.payment_code == "RCO" or not card_code
+    return {
+        "excel_row": f"Manual #{row.id}",
+        "source_file": MANUAL_SOURCE_LABEL,
+        "card_code": card_code,
+        "payment_group": "REDCOMPRA" if is_redcompra else "CREDIT",
+        "payment_code": row.payment_code or "",
+        "payment_description": "Red Compra" if is_redcompra else f"{row.card_type.name} $",
+        "room_number": row.room_number or "",
+        "room_type": row.room_type or "",
+        "reservation_number": row.reservation_number or "",
+        "account_code": row.account_code or row.document_number,
+        "invoice_number": row.invoice_number or "",
+        "authorization_code": row.authorization_code or "",
+        "transaction_date": row.transaction_date.strftime("%d/%m/%Y") if row.transaction_date else None,
+        "transaction_time": row.transaction_time.strftime("%H:%M:%S") if row.transaction_time else None,
+        "cashier_username": row.cashier_username or "",
+        "guest_name": row.guest_name or "",
+        "amount": float(row.amount),
+        "is_reversal": row.amount < 0,
+        "reconciled": False,
+        "manual_id": row.id,
+        "is_manual": True,
+    }
+
+
 def apply_saved_corrections(
     erp_rows: List[Dict[str, Any]],
     source_currency: str,
     doc_field: str = "document_number",
-) -> Tuple[List[Dict[str, Any]], int, int]:
+    voucher_codes: Optional[Set[str]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Stamps every preview row with its `source_key` and applies the corrections saved in the database:
-    corrected fields take their DB value and soft-deleted rows are left out of the cross-match.
-    Returns (rows to cross-match, corrected count, deleted count). Rows keep their original order.
+    Stamps every preview row with its `source_key`, applies the corrections saved in the database
+    (corrected fields take their DB value, soft-deleted rows leave the cross-match), and appends the
+    hand-added rows of the uploaded vouchers. Returns (rows to cross-match, report for the preview).
     """
     for e_data in erp_rows:
         e_data["source_key"] = source_key_for_raw(e_data, source_currency, doc_field)
 
+    report = {
+        "corrected": 0,
+        "deleted": 0,
+        "manual": 0,
+        "possible_duplicates": _possible_duplicates(source_currency, [
+            (r["source_key"], r.get("authorization_code"), r.get("amount"), r.get("transaction_date"),
+             f"{r.get('source_file') or 'Borderó'} fila {r.get('excel_row') or '—'}")
+            for r in erp_rows
+        ]),
+    }
     corrected = _corrected_rows_by_key(source_currency, (r["source_key"] for r in erp_rows))
-    if not corrected:
-        return erp_rows, 0, 0
 
     kept: List[Dict[str, Any]] = []
-    corrected_count = deleted_count = 0
     for e_data in erp_rows:
         db_row = corrected.get(e_data["source_key"])
         if db_row is None:
             kept.append(e_data)
             continue
         if db_row.is_deleted:
-            deleted_count += 1
+            report["deleted"] += 1
             continue
         _overlay_db_values(e_data, db_row, doc_field)
         e_data["is_corrected"] = True
-        corrected_count += 1
+        report["corrected"] += 1
         kept.append(e_data)
-    return kept, corrected_count, deleted_count
+
+    for row in _manual_rows_for_codes(source_currency, voucher_codes):
+        kept.append(_clp_raw_from_model(row))
+        report["manual"] += 1
+    return kept, report
 
 
 def _overlay_db_values(e_data: Dict[str, Any], db_row: ErpTransaction, doc_field: str) -> None:
@@ -120,12 +217,24 @@ def _overlay_db_values(e_data: Dict[str, Any], db_row: ErpTransaction, doc_field
     e_data[doc_field] = db_row.document_number
     if "is_reversal" in e_data:
         e_data["is_reversal"] = db_row.amount < 0
+    if "payment_group" in e_data:
+        # A corrected payment code can move the row between Red Compra and credit
+        e_data["payment_group"] = "REDCOMPRA" if db_row.payment_code == "RCO" else "CREDIT"
+        if db_row.payment_code == "RCO":
+            e_data["card_code"] = ""
+        elif db_row.card_type_id:
+            e_data["card_code"] = db_row.card_type.code
 
+
+# ------------------------------------------------------------------------------
+# USD: preview rows are unsaved ErpTransaction instances
+# ------------------------------------------------------------------------------
 
 def overlay_on_instances(
     instances: List[ErpTransaction],
     source_currency: str,
-) -> Tuple[List[ErpTransaction], int, int]:
+    voucher_codes: Optional[Set[str]] = None,
+) -> Tuple[List[ErpTransaction], Dict[str, Any]]:
     """Same as `apply_saved_corrections`, for the unsaved ErpTransaction instances of the USD flow."""
     for inst in instances:
         inst.source_key = erp_source_key(
@@ -137,23 +246,35 @@ def overlay_on_instances(
             inst.transaction_date,
             inst.transaction_time,
         )
+    report = {
+        "corrected": 0,
+        "deleted": 0,
+        "manual": 0,
+        "possible_duplicates": _possible_duplicates(source_currency, [
+            (i.source_key, i.authorization_code, i.amount, i.transaction_date,
+             f"{getattr(i, 'source_file', '') or 'ERP'} · Doc {i.document_number}")
+            for i in instances
+        ]),
+    }
     corrected = _corrected_rows_by_key(source_currency, (i.source_key for i in instances))
-    if not corrected:
-        return instances, 0, 0
 
     kept: List[ErpTransaction] = []
-    corrected_count = deleted_count = 0
     for inst in instances:
         db_row: Optional[ErpTransaction] = corrected.get(inst.source_key)
         if db_row is None:
             kept.append(inst)
             continue
         if db_row.is_deleted:
-            deleted_count += 1
+            report["deleted"] += 1
             continue
         for field_name in CORRECTABLE_FIELDS:
             setattr(inst, field_name, getattr(db_row, field_name))
         inst.is_corrected = True
-        corrected_count += 1
+        report["corrected"] += 1
         kept.append(inst)
-    return kept, corrected_count, deleted_count
+
+    for row in _manual_rows_for_codes(source_currency, voucher_codes):
+        row.source_file = MANUAL_SOURCE_LABEL
+        kept.append(row)
+        report["manual"] += 1
+    return kept, report

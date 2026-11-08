@@ -363,10 +363,14 @@ def calculate_clp_preview(
 
     # Corrections saved in the DB win over the Excel, so a re-upload does not undo them.
     # Deleting rows shifts positions and a correction may change the code, so the index is rebuilt.
-    erp_rows, corrected_erp_count, deleted_erp_count = apply_saved_corrections(
-        erp_rows, source_currency="CLP", doc_field="account_code"
+    voucher_codes = {
+        normalize_auth_code(sale["authorization_code"])
+        for modality, _, _, _ in CLP_MODALITIES for sale in settlements[modality]["sales"]
+    }
+    erp_rows, erp_corrections = apply_saved_corrections(
+        erp_rows, source_currency="CLP", doc_field="account_code", voucher_codes=voucher_codes
     )
-    if corrected_erp_count or deleted_erp_count:
+    if erp_corrections["corrected"] or erp_corrections["deleted"] or erp_corrections["manual"]:
         rows_by_auth_code = {}
         for pos, row in enumerate(erp_rows):
             norm_code = normalize_auth_code(row.get("authorization_code") or "")
@@ -593,7 +597,7 @@ def calculate_clp_preview(
         "orphan_vouchers": buckets["NOT_FOUND_IN_ERP"],
         "out_of_period_vouchers": buckets["OUT_OF_PERIOD"],
         "skipped_movements": sum(s["skipped_movements"] for s in settlements.values()),
-        "erp_corrections_applied": {"corrected": corrected_erp_count, "deleted": deleted_erp_count},
+        "erp_corrections_applied": erp_corrections,
         "counts": {
             "matched": len(buckets["MATCHED"]),
             "discrepancies": len(discrepancy_vouchers),

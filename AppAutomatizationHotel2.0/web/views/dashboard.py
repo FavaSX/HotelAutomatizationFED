@@ -4,6 +4,7 @@ from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q, Sum
 
+from ..services.erp_editing import OPEN_STATUS_CODES
 from ..models import CrossMatchResult, ReconciliationProcess, ReconciliationSummary
 
 
@@ -57,7 +58,7 @@ def _pending_exceptions(currency: str):
     """Exceptions of every closing of the currency still pending accountant review."""
     return CrossMatchResult.objects.filter(
         process__process_currency=currency,
-        management_status__code="PENDING",
+        management_status__code__in=OPEN_STATUS_CODES,
     ).exclude(system_result="MATCHED")
 
 

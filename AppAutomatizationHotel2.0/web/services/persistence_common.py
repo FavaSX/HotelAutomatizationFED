@@ -104,7 +104,8 @@ def sync_erp_transactions_by_currency(
     the ORIGINAL Excel row. A row the accountant corrected is still found, and is never overwritten by the
     Excel values; a soft-deleted row is found too and stays deleted.
     """
-    incoming_keys = {source_key_for_raw(e, source_currency, doc_field) for e in erp_raw}
+    manual_rows = ErpTransaction.all_objects.in_bulk([e["manual_id"] for e in erp_raw if e.get("manual_id")])
+    incoming_keys = {source_key_for_raw(e, source_currency, doc_field) for e in erp_raw if not e.get("manual_id")}
     existing_qs = (
         ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=incoming_keys)
         if incoming_keys
@@ -119,6 +120,15 @@ def sync_erp_transactions_by_currency(
     erp_to_update: List[ErpTransaction] = []
 
     for e_data in erp_raw:
+        manual_obj = manual_rows.get(e_data.get("manual_id"))
+        if manual_obj is not None:
+            # Hand-added row taking part in this upload's cross-match: it already exists, only its flag changes
+            if e_data.get("reconciled") and not manual_obj.reconciled:
+                manual_obj.reconciled = True
+                erp_to_update.append(manual_obj)
+            erp_models.append(manual_obj)
+            continue
+
         doc_val = e_data.get(doc_field) or e_data.get("account_code") or ""
         inv_val = e_data.get("invoice_number") or ""
         auth_val = e_data.get("authorization_code") or ""
@@ -266,7 +276,7 @@ def upsert_cross_match_and_audit_logs(
         prev_sys_result = existing_match.system_result
         prev_status = existing_match.management_status
         if sys_result == "MATCHED":
-            new_status = accepted_status
+            new_status = prev_status if prev_sys_result == "MATCHED" and prev_status else accepted_status
         elif not existing_match.management_status_id or prev_sys_result == "MATCHED":
             new_status = default_mgmt_status
         else:

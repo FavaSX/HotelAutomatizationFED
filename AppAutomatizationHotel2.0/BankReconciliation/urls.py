@@ -31,6 +31,9 @@ urlpatterns = [
     path('excepciones/exportar/', views.exceptions_export_view, name='exceptions_export'),
     path('excepciones/<int:match_id>/resolver/', views.exception_resolve_view, name='exception_resolve'),
     path('excepciones/<int:match_id>/reabrir/', views.exception_reopen_view, name='exception_reopen'),
+    path('excepciones/<int:match_id>/erp/<int:row_id>/corregir/', views.exception_erp_edit_view, name='exception_erp_edit'),
+    path('excepciones/<int:match_id>/erp/agregar/', views.exception_erp_add_view, name='exception_erp_add'),
+    path('excepciones/<int:match_id>/erp/<int:row_id>/eliminar/', views.exception_erp_delete_view, name='exception_erp_delete'),
     path('settings/', views.settings_view, name='settings'),
     path('reconciliation/clear-test-db/', views.clear_test_database_view, name='clear_test_db'),
 ]
