@@ -6,7 +6,7 @@
 <div id="processingOverlay">
   <div class="spinner-border text-warning mb-3 processing-spinner" role="status"></div>
   <h4 class="fw-bold mb-1">Analizando Conciliación en Dólares...</h4>
-  <p class="text-white-50 mb-0">Cruzando ERP vs. Transbank vs. Operadores en memoria. No se guardará nada hasta su confirmación.</p>
+  <p class="text-white-50 mb-0">Cruzando ERP vs. Transbank vs. Posición por Clientes en memoria. No se guardará nada hasta su confirmación.</p>
 </div>
 
 <!-- Header -->
@@ -100,7 +100,7 @@
         <h5 class="fw-bold mb-1">Arrastre aquí los 7 archivos Excel o haga clic para seleccionarlos</h5>
         <p class="text-muted small mb-3">
           El sistema identificará automáticamente cuál corresponde a
-          <strong>ERP Hotel, Transbank, Cartola Bancaria, Visa, MasterCard, American Express y Diners Club</strong>.
+          <strong>ERP Hotel, Transbank, Cartola Bancaria y los 4 archivos de Posición por Clientes (Visa, MasterCard, American Express y Diners Club)</strong>.
         </p>
         <span class="btn btn-brand rounded-pill px-4 py-2 fw-semibold shadow-sm">
           <i class="bi bi-folder2-open me-1"></i> Seleccionar Archivos (.xls / .xlsx)
@@ -131,19 +131,66 @@
       <!-- Alerta de Estado de la Alineación -->
       <div id="alignmentSummaryAlert" class="alert rounded-4 mb-3 py-2 px-3 small"></div>
 
-      <!-- Tabla de los 7 Roles Alineados -->
-      <div class="table-responsive border rounded-4 mb-4">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="alignment-thead">
-            <tr class="text-uppercase text-muted">
-              <th class="ps-3 py-2">Rol Requerido por el Sistema</th>
-              <th class="py-2">Archivo Asignado (Elegir o Subir Individual)</th>
-              <th class="py-2">Evidencia / Huella Interna Detectada</th>
-              <th class="text-center pe-3 py-2">Certeza</th>
-            </tr>
-          </thead>
-          <tbody id="alignmentTableBody" class="small"></tbody>
-        </table>
+      <!-- Card 1: Archivos Principales de Conciliación -->
+      <div class="card card-executive p-0 mb-4 overflow-hidden border">
+        <div class="card-header bg-white py-3 px-4 border-bottom d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <span class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+              <i class="bi bi-file-earmark-spreadsheet-fill"></i>
+            </span>
+            <div>
+              <h6 class="fw-bold mb-0 text-dark">Archivos Principales de Conciliación (3)</h6>
+              <small class="text-muted">Borderó ERP Hotel, Liquidación de Abonos Transbank y Cartola Bancaria</small>
+            </div>
+          </div>
+          <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1 rounded-pill">
+            Base Contable
+          </span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="alignment-thead">
+              <tr class="text-uppercase text-muted">
+                <th class="ps-3 py-2">Rol Requerido</th>
+                <th class="py-2">Archivo Asignado (Elegir o Subir Individual)</th>
+                <th class="py-2">Evidencia / Huella Interna Detectada</th>
+                <th class="text-center pe-3 py-2">Certeza</th>
+              </tr>
+            </thead>
+            <tbody id="alignmentMainTableBody" class="small"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Card 2: Archivos de Posición por Clientes -->
+      <div class="card card-executive p-0 mb-4 overflow-hidden border">
+        <div class="card-header bg-white py-3 px-4 border-bottom d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <span class="rounded-circle bg-success-subtle text-success d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+              <i class="bi bi-credit-card-2-front-fill"></i>
+            </span>
+            <div>
+              <h6 class="fw-bold mb-0 text-dark">Archivos de Posición por Clientes (4)</h6>
+              <small class="text-muted">Reportes auxiliares por tarjeta para cuadrar moneda extranjera (US$) y saldo en pesos (CLP)</small>
+            </div>
+          </div>
+          <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 rounded-pill">
+            Posición por Clientes
+          </span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="alignment-thead">
+              <tr class="text-uppercase text-muted">
+                <th class="ps-3 py-2">Tarjeta / Rol Requerido</th>
+                <th class="py-2">Archivo Asignado (Elegir o Subir Individual)</th>
+                <th class="py-2">Evidencia / Huella Interna Detectada</th>
+                <th class="text-center pe-3 py-2">Certeza</th>
+              </tr>
+            </thead>
+            <tbody id="alignmentPositionTableBody" class="small"></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Barra de Confirmación de Fase 2 -->
@@ -171,5 +218,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=7"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=8"></script>
 {% endblock %}

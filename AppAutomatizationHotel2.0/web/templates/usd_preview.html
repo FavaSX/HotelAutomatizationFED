@@ -59,9 +59,9 @@
       <div class="stat-value {% if usd_totals.diff %}text-danger-soft{% endif %}" style="font-size: 1.6rem;">
         <span class="stat-unit">US$</span> {{ usd_totals.diff|num_usd }}
       </div>
-      <div class="small text-muted mt-1">Operadoras vs. Transbank</div>
+      <div class="small text-muted mt-1">Posición por Clientes vs. Transbank</div>
       <div class="small mt-2 pt-2 border-top-soft d-flex justify-content-between">
-        <span class="text-muted">En pesos (ERP vs. operadoras)</span>
+        <span class="text-muted">En pesos (ERP vs. Posición por Clientes)</span>
         <strong class="{% if clp_totals.diff %}text-danger-soft{% endif %} text-nowrap">{% if clp_totals.diff < 0 %}-{% endif %}${{ clp_totals.diff|num_clp|cut:"-" }}</strong>
       </div>
     </div>
@@ -90,15 +90,15 @@
   </div>
 </div>
 
-<!-- Squaring by Operator (USD + CLP) -->
+<!-- Squaring by Posición por Clientes (USD + CLP) -->
 <div class="row g-3 mb-3">
-  <!-- 2A. Cuadratura por Operador en Dólares (US$) -->
+  <!-- 2A. Cuadratura Posición por Clientes en Dólares (US$) -->
   <div class="col-lg-6">
     <div class="card card-executive h-100 mb-0">
       <header class="panel-head py-3">
         <div>
           <h2 class="panel-title fs-6 mb-0">
-            <i class="bi bi-currency-dollar text-primary me-1"></i> Cuadratura por Operador en Dólares (US$)
+            <i class="bi bi-currency-dollar text-primary me-1"></i> Cuadratura Posición por Clientes en Dólares (US$)
           </h2>
         </div>
       </header>
@@ -106,9 +106,9 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted">
             <tr>
-              <th class="ps-3">OPERADOR</th>
+              <th class="ps-3">TARJETA</th>
               <th class="text-end">TOTAL TBK (US$)</th>
-              <th class="text-end">TOTAL OPERADOR (US$)</th>
+              <th class="text-end">TOTAL POS. CLIENTES (US$)</th>
               <th class="text-end pe-3">DIFERENCIA (US$)</th>
             </tr>
           </thead>
@@ -155,9 +155,9 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted">
             <tr>
-              <th class="ps-3">OPERADOR</th>
+              <th class="ps-3">TARJETA</th>
               <th class="text-end">TOTAL ERP (CLP)</th>
-              <th class="text-end">TOTAL OPERADOR (CLP)</th>
+              <th class="text-end">TOTAL POS. CLIENTES (CLP)</th>
               <th class="text-end pe-3">DIFERENCIA (CLP)</th>
             </tr>
           </thead>
@@ -279,15 +279,15 @@
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
               <th class="ps-4" style="min-width: 285px;">Cruce de Vouchers (TBK ⇄ ERP)</th>
-              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ OP)</th>
+              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ Pos. Clientes)</th>
               <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
                 Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
-                Monto Operador <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'op', this)" title="Ordenar por Monto Posición por Clientes (Mayor a Menor / Menor a Mayor)">
+                Monto Pos. Clientes <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'diff', this)" title="Ordenar por Diferencia USD (Mayor a Menor / Menor a Mayor)">
                 Dif. USD <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
@@ -324,14 +324,14 @@
               </td>
               <td>
                 {% if item.document_number %}
-                <div class="doc-dual-pill" title="Documento ERP coincide exactamente con Documento Operadora">
+                <div class="doc-dual-pill" title="Documento ERP coincide exactamente con Documento en Posición por Clientes">
                   <span class="doc-dual-erp">
                     <small class="text-muted fw-bold">ERP:</small>
                     <span class="font-monospace fw-bold">{{ item.document_number }}</span>
                   </span>
                   <span class="doc-dual-equal">=</span>
                   <span class="doc-dual-op">
-                    <small class="fw-bold">OP:</small>
+                    <small class="fw-bold">PC:</small>
                     <span class="font-monospace fw-bold">{{ item.operator_document_number|default:item.document_number }}</span>
                     <i class="bi bi-check2 doc-check"></i>
                   </span>
@@ -427,15 +427,15 @@
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
               <th class="ps-4" style="min-width: 285px;">Cruce de Vouchers (TBK ⇄ ERP)</th>
-              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ OP)</th>
+              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ Pos. Clientes)</th>
               <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'tbk', this)" title="Ordenar por Monto TBK (Mayor a Menor / Menor a Mayor)">
                 Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
-              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'op', this)" title="Ordenar por Monto Operador (Mayor a Menor / Menor a Mayor)">
-                Monto Operador <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
+              <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'op', this)" title="Ordenar por Monto Posición por Clientes (Mayor a Menor / Menor a Mayor)">
+                Monto Pos. Clientes <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
               </th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'diff', this)" title="Ordenar por Diferencia USD (Mayor a Menor / Menor a Mayor)">
                 Dif. USD <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i>
@@ -473,36 +473,36 @@
               <td>
                 {% if item.operator_amount_usd > 0 and item.document_number %}
                   {% if item.document_number == item.operator_document_number %}
-                  <div class="doc-dual-pill" title="Documento ERP coincide con Documento Operadora">
+                  <div class="doc-dual-pill" title="Documento ERP coincide con Documento en Posición por Clientes">
                     <span class="doc-dual-erp">
                       <small class="text-muted fw-bold">ERP:</small>
                       <span class="font-monospace fw-bold">{{ item.document_number }}</span>
                     </span>
                     <span class="doc-dual-equal">=</span>
                     <span class="doc-dual-op">
-                      <small class="fw-bold">OP:</small>
+                      <small class="fw-bold">PC:</small>
                       <span class="font-monospace fw-bold">{{ item.operator_document_number|default:item.document_number }}</span>
                       <i class="bi bi-check2 doc-check"></i>
                     </span>
                   </div>
                   {% else %}
-                  <div class="doc-dual-pill" title="Documento ERP difiere del Documento en Operadora">
+                  <div class="doc-dual-pill" title="Documento ERP difiere del Documento en Posición por Clientes">
                     <span class="doc-dual-erp">
                       <small class="text-muted fw-bold">ERP:</small>
                       <span class="font-monospace fw-bold">{{ item.document_number }}</span>
                     </span>
                     <span class="doc-dual-equal doc-dual-diff">≠</span>
                     <span class="doc-dual-op doc-dual-op-diff">
-                      <small class="fw-bold">OP:</small>
+                      <small class="fw-bold">PC:</small>
                       <span class="font-monospace fw-bold">{{ item.operator_document_number }}</span>
                     </span>
                   </div>
                   {% endif %}
                 {% elif item.document_number %}
-                <div class="d-inline-flex align-items-center gap-1.5" title="Documento ERP no hallado en archivo Operadora">
+                <div class="d-inline-flex align-items-center gap-1.5" title="Documento ERP no hallado en archivo Posición por Clientes">
                   <span class="badge bg-light text-dark border font-monospace px-2 py-1">ERP: {{ item.document_number }}</span>
                   <span class="badge bg-danger-subtle text-danger border border-danger-subtle small px-1.5 py-0.5">
-                    <i class="bi bi-x-circle me-1"></i>Sin Op
+                    <i class="bi bi-x-circle me-1"></i>Sin Pos. Cliente
                   </span>
                 </div>
                 {% else %}
@@ -600,7 +600,7 @@
                 </div>
                 {% else %}
                 <div class="suggestion-empty mt-1">
-                  <i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en ERP ni Operadora.
+                  <i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en ERP ni Posición por Clientes.
                 </div>
                 {% endif %}
               </td>
@@ -646,7 +646,7 @@
 
 {% block extra_js %}
 <script src="{% static 'js/usd_preview.js' %}?v=32"></script>
-<script src="{% static 'js/usd_suggestions.js' %}?v=5"></script>
+<script src="{% static 'js/usd_suggestions.js' %}?v=6"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab
   document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {
