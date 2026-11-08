@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from ..models import CardType, ErpTransaction, SystemConfiguration
+from .erp_corrections import overlay_on_instances
 from .column_detector import (
     TRANSBANK_USD_COLUMN_RULES,
     clean_code_string, normalize_auth_code,
@@ -243,16 +244,21 @@ def calculate_usd_preview(
             seen_erp_signatures.add(sig)
             inst.source_file = source_name
             erp_instances.append(inst)
-            if inst.authorization_code:
-                erp_by_auth_code.setdefault(inst.authorization_code, []).append({
-                    "instance": inst,
-                    "document_number": inst.document_number,
-                    "invoice_number": inst.invoice_number,
-                    "amount_clp": inst.amount,
-                    "payment_code": inst.payment_code,
-                    "card_code": inst.card_type.code if inst.card_type else "",
-                    "source_file": source_name,
-                })
+
+    # Corrections saved in the DB win over the Excel, so a re-upload does not undo them
+    erp_instances, corrected_erp_count, deleted_erp_count = overlay_on_instances(erp_instances, source_currency="USD")
+
+    for inst in erp_instances:
+        if inst.authorization_code:
+            erp_by_auth_code.setdefault(inst.authorization_code, []).append({
+                "instance": inst,
+                "document_number": inst.document_number,
+                "invoice_number": inst.invoice_number,
+                "amount_clp": inst.amount,
+                "payment_code": inst.payment_code,
+                "card_code": inst.card_type.code if inst.card_type else "",
+                "source_file": inst.source_file,
+            })
 
     for idx, erp_item in enumerate(erp_instances):
         erp_item._memory_index = idx
@@ -420,6 +426,7 @@ def calculate_usd_preview(
             "transaction_time": e.transaction_time.strftime("%H:%M:%S") if e.transaction_time else None,
             "cashier_username": e.cashier_username, "guest_name": e.guest_name,
             "amount": float(e.amount), "source_currency": e.source_currency, "reconciled": e.reconciled,
+            "source_key": e.source_key, "is_corrected": getattr(e, "is_corrected", False),
         }
         for e in erp_instances
     ]
@@ -464,6 +471,7 @@ def calculate_usd_preview(
         "discrepancy_vouchers": discrepancy_vouchers,
         "orphan_vouchers": orphan_vouchers,
         "tolerance": float(usd_tolerance),
+        "erp_corrections_applied": {"corrected": corrected_erp_count, "deleted": deleted_erp_count},
         "counts": {
             "matched": len(matched_vouchers),
             "discrepancies": len(discrepancy_vouchers),

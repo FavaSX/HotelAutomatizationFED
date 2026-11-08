@@ -23,6 +23,7 @@ from ..models import (
     TransbankTransaction,
 )
 from .column_detector import safe_date, safe_time
+from .erp_corrections import source_key_for_raw
 
 
 def to_decimal(value: Any) -> Decimal:
@@ -98,19 +99,20 @@ def sync_erp_transactions_by_currency(
     doc_field: str = "document_number",
 ) -> List[ErpTransaction]:
     """
-    Deduplicates and bulk-syncs ErpTransaction rows for a specific currency ('USD' or 'CLP')
-    using the natural key: (document_number, invoice_number, authorization_code, amount, date, time).
+    Deduplicates and bulk-syncs ErpTransaction rows for a specific currency ('USD' or 'CLP') by their
+    fingerprint (`source_key`): the natural key (document, invoice, authorization, amount, date, time) of
+    the ORIGINAL Excel row. A row the accountant corrected is still found, and is never overwritten by the
+    Excel values; a soft-deleted row is found too and stays deleted.
     """
-    incoming_docs = {e.get(doc_field) or e.get("account_code") or "" for e in erp_raw}
+    incoming_keys = {source_key_for_raw(e, source_currency, doc_field) for e in erp_raw}
     existing_qs = (
-        ErpTransaction.objects.filter(source_currency=source_currency, document_number__in=incoming_docs)
-        if incoming_docs
-        else ErpTransaction.objects.none()
+        ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=incoming_keys)
+        if incoming_keys
+        else ErpTransaction.all_objects.none()
     )
-    existing_map = {
-        (e.document_number or "", e.invoice_number or "", e.authorization_code or "", e.amount, e.transaction_date, e.transaction_time): e
-        for e in existing_qs
-    }
+    existing_map: Dict[str, ErpTransaction] = {}
+    for existing in existing_qs.order_by("id"):
+        existing_map.setdefault(existing.source_key, existing)  # oldest wins if old uploads left duplicates
 
     erp_models: List[ErpTransaction] = []
     new_erp: List[ErpTransaction] = []
@@ -125,7 +127,7 @@ def sync_erp_transactions_by_currency(
         time_val = safe_time(e_data.get("transaction_time"))
         rec_val = e_data.get("reconciled", False)
 
-        natural_key = (doc_val, inv_val, auth_val, amt_val, date_val, time_val)
+        natural_key = source_key_for_raw(e_data, source_currency, doc_field)
         existing_obj = existing_map.get(natural_key)
         if existing_obj is not None:
             if rec_val and not existing_obj.reconciled:
@@ -152,6 +154,8 @@ def sync_erp_transactions_by_currency(
             amount=amt_val,
             source_currency=e_data.get("source_currency", source_currency),
             reconciled=rec_val,
+            origin=ErpTransaction.ORIGIN_EXCEL,
+            source_key=natural_key,
         )
         existing_map[natural_key] = new_obj
         new_erp.append(new_obj)

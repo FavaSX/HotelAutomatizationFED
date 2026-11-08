@@ -11,6 +11,7 @@ from .models import (
     BankStatementMovement,
     CrossMatchResult,
     ErpTransaction,
+    ErpTransactionChange,
     ReconciliationProcess,
     SystemConfiguration,
     TransbankTransaction,
@@ -19,6 +20,7 @@ from .services import calculate_clp_preview, commit_clp_preview_to_database, det
 from .services.clp_reconciliation import get_clp_tolerance
 from .services.column_detector import normalize_auth_code, safe_date
 from .services.clp_report_exporter import generate_committed_clp_excel_bytes
+from .services.erp_corrections import erp_source_key
 from .services.exception_resolution import resolve_exception
 
 
@@ -646,3 +648,72 @@ class ExceptionResolutionSurvivesReuploadTests(TestCase):
         commit_clp_preview_to_database(user, calculate_clp_preview(**build_clp_files()))
         exception.refresh_from_db()
         self.assertEqual(exception.management_status.code, "RESOLVED_ADJUSTMENT")
+
+
+class ErpCorrectionsSurviveReuploadTests(TestCase):
+    """Momento 3 of the corrections flow: a new upload of the same Bordero must not undo a correction."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+
+    def _correct(self, row, field_name, new_value):
+        # Stand-in for the PR 2 service: change the row and record it in the history
+        ErpTransactionChange.objects.create(
+            erp_transaction=row, field_name=field_name, old_value=str(getattr(row, field_name)),
+            new_value=str(new_value), user=self.user, source=ErpTransactionChange.SOURCE_MANUAL,
+        )
+        setattr(row, field_name, new_value)
+        row.save()
+
+    def test_every_excel_row_gets_the_fingerprint_of_its_original_values(self):
+        rows = ErpTransaction.objects.all()
+        self.assertTrue(rows.exists())
+        for row in rows:
+            self.assertEqual(row.origin, ErpTransaction.ORIGIN_EXCEL)
+            self.assertEqual(row.source_key, erp_source_key(
+                "CLP", row.document_number, row.invoice_number, row.authorization_code,
+                row.amount, row.transaction_date, row.transaction_time,
+            ))
+
+    def test_corrected_amount_is_kept_and_the_voucher_stays_matched(self):
+        self.assertEqual(self.process.cross_match_results.get(authorization_code="007626").system_result, "AMOUNT_MISMATCH")
+        row = ErpTransaction.objects.get(authorization_code="7626")
+        original_key = row.source_key
+        self._correct(row, "amount", Decimal("115204.00"))
+        erp_count = ErpTransaction.all_objects.count()
+
+        preview = calculate_clp_preview(**build_clp_files())
+        self.assertEqual(preview["erp_corrections_applied"], {"corrected": 1, "deleted": 0})
+        self.assertEqual(_by_code(preview, "matched_vouchers")["007626"]["difference"], 0)
+        commit_clp_preview_to_database(self.user, preview)
+
+        row.refresh_from_db()
+        self.assertEqual(row.amount, Decimal("115204.00"))
+        self.assertEqual(row.source_key, original_key)
+        self.assertEqual(ErpTransaction.all_objects.count(), erp_count)  # the typo did not come back as a new row
+        self.assertEqual(self.process.cross_match_results.get(authorization_code="007626").system_result, "MATCHED")
+
+    def test_soft_deleted_row_stays_deleted_and_out_of_the_cross_match(self):
+        row = ErpTransaction.objects.get(authorization_code="112233")
+        ErpTransactionChange.objects.create(
+            erp_transaction=row, field_name=ErpTransactionChange.FIELD_DELETED, user=self.user,
+            source=ErpTransactionChange.SOURCE_MANUAL, reason="Fila duplicada",
+        )
+        row.is_deleted = True
+        row.save()
+        erp_count = ErpTransaction.all_objects.count()
+
+        preview = calculate_clp_preview(**build_clp_files())
+        self.assertEqual(preview["erp_corrections_applied"], {"corrected": 0, "deleted": 1})
+        self.assertIn("112233", _by_code(preview, "orphan_vouchers"))
+        commit_clp_preview_to_database(self.user, preview)
+
+        self.assertEqual(ErpTransaction.all_objects.count(), erp_count)
+        self.assertFalse(ErpTransaction.objects.filter(authorization_code="112233").exists())
+        self.assertTrue(ErpTransaction.all_objects.get(pk=row.pk).is_deleted)
+
+    def test_a_row_without_history_is_left_as_the_excel_says(self):
+        preview = calculate_clp_preview(**build_clp_files())
+        self.assertEqual(preview["erp_corrections_applied"], {"corrected": 0, "deleted": 0})
+        self.assertTrue(all(r["source_key"] for r in preview["erp_transactions"]))
