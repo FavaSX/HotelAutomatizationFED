@@ -30,6 +30,8 @@ from .exceptions import (
     exception_erp_add_view,
     exception_erp_delete_view,
     exception_erp_edit_view,
+    exception_suggestion_accept_view,
+    exception_suggestion_reject_view,
     exceptions_view,
     exceptions_export_view,
     exception_resolve_view,
@@ -60,6 +62,8 @@ __all__ = [
     "exception_erp_edit_view",
     "exception_erp_add_view",
     "exception_erp_delete_view",
+    "exception_suggestion_accept_view",
+    "exception_suggestion_reject_view",
     "clear_test_database_view",
     "settings_view",
 ]

@@ -245,11 +245,38 @@
         {% endif %}
         {% if e.action %}
         <div class="alert alert-info small py-2"><i class="bi bi-lightbulb me-1"></i><strong>Acción sugerida:</strong> {{ e.action }}</div>
-        {% elif e.suggestion %}
+        {% elif e.suggestion and not e.is_clp %}
         <div class="alert alert-info small py-2">
           <i class="bi bi-lightbulb me-1"></i><strong>Sugerencia nivel 2 ({{ e.suggestion.confidence|default:"MEDIA"|lower }}):</strong> {{ e.suggestion.headline }}
           {% if e.suggestion.manual_check_note %}<div class="mt-1">{{ e.suggestion.manual_check_note }}</div>{% endif %}
         </div>
+        {% endif %}
+
+        {% if e.proposal %}
+        <div class="suggestion-change mb-3">
+          <div class="small fw-bold mb-1"><i class="bi bi-magic me-1"></i>Cambio sugerido en el ERP</div>
+          <div class="font-mono small mb-2">{{ e.proposal.label }}</div>
+          <div class="small text-muted mb-2">Aceptar cambia la fila del ERP, lo deja en el historial y vuelve a cruzar el voucher. Rechazar no toca el ERP.</div>
+          <div class="d-flex flex-wrap gap-2 align-items-start">
+            <form method="post" action="{% url 'exception_suggestion_accept' e.id %}">
+              {% csrf_token %}
+              <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+              <button type="submit" class="btn btn-success btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-check2 me-1"></i>Aceptar</button>
+            </form>
+            <details class="flex-grow-1">
+              <summary class="btn btn-outline-secondary btn-sm rounded-pill px-3 fw-semibold">Rechazar</summary>
+              <form method="post" action="{% url 'exception_suggestion_reject' e.id %}" class="mt-2">
+                {% csrf_token %}
+                <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+                <label class="form-label small mb-0" for="rej-{{ e.id }}">¿Por qué? (opcional)</label>
+                <input id="rej-{{ e.id }}" name="comment" class="form-control form-control-sm mb-2" maxlength="500">
+                <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3 fw-semibold">Confirmar rechazo</button>
+              </form>
+            </details>
+          </div>
+        </div>
+        {% elif e.is_rejected %}
+        <div class="alert alert-secondary small py-2"><i class="bi bi-x-circle me-1"></i>La sugerencia se rechazó y el ERP no se tocó. Puedes corregir el ERP a mano aquí abajo o marcar el caso como resuelto.</div>
         {% endif %}
 
         {% if e.can_correct %}

@@ -29,6 +29,7 @@ from ..services.erp_editing import (
     soft_delete_row,
 )
 from ..services.exception_resolution import ResolutionError, reopen_exception, resolve_exception
+from ..services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion
 from ..services.voucher_recross import RecrossError
 from ..services.report_exporter import generate_exceptions_excel_bytes
 from .dashboard import CLP_EXCEPTION_LABELS, EXCEPTION_LABELS, _exception_label, _split_status_detail
@@ -116,12 +117,10 @@ def _decorate_exception(item, today):
     if item.is_clp:
         _, error_type, item.action = _split_status_detail(item.system_status_detail)
         item.type_label = error_type or item.type_label
-    elif item.auditor_comment:
-        try:
-            suggestion = json.loads(item.auditor_comment)
-            item.suggestion = suggestion if isinstance(suggestion, dict) else None
-        except ValueError:
-            pass
+    item.suggestion = load_suggestion(item)
+    item.proposed_change = (item.suggestion or {}).get("proposed_change")
+    # Opción A: one-click Aceptar / Rechazar while the case is open and nobody decided on the change yet
+    item.proposal = open_proposal(item) if item.is_pending and not item.is_rejected else None
     return item
 
 
@@ -298,6 +297,26 @@ def exception_erp_delete_view(request, match_id: int, row_id: int):
         lambda match: soft_delete_row(_erp_row(match, row_id), request.user, request.POST.get("reason", ""), match=match),
         "fila eliminada del ERP",
     )
+
+
+@login_required(login_url="login")
+@require_POST
+def exception_suggestion_accept_view(request, match_id: int):
+    return _correction_view(request, match_id, lambda match: accept_suggestion(match, request.user), "sugerencia aceptada")
+
+
+@login_required(login_url="login")
+@require_POST
+def exception_suggestion_reject_view(request, match_id: int):
+    match = get_object_or_404(CrossMatchResult.objects.select_related("management_status"), pk=match_id)
+    try:
+        reject_suggestion(match, request.user, request.POST.get("comment", ""))
+        messages.info(
+            request, f"Voucher {match.authorization_code}: sugerencia rechazada. El ERP no se tocó; el caso sigue abierto para corregirlo a mano."
+        )
+    except CorrectionError as exc:
+        messages.error(request, f"Voucher {match.authorization_code}: {exc}")
+    return _back_to_inbox(request)
 
 
 @login_required(login_url="login")

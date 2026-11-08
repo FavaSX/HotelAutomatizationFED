@@ -26,6 +26,7 @@ from .services.column_detector import normalize_auth_code, safe_date
 from .services.clp_report_exporter import generate_committed_clp_excel_bytes
 from .services.erp_corrections import erp_source_key
 from .services.erp_editing import CorrectionError, add_row, edit_row, soft_delete_row
+from .services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion
 from .services.exception_resolution import resolve_exception
 
 
@@ -883,3 +884,79 @@ class UsdVoucherRecrossTests(TestCase):
         self.assertTrue(outcome["matched"])
         case.refresh_from_db()
         self.assertEqual((case.system_result, case.erp_transaction, case.difference_usd), ("MATCHED", row, Decimal("0.00")))
+
+
+
+class SuggestionAcceptRejectTests(TestCase):
+    """Opción A: a suggestion carries one concrete change that the accountant accepts or rejects."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+
+    def _case(self, code):
+        return self.process.cross_match_results.select_related(
+            "process", "transbank_transaction", "card_type", "management_status"
+        ).get(authorization_code=code)
+
+    def test_typo_suggestion_names_the_row_field_and_value(self):
+        proposal = open_proposal(self._case("F0FUAZ"))
+        row = ErpTransaction.objects.get(pk=proposal["erp_id"])
+        self.assertEqual(row.authorization_code, "0FOFUAZ")
+        self.assertEqual((proposal["field"], proposal["old"], proposal["new"]), ("authorization_code", "0FOFUAZ", "F0FUAZ"))
+
+    def test_accepting_fixes_the_erp_matches_and_survives_a_reupload(self):
+        case = self._case("F0FUAZ")
+        outcome = accept_suggestion(case, self.user)
+        self.assertTrue(outcome["matched"])
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        change = ErpTransactionChange.objects.get(cross_match_result=case)
+        self.assertEqual(change.source, ErpTransactionChange.SOURCE_SUGGESTION)
+        self.assertEqual(load_suggestion(case)["proposed_change"]["status"], "accepted")
+        with self.assertRaises(CorrectionError):
+            accept_suggestion(case, self.user)  # already used
+
+        commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+
+    def test_amount_suggestion_and_rejecting_leaves_the_erp_alone(self):
+        case = self._case("007626")
+        proposal = open_proposal(case)
+        self.assertEqual((proposal["field"], proposal["old"], proposal["new"]), ("amount", "113700.00", "115204.00"))
+
+        reject_suggestion(case, self.user, "El voucher físico dice 113.700")
+        case.refresh_from_db()
+        self.assertEqual(case.management_status.code, "REJECTED")
+        self.assertEqual(case.erp_transaction.amount, Decimal("113700.00"))
+        self.assertFalse(ErpTransactionChange.objects.exists())
+        self.assertIsNone(open_proposal(case))
+        self.assertIn("Sugerencia rechazada", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
+
+        # Rejected stays open: it can still be fixed by hand (Opción B)
+        outcome = edit_row(case.erp_transaction, {"amount": "115204"}, self.user, match=case)
+        self.assertTrue(outcome["matched"])
+
+    def test_accepting_after_the_row_changed_is_refused(self):
+        case = self._case("007626")
+        row = case.erp_transaction
+        row.amount = Decimal("114000")
+        row.save()
+        with self.assertRaises(CorrectionError):
+            accept_suggestion(case, self.user)
+
+    def test_inbox_buttons_and_counters(self):
+        self.client.force_login(self.user)
+        case = self._case("F0FUAZ")
+        page = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(page, "Cambio sugerido en el ERP")
+        self.assertContains(page, reverse("exception_suggestion_accept", args=[case.id]))
+
+        other = self._case("007626")
+        response = self.client.post(reverse("exception_suggestion_reject", args=[other.id]), {"return_query": "moneda=clp"}, follow=True)
+        self.assertContains(response, "sugerencia rechazada")
+        self.assertContains(response, "Rechazada")  # still listed with the open cases
+
+        response = self.client.post(reverse("exception_suggestion_accept", args=[case.id]), {"return_query": "moneda=clp"}, follow=True)
+        self.assertContains(response, "Corregido en ERP")

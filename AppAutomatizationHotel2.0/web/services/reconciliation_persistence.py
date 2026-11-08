@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..templatetags.currency_filters import format_observation
 from .column_detector import safe_date
+from .suggestion_actions import with_proposed_change
 from .persistence_common import (
     get_model_at,
     sync_bank_statement_movements,
@@ -218,7 +219,7 @@ def _sync_cross_match_results(
 
     def _build_entry(v_dict: Dict[str, Any], sys_result: str, status_detail: str, default_status):
         tbk_obj = get_model_at(tbk_models, v_dict.get("tbk_index"))
-        sug_payload = v_dict.get("suggestion")
+        sug_payload = with_proposed_change("USD", {**v_dict, "system_result": sys_result}, v_dict.get("suggestion"), erp_models)
         match_fields = {
             "process": process,
             "card_type": card_types.get(v_dict["card_code"], card_types.get("VI")),

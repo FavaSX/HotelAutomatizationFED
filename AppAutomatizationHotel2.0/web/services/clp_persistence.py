@@ -18,6 +18,7 @@ from ..models import (
     TransbankTransaction,
 )
 from .column_detector import safe_date
+from .suggestion_actions import with_proposed_change
 from .persistence_common import (
     get_model_at,
     sync_bank_statement_movements,
@@ -173,7 +174,7 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
             for v_dict in preview.get(bucket, []):
                 sys_result = v_dict["system_result"]
                 default_status = accepted_status if sys_result == "MATCHED" else pending_status
-                suggestion = v_dict.get("suggestion")
+                suggestion = with_proposed_change("CLP", v_dict, v_dict.get("suggestion"), erp_models)
                 observation = v_dict.get("observation", "")
                 if suggestion:
                     observation = f"{observation} | Sugerencia: {suggestion['headline']}"
