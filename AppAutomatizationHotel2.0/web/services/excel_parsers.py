@@ -486,6 +486,9 @@ def parse_universal_transbank_clp(files_or_dfs: List[Any]) -> Dict[str, Dict[str
             auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
             if not auth_code:
                 continue
+            # The detail header spans two rows; the second one ("Código de autorización de venta") is not a sale
+            if "autoriz" in normalize_text(auth_code):
+                continue
 
             movement_type = normalize_text(safe_cell(row, columns["movement_type"]))
             is_void = "anulac" in movement_type or "devoluc" in movement_type
