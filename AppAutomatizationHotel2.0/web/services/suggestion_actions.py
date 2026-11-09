@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from django.db import transaction
 
 from ..models import AuditResolutionLog, CrossMatchResult, ErpTransaction, ErpTransactionChange, ReconciliationStatus
-from .column_detector import normalize_auth_code
+from .column_detector import normalize_auth_code, safe_date
 from .erp_editing import (
     FIELD_LABELS,
     OPEN_STATUS_CODES,
@@ -50,13 +50,13 @@ def _credit_code_for(currency: str, card_code: str) -> Optional[str]:
     return None
 
 
-def _concrete_change(currency: str, voucher: Dict[str, Any], suggestion: Dict[str, Any], row: ErpTransaction):
-    """(field, new value) the suggestion implies for `row`, or None when it is not a one-field fix."""
+def _concrete_change(currency: str, voucher: Dict[str, Any], suggestion: Dict[str, Any], row_code: Any):
+    """(field, new value) the suggestion implies for the row with code `row_code`, or None when it is not a one-field fix."""
     result = voucher.get("system_result")
     voucher_code = str(voucher.get("authorization_code") or "").strip().upper()
 
     if result in ("NOT_FOUND_IN_ERP", "OUT_OF_PERIOD"):
-        if voucher_code and normalize_auth_code(row.authorization_code or "") != normalize_auth_code(voucher_code):
+        if voucher_code and normalize_auth_code(row_code or "") != normalize_auth_code(voucher_code):
             return "authorization_code", voucher_code
         return None
     if currency != "CLP":
@@ -82,17 +82,18 @@ def with_proposed_change(
     """Returns the suggestion with `proposed_change` added when it maps to one field of one saved row."""
     if not suggestion:
         return suggestion
+    # The preview proposal points at preview positions; the saved one must point at database ids
+    suggestion = {k: v for k, v in suggestion.items() if k != "proposed_change"}
     row = _target_row(suggestion, erp_models)
     if row is None or row.pk is None:
         return suggestion
-    change = _concrete_change(currency, voucher, suggestion, row)
+    change = _concrete_change(currency, voucher, suggestion, row.authorization_code)
     if change is None:
         return suggestion
     field_name, new_value = change
     old_value = getattr(row, field_name)
-    if field_name == "amount":
-        new_value = f"{Decimal(str(new_value)):.2f}"
-    if _as_text(old_value) == _as_text(new_value):
+    new_value = _normalized_text(field_name, new_value)
+    if _as_text(old_value) == new_value:
         return suggestion
     return {
         **suggestion,
@@ -107,6 +108,87 @@ def with_proposed_change(
             ),
         },
     }
+
+
+def _normalized_text(field_name: str, value: Any) -> str:
+    """Value as the history stores it: amounts with 2 decimals, dates in ISO format."""
+    if value in (None, ""):
+        return ""
+    if field_name == "amount":
+        return f"{Decimal(str(value)):.2f}"
+    if field_name == "transaction_date":
+        parsed = safe_date(value)
+        return parsed.isoformat() if parsed else str(value)
+    return str(value)
+
+
+def preview_proposal(currency: str, voucher: Dict[str, Any], erp_rows: List[Dict[str, Any]], doc_field: str):
+    """
+    Same concrete change as `with_proposed_change`, computed in the preview (step 2) before anything is saved.
+    The target is a preview row (`erp_index`) or, for a sale found in the database, that row (`erp_id`).
+    """
+    suggestion = voucher.get("suggestion")
+    if not suggestion:
+        return None
+    db_id = (suggestion.get("db_match") or {}).get("transaction_id")
+    erp_index = None
+    if db_id:
+        row = ErpTransaction.objects.filter(pk=db_id).first()
+        if row is None:
+            return None
+        row_code, document = row.authorization_code, row.document_number
+        values = {f: getattr(row, f) for f in ("amount", "authorization_code", "transaction_date", "payment_code")}
+    else:
+        erp_index = suggestion.get("erp_index")
+        if erp_index is None or not (0 <= erp_index < len(erp_rows)):
+            return None
+        e_data = erp_rows[erp_index]
+        row_code, document = e_data.get("authorization_code"), e_data.get(doc_field) or e_data.get("account_code")
+        values = {f: e_data.get(f) for f in ("amount", "authorization_code", "transaction_date", "payment_code")}
+
+    change = _concrete_change(currency, voucher, suggestion, row_code)
+    if change is None:
+        return None
+    field_name, new_value = change
+    old_text = _normalized_text(field_name, values[field_name])
+    new_text = _normalized_text(field_name, new_value)
+    if old_text == new_text:
+        return None
+    return {
+        "erp_index": erp_index,
+        "erp_id": db_id,
+        "field": field_name,
+        "old": old_text,
+        "new": new_text,
+        "label": proposal_label(document, field_name, old_text, new_text, currency),
+    }
+
+
+def proposal_label(document: Any, field_name: str, old: Any, new: Any, currency: str) -> str:
+    return (
+        f"Doc {document or '—'} · {FIELD_LABELS[field_name]}: "
+        f"{display_value(field_name, old, currency)} → {display_value(field_name, new, currency)}"
+    )
+
+
+def attach_preview_proposals(preview: Dict[str, Any], currency: str, doc_field: str) -> None:
+    """Adds `proposed_change` to every preview suggestion that is a one-field fix (keeps the ones already applied)."""
+    applied = {entry["tbk_index"]: entry for entry in preview.get("pending_corrections", [])}
+    erp_rows = preview.get("erp_transactions", [])
+    for bucket in ("discrepancy_vouchers", "orphan_vouchers", "out_of_period_vouchers"):
+        for voucher in preview.get(bucket, []):
+            suggestion = voucher.get("suggestion")
+            if not suggestion:
+                continue
+            entry = applied.get(voucher.get("tbk_index"))
+            if entry:
+                suggestion["proposed_change"] = {**entry["proposal"], "status": "applied"}
+                continue
+            proposal = preview_proposal(currency, voucher, erp_rows, doc_field)
+            if proposal:
+                suggestion["proposed_change"] = proposal
+            else:
+                suggestion.pop("proposed_change", None)
 
 
 # ------------------------------------------------------------------------------
@@ -147,17 +229,20 @@ def _require_open(match: CrossMatchResult) -> Dict[str, Any]:
 
 
 @transaction.atomic
-def accept_suggestion(match: CrossMatchResult, user) -> Dict[str, Any]:
+def accept_suggestion(match: CrossMatchResult, user, value: Any = None) -> Dict[str, Any]:
+    """Applies the suggested change; `value` lets the accountant adjust the suggested value before accepting."""
     suggestion = _require_open(match)
     proposal = suggestion["proposed_change"]
+    new_value = value if value not in (None, "") else proposal["new"]
     row = ErpTransaction.objects.filter(pk=proposal["erp_id"]).first()
     if row is None:
         raise CorrectionError("La fila de la sugerencia ya no está en el ERP (fue eliminada). Corrígelo a mano.")
     if _as_text(getattr(row, proposal["field"])) != proposal["old"]:
         raise CorrectionError("La fila cambió desde que se hizo la sugerencia. Revísala y corrígela a mano.")
     outcome = edit_row(
-        row, {proposal["field"]: proposal["new"]}, user, match=match,
-        source=ErpTransactionChange.SOURCE_SUGGESTION, reason="Sugerencia aceptada",
+        row, {proposal["field"]: new_value}, user, match=match,
+        source=ErpTransactionChange.SOURCE_SUGGESTION,
+        reason="Sugerencia aceptada" if new_value == proposal["new"] else "Sugerencia aceptada con el valor ajustado",
     )
     _mark(match, suggestion, ACCEPTED)
     return outcome

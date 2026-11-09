@@ -119,6 +119,7 @@ function renderClpSuggestionCard(voucher, idx) {
         `</div>` +
       `</div>` +
       `${actionHtml}` +
+      `${typeof renderProposalBlock === 'function' ? renderProposalBlock(voucher) : ''}` +
     `</div>`
   );
 }

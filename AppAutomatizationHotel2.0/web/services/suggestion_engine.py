@@ -692,4 +692,6 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
         "orphans_without": len(orphan_vouchers) - orph_with,
         "orphans_total": len(orphan_vouchers),
     }
+    from .suggestion_actions import attach_preview_proposals
+    attach_preview_proposals(preview_data, "USD", "document_number")
     return preview_data

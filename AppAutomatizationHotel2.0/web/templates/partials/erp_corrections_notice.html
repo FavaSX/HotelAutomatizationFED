@@ -1,4 +1,16 @@
 {% load currency_filters %}
+<div id="previewCorrectionNotice" class="alert alert-success small border-0 mb-3" role="status" hidden>
+  <i class="bi bi-check2-circle me-1"></i><span data-text></span>
+</div>
+{% with pending=preview.pending_corrections %}
+{% if pending %}
+<div class="alert alert-info small border-0 mb-3" role="status">
+  <i class="bi bi-pencil-square me-1"></i><strong>{{ pending|length }} corrección{{ pending|length|pluralize:"es" }} del ERP aceptada{{ pending|length|pluralize }} en este paso.</strong>
+  Se escriben en el ERP, con historial, cuando confirmes el cierre.
+  <ul class="mb-0 mt-1">{% for p in pending %}<li class="font-mono">{{ p.proposal.label }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% endwith %}
 {% with c=preview.erp_corrections_applied %}
 {% if c.corrected or c.deleted or c.manual %}
 <div class="alert alert-info small border-0 mb-3" role="status">

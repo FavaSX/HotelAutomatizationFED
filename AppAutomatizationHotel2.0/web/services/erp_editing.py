@@ -175,9 +175,11 @@ def _affected_matches(row: ErpTransaction, match: Optional[CrossMatchResult]) ->
     return ([match] if match else []) + others
 
 
-def _settle_case(match: CrossMatchResult, user, summary: str) -> Dict[str, Any]:
+def _settle_case(match: CrossMatchResult, user, summary: str, previous_result: Optional[str] = None) -> Dict[str, Any]:
     """Crosses the voucher again and moves the case to Corregido en ERP / Pendiente, with its log."""
     outcome = recross_voucher(match)
+    if previous_result:
+        outcome["previous_result"] = previous_result  # result before a step-2 correction already moved it
     previous_status = match.management_status
     matched = outcome["system_result"] == "MATCHED"
     new_status = ReconciliationStatus.objects.get(code=FIXED_STATUS_CODE if matched else "PENDING")
@@ -198,8 +200,12 @@ def _settle_case(match: CrossMatchResult, user, summary: str) -> Dict[str, Any]:
     return {"match": match, "matched": matched, **outcome}
 
 
-def _settle_all(row: ErpTransaction, match: Optional[CrossMatchResult], user, summary: str) -> Dict[str, Any]:
-    results = [_settle_case(m, user, summary) for m in _affected_matches(row, match)]
+def _settle_all(
+    row: ErpTransaction, match: Optional[CrossMatchResult], user, summary: str, previous_result: Optional[str] = None
+) -> Dict[str, Any]:
+    results = [
+        _settle_case(m, user, summary, previous_result if m is match else None) for m in _affected_matches(row, match)
+    ]
     return results[0] if results else {"match": None, "matched": False}
 
 
@@ -222,6 +228,7 @@ def edit_row(
     match: Optional[CrossMatchResult] = None,
     source: str = ErpTransactionChange.SOURCE_MANUAL,
     reason: str = "",
+    previous_result: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Opción B "la fila existe" (and Opción A "Aceptar"): changes the given fields of a Bordero row."""
     if row.is_deleted:
@@ -256,7 +263,7 @@ def edit_row(
     summary += ": " + "; ".join(
         f"{FIELD_LABELS[f]} {display_value(f, o, currency)} → {display_value(f, n, currency)}" for f, o, n in changes
     )
-    return _settle_all(row, match, user, summary)
+    return _settle_all(row, match, user, summary, previous_result)
 
 
 @transaction.atomic

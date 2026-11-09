@@ -117,6 +117,62 @@
   </div>
 </form>
 
+<!-- Suggested ERP corrections, ready to accept without opening each case -->
+{% if suggestion_items %}
+<section class="card card-executive mb-3 suggestion-inbox" aria-labelledby="sug-panel-title">
+  <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div>
+      <h6 class="fw-bold mb-0" id="sug-panel-title"><i class="bi bi-magic me-1"></i>Correcciones sugeridas en el ERP <span class="badge rounded-pill badge-brand-pill ms-1">{{ suggestion_total }}</span></h6>
+      <div class="text-muted small">Revisa el valor nuevo (puedes editarlo) y acepta: se corrige el ERP con historial y el voucher se vuelve a cruzar. Rechazar no toca el ERP.</div>
+    </div>
+    {% if suggestion_total > suggestion_items|length %}<span class="small text-muted">Mostrando {{ suggestion_items|length }} de {{ suggestion_total }}</span>{% endif %}
+  </div>
+  <div class="table-responsive">
+    <table class="table table-dash align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Voucher</th>
+          <th>Tipo</th>
+          <th>Cambio sugerido</th>
+          <th>Valor nuevo</th>
+          <th class="text-end">Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in suggestion_items %}
+        <tr>
+          <td>
+            <div class="fw-semibold font-mono">{{ s.authorization_code }}</div>
+            <div class="text-muted small">{% if s.is_clp %}$ {{ s.transbank_amount|num_clp }}{% else %}US$ {{ s.transbank_amount|num_usd }}{% endif %}{% if s.sale_date %} · {{ s.sale_date|date:"d/m/Y" }}{% endif %}</div>
+          </td>
+          <td><span class="status-chip {% if s.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}">{{ s.type_label }}</span></td>
+          <td class="small font-mono">{{ s.proposal.label }}</td>
+          <td colspan="2">
+            <form method="post" action="{% url 'exception_suggestion_accept' s.id %}" class="d-flex flex-wrap align-items-center justify-content-end gap-2">
+              {% csrf_token %}
+              <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+              <label class="visually-hidden" for="sugval-{{ s.id }}">Valor nuevo para el voucher {{ s.authorization_code }}</label>
+              {% if s.proposal_input == "date" %}
+              <input id="sugval-{{ s.id }}" type="date" name="value" class="form-control form-control-sm w-auto" value="{{ s.proposal.new }}">
+              {% elif s.proposal_input == "select" %}
+              <select id="sugval-{{ s.id }}" name="value" class="form-select form-select-sm w-auto">
+                {% for code, label, card in panel_payment_choices %}<option value="{{ code }}" {% if code == s.proposal.new %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select>
+              {% else %}
+              <input id="sugval-{{ s.id }}" name="value" class="form-control form-control-sm font-mono w-auto" value="{{ s.proposal_value }}" {% if s.proposal.field == "amount" %}inputmode="decimal"{% endif %}>
+              {% endif %}
+              <button type="submit" class="btn btn-success btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-check2 me-1"></i>Aceptar</button>
+              <button type="submit" formaction="{% url 'exception_suggestion_reject' s.id %}" formnovalidate class="btn btn-outline-secondary btn-sm rounded-pill px-3 fw-semibold">Rechazar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
 <!-- Inbox -->
 <section class="card card-executive">
   {% if rows %}
@@ -258,9 +314,13 @@
           <div class="font-mono small mb-2">{{ e.proposal.label }}</div>
           <div class="small text-muted mb-2">Aceptar cambia la fila del ERP, lo deja en el historial y vuelve a cruzar el voucher. Rechazar no toca el ERP.</div>
           <div class="d-flex flex-wrap gap-2 align-items-start">
-            <form method="post" action="{% url 'exception_suggestion_accept' e.id %}">
+            <form method="post" action="{% url 'exception_suggestion_accept' e.id %}" class="d-flex flex-wrap align-items-end gap-2">
               {% csrf_token %}
               <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+              <div>
+                <label class="form-label small mb-0" for="modalval-{{ e.id }}">Valor nuevo (puedes editarlo)</label>
+                <input id="modalval-{{ e.id }}" name="value" {% if e.proposal.field == "transaction_date" %}type="date"{% endif %} class="form-control form-control-sm font-mono" value="{{ e.proposal_value }}">
+              </div>
               <button type="submit" class="btn btn-success btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-check2 me-1"></i>Aceptar</button>
             </form>
             <details class="flex-grow-1">

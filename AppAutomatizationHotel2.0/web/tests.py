@@ -26,6 +26,7 @@ from .services.column_detector import normalize_auth_code, safe_date
 from .services.clp_report_exporter import generate_committed_clp_excel_bytes
 from .services.erp_corrections import erp_source_key
 from .services.erp_editing import CorrectionError, add_row, edit_row, soft_delete_row
+from .services.preview_corrections import PreviewCorrectionError, apply_preview_correction
 from .services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion
 from .services.exception_resolution import resolve_exception
 
@@ -960,3 +961,92 @@ class SuggestionAcceptRejectTests(TestCase):
 
         response = self.client.post(reverse("exception_suggestion_accept", args=[case.id]), {"return_query": "moneda=clp"}, follow=True)
         self.assertContains(response, "Corregido en ERP")
+
+
+
+class PreviewCorrectionTests(TestCase):
+    """Step 2: a suggested correction is accepted (and may be adjusted) before the closing is saved."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.preview = calculate_clp_preview(**build_clp_files())
+
+    def _tbk_index(self, bucket, code):
+        return _by_code(self.preview, bucket)[code]["tbk_index"]
+
+    def test_the_preview_already_names_the_row_field_and_value(self):
+        proposal = _by_code(self.preview, "orphan_vouchers")["F0FUAZ"]["suggestion"]["proposed_change"]
+        self.assertEqual((proposal["field"], proposal["old"], proposal["new"]), ("authorization_code", "0FOFUAZ", "F0FUAZ"))
+        self.assertIsNotNone(proposal["erp_index"])
+
+    def test_applying_moves_the_voucher_to_matched_and_saving_writes_the_erp(self):
+        outcome = apply_preview_correction(self.preview, "CLP", self._tbk_index("orphan_vouchers", "F0FUAZ"), "")
+        self.assertTrue(outcome["matched"])
+        self.assertIn("F0FUAZ", _by_code(self.preview, "matched_vouchers"))
+        self.assertNotIn("F0FUAZ", _by_code(self.preview, "orphan_vouchers"))
+        self.assertEqual(self.preview["counts"]["matched"], 5)
+        with self.assertRaises(PreviewCorrectionError):
+            apply_preview_correction(self.preview, "CLP", self._tbk_index("matched_vouchers", "F0FUAZ"), "")
+
+        process = commit_clp_preview_to_database(self.user, self.preview)
+        case = process.cross_match_results.get(authorization_code="F0FUAZ")
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        row = case.erp_transaction
+        self.assertEqual(row.authorization_code, "F0FUAZ")
+        self.assertEqual(row.source_key, erp_source_key(  # fingerprint of the ORIGINAL Excel value
+            "CLP", row.document_number, row.invoice_number, "0FOFUAZ", row.amount, row.transaction_date, row.transaction_time))
+        change = ErpTransactionChange.objects.get(erp_transaction=row)
+        self.assertEqual((change.source, change.old_value, change.new_value), ("SUGGESTION", "0FOFUAZ", "F0FUAZ"))
+        self.assertIn("No está en el ERP → Cuadrado", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
+        erp_count = ErpTransaction.all_objects.count()
+
+        commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        self.assertEqual(ErpTransaction.all_objects.count(), erp_count)
+
+    def test_the_accountant_can_adjust_the_suggested_value(self):
+        idx = self._tbk_index("discrepancy_vouchers", "007626")
+        with self.assertRaises(PreviewCorrectionError):
+            apply_preview_correction(self.preview, "CLP", idx, "abc")
+        outcome = apply_preview_correction(self.preview, "CLP", idx, "115000")  # 204 within the ±1.000 tolerance
+        self.assertTrue(outcome["matched"])
+        process = commit_clp_preview_to_database(self.user, self.preview)
+        self.assertEqual(process.cross_match_results.get(authorization_code="007626").erp_transaction.amount, Decimal("115000.00"))
+
+    def test_preview_endpoint(self):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["clp_reconciliation_preview"] = self.preview
+        session.save()
+        url = reverse("clp_preview_correction")
+        idx = self._tbk_index("orphan_vouchers", "F0FUAZ")
+        response = self.client.post(url, data={"tbk_index": idx, "value": "F0FUAZ"}, content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["matched"])
+        again = self.client.post(url, data={"tbk_index": idx, "value": "F0FUAZ"}, content_type="application/json")
+        self.assertEqual(again.status_code, 400)
+        page = self.client.get(reverse("clp_preview"))
+        self.assertContains(page, "aceptada en este paso")
+
+
+class SuggestionPanelTests(TestCase):
+    """The inbox lists the suggested ERP corrections above the table, with an editable value."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        self.client.force_login(self.user)
+
+    def test_panel_lists_open_suggestions_and_accepts_an_edited_value(self):
+        page = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(page, "Correcciones sugeridas en el ERP")
+        case = self.process.cross_match_results.get(authorization_code="007626")
+        self.assertContains(page, f'id="sugval-{case.id}"')
+
+        self.client.post(reverse("exception_suggestion_accept", args=[case.id]), {"value": "115000", "return_query": "moneda=clp"})
+        case.refresh_from_db()
+        self.assertEqual(case.management_status.code, "RESOLVED_ERP_FIXED")
+        self.assertEqual(case.erp_transaction.amount, Decimal("115000.00"))
+        self.assertEqual(ErpTransactionChange.objects.get().reason, "Sugerencia aceptada con el valor ajustado")
+        self.assertNotContains(self.client.get(reverse("exceptions") + "?moneda=clp"), f'id="sugval-{case.id}"')

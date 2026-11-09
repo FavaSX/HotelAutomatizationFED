@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..templatetags.currency_filters import format_observation
 from .column_detector import safe_date
+from .preview_corrections import apply_pending_corrections
 from .suggestion_actions import with_proposed_change
 from .persistence_common import (
     get_model_at,
@@ -298,4 +299,6 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         operator_models = _sync_operator_transactions(process, preview.get("card_operator_transactions", []), card_types)
         _sync_summaries(process, preview, card_types)
         _sync_cross_match_results(process, user, preview, erp_models, tbk_models, operator_models, card_types)
+        # Corrections the accountant accepted in step 2: written to the ERP with history and re-cross
+        apply_pending_corrections(preview, erp_models, tbk_models, user)
         return process

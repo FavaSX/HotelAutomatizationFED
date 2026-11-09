@@ -260,6 +260,7 @@ function renderModalSuggestionsPage() {
                 `</div>` +
               `</div>` +
               `${actionHtml}` +
+              `${typeof renderProposalBlock === 'function' ? renderProposalBlock(v) : ''}` +
             `</div>`
           );
         }).join('');

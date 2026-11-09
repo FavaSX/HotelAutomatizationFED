@@ -585,4 +585,6 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
         "out_of_period_with": oop_with,
         "out_of_period_without": len(out_of_period) - oop_with,
     }
+    from .suggestion_actions import attach_preview_proposals
+    attach_preview_proposals(preview_data, "CLP", "account_code")
     return preview_data

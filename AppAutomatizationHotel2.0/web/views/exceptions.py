@@ -121,6 +121,10 @@ def _decorate_exception(item, today):
     item.proposed_change = (item.suggestion or {}).get("proposed_change")
     # Opción A: one-click Aceptar / Rechazar while the case is open and nobody decided on the change yet
     item.proposal = open_proposal(item) if item.is_pending and not item.is_rejected else None
+    if item.proposal:
+        new = item.proposal["new"]
+        # Pesos have no cents: show 67650, not 67650.00
+        item.proposal_value = new[:-3] if item.proposal["field"] == "amount" and new.endswith(".00") else new
     return item
 
 
@@ -149,6 +153,7 @@ def exceptions_view(request):
         item.erp_changes_list = changes.get(item.id, [])
         _add_correction_context(item, choices[item.process.process_currency])
 
+    suggestion_items, suggestion_total = _suggestion_panel(currency, today)
     totals = qs.aggregate(count=Count("id"), amount=Sum("transbank_amount"), oldest=Min("process__execution_date"))
     totals["oldest_days"] = (today - timezone.localtime(totals["oldest"]).date()).days if totals["oldest"] else None
 
@@ -179,7 +184,36 @@ def exceptions_view(request):
             id__in=currency_exceptions.values("card_type_id")
         ).order_by("name"),
         "form": ExceptionResolutionForm(),
+        "suggestion_items": suggestion_items,
+        "suggestion_total": suggestion_total,
+        "panel_payment_choices": choices[currency.upper()],
     })
+
+
+SUGGESTION_PANEL_LIMIT = 30
+
+
+def _suggestion_panel(currency, today):
+    """Open cases of the currency whose suggestion is a concrete ERP change, for the panel above the inbox table."""
+    qs = (
+        CrossMatchResult.objects.filter(
+            process__process_currency=currency.upper(), management_status__code="PENDING",
+            auditor_comment__contains='"proposed_change"',
+        )
+        .exclude(system_result="MATCHED")
+        .select_related("process", "card_type", "management_status", "transbank_transaction")
+        .order_by("process__execution_date", "-transbank_amount")
+    )
+    items = []
+    for item in qs[:200]:
+        _decorate_exception(item, today)
+        if item.proposal:
+            item.proposal_input = (
+                "date" if item.proposal["field"] == "transaction_date"
+                else "select" if item.proposal["field"] == "payment_code" else "text"
+            )
+            items.append(item)
+    return items[:SUGGESTION_PANEL_LIMIT], len(items)
 
 
 def _add_correction_context(item, choices):
@@ -302,7 +336,8 @@ def exception_erp_delete_view(request, match_id: int, row_id: int):
 @login_required(login_url="login")
 @require_POST
 def exception_suggestion_accept_view(request, match_id: int):
-    return _correction_view(request, match_id, lambda match: accept_suggestion(match, request.user), "sugerencia aceptada")
+    value = request.POST.get("value")
+    return _correction_view(request, match_id, lambda match: accept_suggestion(match, request.user, value), "sugerencia aceptada")
 
 
 @login_required(login_url="login")
