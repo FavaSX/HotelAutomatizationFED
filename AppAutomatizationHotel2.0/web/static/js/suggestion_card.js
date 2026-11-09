@@ -267,7 +267,7 @@ function scFix(v, opts) {
   const csrf = (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
   const back = opts.returnQuery || '';
   return (
-    `<form method="post" action="${scEsc(v.accept_url)}" class="sc-fix">${head}` +
+    `<form method="post" action="${scEsc(v.accept_url)}" class="sc-fix" data-inbox-fix="${scEsc(v.case_id)}">${head}` +
       `<input type="hidden" name="csrfmiddlewaretoken" value="${scEsc(csrf)}">` +
       `<input type="hidden" name="return_query" value="${scEsc(back)}">` +
       `<div class="sc-fix-row">` +
@@ -278,6 +278,7 @@ function scFix(v, opts) {
         `</div>` +
       `</div>` +
       `<p class="sc-hint">Aceptar corrige el ERP con historial y vuelve a cruzar el voucher. Rechazar no toca el ERP. Puedes editar el valor nuevo.</p>` +
+      `<div class="sc-error" role="alert" hidden></div>` +
     `</form>`
   );
 }
@@ -317,21 +318,98 @@ function renderSuggestionCard(v, currency, opts = {}) {
   );
 }
 
-/* Inbox: render every [data-suggestion-case] from the JSON map in #inboxSuggestionData */
+/* ------------------------------------------------------------------ */
+/* Inbox (Pendientes)                                                  */
+/* ------------------------------------------------------------------ */
+
+let scInboxPayload = { cases: {} };
+let scInboxChanges = 0;
+const SC_INBOX_NOTICE_KEY = 'inboxSuggestionNotice';
+
+function scRenderInboxCard(el) {
+  const item = scInboxPayload.cases[el.dataset.suggestionCase];
+  if (!item) return;
+  el.innerHTML = renderSuggestionCard(item, item.currency, {
+    mode: 'inbox',
+    index: el.dataset.index ? Number(el.dataset.index) : undefined,
+    suffix: el.dataset.suffix || '',
+    returnQuery: scInboxPayload.return_query || '',
+    choices: (scInboxPayload.payment_choices || {})[item.currency] || []
+  });
+}
+
+/* Aceptar / Rechazar inside a modal: no page reload, the card shows the result in place */
+async function scSubmitInboxFix(form, submitter) {
+  const item = scInboxPayload.cases[form.dataset.inboxFix];
+  const url = submitter && submitter.getAttribute('formaction') ? submitter.getAttribute('formaction') : form.action;
+  const errEl = form.querySelector('.sc-error');
+  const buttons = form.querySelectorAll('button');
+  const original = submitter ? submitter.innerHTML : '';
+  buttons.forEach(b => { b.disabled = true; });
+  if (submitter) submitter.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Guardando…';
+  if (errEl) errEl.hidden = true;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: new FormData(form)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo guardar.');
+    scInboxChanges += 1;
+    if (item && item.suggestion && item.suggestion.proposed_change) {
+      const input = form.querySelector('[name=value]');
+      if (data.status === 'accepted' && input && input.value) item.suggestion.proposed_change.new = input.value;
+      item.suggestion.proposed_change.status = data.status;
+      item._applyNote = data.message;
+    }
+    document.querySelectorAll(`[data-suggestion-case="${form.dataset.inboxFix}"]`).forEach(el => {
+      scRenderInboxCard(el);
+      const card = el.querySelector('.sc-card');
+      if (card) card.classList.add('sc-just-applied');
+    });
+  } catch (error) {
+    if (errEl) {
+      errEl.textContent = error.message;
+      errEl.hidden = false;
+    }
+    buttons.forEach(b => { b.disabled = false; });
+    if (submitter) submitter.innerHTML = original;
+  }
+}
+
+document.addEventListener('submit', (event) => {
+  const form = event.target.closest('form[data-inbox-fix]');
+  if (!form) return;
+  event.preventDefault();
+  scSubmitInboxFix(form, event.submitter);
+});
+
+/* Closing a modal after accepting or rejecting refreshes the inbox once, with a summary notice */
+document.addEventListener('hidden.bs.modal', () => {
+  if (!scInboxChanges) return;
+  const n = scInboxChanges;
+  try {
+    sessionStorage.setItem(SC_INBOX_NOTICE_KEY, `${n} sugerencia${n === 1 ? '' : 's'} procesada${n === 1 ? '' : 's'}. La bandeja ya muestra los cambios.`);
+  } catch (e) { /* storage blocked */ }
+  window.location.reload();
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   const dataEl = document.getElementById('inboxSuggestionData');
   if (!dataEl) return;
-  let payload = {};
-  try { payload = JSON.parse(dataEl.textContent) || {}; } catch (e) { return; }
-  const cases = payload.cases || {};
-  document.querySelectorAll('[data-suggestion-case]').forEach((el, i) => {
-    const item = cases[el.dataset.suggestionCase];
-    if (!item) return;
-    el.innerHTML = renderSuggestionCard(item, item.currency, {
-      mode: 'inbox',
-      suffix: el.dataset.suffix || '',
-      returnQuery: payload.return_query || '',
-      choices: (payload.payment_choices || {})[item.currency] || []
-    });
-  });
+  try { scInboxPayload = JSON.parse(dataEl.textContent) || { cases: {} }; } catch (e) { return; }
+  scInboxPayload.cases = scInboxPayload.cases || {};
+  document.querySelectorAll('[data-suggestion-case]').forEach(scRenderInboxCard);
+
+  let notice = null;
+  try {
+    notice = sessionStorage.getItem(SC_INBOX_NOTICE_KEY);
+    sessionStorage.removeItem(SC_INBOX_NOTICE_KEY);
+  } catch (e) { /* storage blocked */ }
+  const box = document.getElementById('inboxSuggestionNotice');
+  if (notice && box) {
+    box.querySelector('[data-text]').textContent = notice;
+    box.hidden = false;
+  }
 });

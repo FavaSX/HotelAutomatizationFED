@@ -1054,3 +1054,31 @@ class SuggestionPanelTests(TestCase):
         self.assertEqual(case.erp_transaction.amount, Decimal("115000.00"))
         self.assertEqual(ErpTransactionChange.objects.get().reason, "Sugerencia aceptada con el valor ajustado")
         self.assertNotContains(self.client.get(reverse("exceptions") + "?moneda=clp"), f'data-suggestion-case="{case.id}" data-suffix="p"')
+
+
+class SuggestionModalAjaxTests(TestCase):
+    """Pendientes: the suggestions window accepts and rejects without leaving it (JSON answers)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        self.client.force_login(self.user)
+        self.ajax = {"HTTP_X_REQUESTED_WITH": "XMLHttpRequest"}
+
+    def test_button_opens_the_window_and_decisions_answer_json(self):
+        page = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(page, 'data-bs-target="#inboxSuggestionModal"')
+        self.assertContains(page, "Ver Sugerencias Asistidas (2 casos)")
+
+        accept_case = self.process.cross_match_results.get(authorization_code="F0FUAZ")
+        response = self.client.post(reverse("exception_suggestion_accept", args=[accept_case.id]), {"value": "F0FUAZ"}, **self.ajax)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual((response.json()["status"], response.json()["matched"]), ("accepted", True))
+
+        reject_case = self.process.cross_match_results.get(authorization_code="007626")
+        response = self.client.post(reverse("exception_suggestion_reject", args=[reject_case.id]), {}, **self.ajax)
+        self.assertEqual(response.json()["status"], "rejected")
+
+        again = self.client.post(reverse("exception_suggestion_reject", args=[reject_case.id]), {}, **self.ajax)
+        self.assertEqual(again.status_code, 400)
+        self.assertIn("error", again.json())

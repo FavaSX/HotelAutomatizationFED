@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.db.models import Count, Min, Q, Sum
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -316,27 +316,36 @@ def exception_reopen_view(request, match_id: int):
     return _back_to_inbox(request)
 
 
-def _correction_message(request, match, outcome, done_text):
+def _correction_text(outcome, done_text):
+    """(message level, text) of a finished correction."""
     if outcome.get("matched"):
-        messages.success(request, f"Voucher {match.authorization_code}: {done_text}. Ahora cuadra y quedó como “Corregido en ERP”.")
-    elif outcome.get("system_result") == "NOT_FOUND_IN_ERP":
-        messages.warning(request, f"Voucher {match.authorization_code}: {done_text}. Sigue pendiente: no se encuentra en el ERP.")
-    else:
-        messages.warning(
-            request, f"Voucher {match.authorization_code}: {done_text}. Sigue pendiente: aún hay diferencia de {outcome.get('remaining')}."
-        )
+        return "success", f"{done_text[:1].upper()}{done_text[1:]}. Ahora cuadra y quedó como “Corregido en ERP”."
+    if outcome.get("system_result") == "NOT_FOUND_IN_ERP":
+        return "warning", f"{done_text[:1].upper()}{done_text[1:]}. Sigue pendiente: no se encuentra en el ERP."
+    return "warning", f"{done_text[:1].upper()}{done_text[1:]}. Sigue pendiente: aún hay diferencia de {outcome.get('remaining')}."
+
+
+def _is_ajax(request):
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
 
 def _correction_view(request, match_id, operation, done_text):
+    """Runs a correction. Plain form posts go back to the inbox; the suggestions modal posts with fetch and gets JSON."""
     match = get_object_or_404(
         CrossMatchResult.objects.select_related("process", "transbank_transaction", "card_type", "management_status"),
         pk=match_id,
     )
     try:
         outcome = operation(match)
-        _correction_message(request, match, outcome, done_text)
     except (CorrectionError, RecrossError) as exc:
+        if _is_ajax(request):
+            return JsonResponse({"success": False, "error": str(exc)}, status=400)
         messages.error(request, f"Voucher {match.authorization_code}: {exc}")
+        return _back_to_inbox(request)
+    level, text = _correction_text(outcome, done_text)
+    if _is_ajax(request):
+        return JsonResponse({"success": True, "matched": bool(outcome.get("matched")), "message": text, "status": "accepted"})
+    getattr(messages, level)(request, f"Voucher {match.authorization_code}: {text[:1].lower()}{text[1:]}")
     return _back_to_inbox(request)
 
 
@@ -388,13 +397,17 @@ def exception_suggestion_accept_view(request, match_id: int):
 @require_POST
 def exception_suggestion_reject_view(request, match_id: int):
     match = get_object_or_404(CrossMatchResult.objects.select_related("management_status"), pk=match_id)
+    text = "Sugerencia rechazada. El ERP no se tocó; el caso sigue abierto para corregirlo a mano."
     try:
         reject_suggestion(match, request.user, request.POST.get("comment", ""))
-        messages.info(
-            request, f"Voucher {match.authorization_code}: sugerencia rechazada. El ERP no se tocó; el caso sigue abierto para corregirlo a mano."
-        )
     except CorrectionError as exc:
+        if _is_ajax(request):
+            return JsonResponse({"success": False, "error": str(exc)}, status=400)
         messages.error(request, f"Voucher {match.authorization_code}: {exc}")
+        return _back_to_inbox(request)
+    if _is_ajax(request):
+        return JsonResponse({"success": True, "matched": False, "message": text, "status": "rejected"})
+    messages.info(request, f"Voucher {match.authorization_code}: {text[:1].lower()}{text[1:]}")
     return _back_to_inbox(request)
 
 
