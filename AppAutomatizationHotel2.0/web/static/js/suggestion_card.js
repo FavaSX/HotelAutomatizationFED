@@ -69,6 +69,36 @@ function scProposalDoc(pc) {
 }
 
 /* ------------------------------------------------------------------ */
+/* "Por qué" of each row                                                */
+/* ------------------------------------------------------------------ */
+
+function scParseDate(text) {
+  const m = String(text || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
+}
+
+function scDayGap(a, b) {
+  const da = scParseDate(a);
+  const db = scParseDate(b);
+  if (!da || !db) return null;
+  return Math.round(Math.abs(db - da) / 86400000);
+}
+
+/* The engine's reason chip about the code (typo, similar code, same code in the database) */
+function scCodeReason(sug) {
+  const reasons = Array.isArray(sug.reasons) ? sug.reasons : [];
+  const chip = reasons.find(r => /tipeo|similar|c[oó]d/i.test(r.label || ''));
+  if (!chip) return '';
+  const typo = String(chip.label).match(/\(([^)]*tipeo[^)]*)\)/i);
+  return typo ? typo[1].charAt(0).toUpperCase() + typo[1].slice(1) : chip.label;
+}
+
+function scDbReason(sug) {
+  const db = sug.db_match || {};
+  return db.process_id ? `Venta guardada en el cierre #${db.process_id}` : '';
+}
+
+/* ------------------------------------------------------------------ */
 /* Model: the same shape for CLP and USD                                */
 /* ------------------------------------------------------------------ */
 
@@ -82,6 +112,21 @@ function scModelClp(v) {
   const isCredit = v.modality_label === 'Crédito' || v.payment_modality === 'CREDIT';
   const sameMedium = isCredit ? erp.payment_group === 'CREDIT' : erp.payment_group === 'REDCOMPRA';
   const erpFile = erp.source_file || files.erp || 'Borderó';
+  const gap = Math.abs(Number(v.tbk_amount) - Number(erp.amount));
+  const days = scDayGap(v.sale_date, erp.transaction_date);
+  const why = {
+    code: sameCode
+      ? 'Mismo código'
+      : (!scPresent(erp.authorization_code) || String(erp.authorization_code).startsWith('—')
+        ? 'El Borderó no tiene código'
+        : (scCodeReason(sug) || 'Código distinto')),
+    amount: sameAmount ? 'Monto exacto' : `Diferencia de ${scClp(gap)}`,
+    date: sameDate ? 'Misma fecha' : (days === null ? '' : `${days} día${days === 1 ? '' : 's'} de diferencia`),
+    medium: sameMedium
+      ? `Mismo medio (${erp.payment_code || (isCredit ? 'crédito' : 'Red Compra')})`
+      : `Transbank: ${isCredit ? 'crédito' : 'débito/prepago'} · Borderó: ${erp.payment_code || '—'}`,
+    detail: scDbReason(sug) || 'Para identificar la fila'
+  };
   return {
     amountLabel: scClp(v.tbk_amount),
     medium: [v.modality_label, v.card_name].filter(Boolean).join(' · '),
@@ -91,11 +136,11 @@ function scModelClp(v) {
       { title: 'Borderó ERP', file: erp.excel_row ? `${erpFile} · fila ${erp.excel_row}` : erpFile }
     ],
     rows: [
-      { label: 'Código', values: [v.authorization_code, erp.authorization_code || '— sin código'], state: sameCode ? 'ok' : 'diff' },
-      { label: 'Monto', values: [scClp(v.tbk_amount), erp.amount !== undefined ? scClp(erp.amount) : '—'], state: sameAmount ? 'ok' : 'diff' },
-      { label: 'Fecha', values: [v.sale_date || '—', `${erp.transaction_date || '—'}${erp.transaction_time ? ' ' + erp.transaction_time : ''}`], state: sameDate ? 'ok' : (v.sale_date && erp.transaction_date ? 'diff' : '') },
-      { label: 'Medio', values: [[v.modality_label, v.card_name].filter(Boolean).join(' · ') || '—', [erp.payment_code, erp.card_name].filter(Boolean).join(' · ') || '—'], state: sameMedium ? 'ok' : 'diff' },
-      { label: 'Detalle', values: [v.merchant_location || '—', `Cta ${erp.account_code || '—'}${scPresent(erp.invoice_number) ? ' · Fact ' + erp.invoice_number : ''}${erp.guest_name ? ' · ' + erp.guest_name : ''}`], state: '' }
+      { label: 'Código', values: [v.authorization_code, erp.authorization_code || '— sin código'], state: sameCode ? 'ok' : 'diff', why: why.code },
+      { label: 'Monto', values: [scClp(v.tbk_amount), erp.amount !== undefined ? scClp(erp.amount) : '—'], state: sameAmount ? 'ok' : 'diff', why: why.amount },
+      { label: 'Fecha', values: [v.sale_date || '—', `${erp.transaction_date || '—'}${erp.transaction_time ? ' ' + erp.transaction_time : ''}`], state: sameDate ? 'ok' : (v.sale_date && erp.transaction_date ? 'diff' : ''), why: why.date },
+      { label: 'Medio', values: [[v.modality_label, v.card_name].filter(Boolean).join(' · ') || '—', [erp.payment_code, erp.card_name].filter(Boolean).join(' · ') || '—'], state: sameMedium ? 'ok' : 'diff', why: why.medium },
+      { label: 'Detalle', values: [v.merchant_location || '—', `Cta ${erp.account_code || '—'}${scPresent(erp.invoice_number) ? ' · Fact ' + erp.invoice_number : ''}${erp.guest_name ? ' · ' + erp.guest_name : ''}`], state: '', why: why.detail }
     ]
   };
 }
@@ -107,6 +152,9 @@ function scModelUsd(v) {
   const [rAuth = {}, rDoc = {}, rUsd = {}, rClp = {}, rCtx = {}] = rows;
   const tone = (r) => (r.status_tone === 'gold' ? 'diff' : (r.status_tone === 'emerald' ? 'ok' : ''));
   const shortDoc = (s) => String(s || '').split('(')[0].trim() || '—';
+  const why = (r, ok, diff, neutral = '') => (tone(r) === 'ok' ? ok : (tone(r) === 'diff' ? diff : neutral));
+  const usdGap = Math.abs((Number(String(rUsd.tbk_value || '').replace(/[^\d,]/g, '').replace(',', '.')) || Number(v.gross_amount_usd) || 0)
+    - (Number(String(rUsd.op_value || '').replace(/[^\d,]/g, '').replace(',', '.')) || 0));
   return {
     amountLabel: scUsd(v.gross_amount_usd),
     medium: v.card_name || '',
@@ -117,11 +165,11 @@ function scModelUsd(v) {
       { title: 'Operadora', file: files.op || 'Operadora' }
     ],
     rows: [
-      { label: 'Código', values: [rAuth.tbk_value || v.authorization_code, rAuth.erp_value || '—', rAuth.op_value || '—'], state: tone(rAuth) },
-      { label: 'Documento', values: ['—', shortDoc(rDoc.erp_value), shortDoc(rDoc.op_value)], state: tone(rDoc) },
-      { label: 'Monto US$', values: [rUsd.tbk_value || scUsd(v.gross_amount_usd), '—', rUsd.op_value || '—'], state: tone(rUsd) },
-      { label: 'Saldo CLP', values: ['—', rClp.erp_value || '—', rClp.op_value || '—'], state: tone(rClp) },
-      { label: 'Detalle', values: [rCtx.tbk_value || v.sale_date || '—', rCtx.erp_value || '—', rCtx.op_value || '—'], state: tone(rCtx) }
+      { label: 'Código', values: [rAuth.tbk_value || v.authorization_code, rAuth.erp_value || '—', rAuth.op_value || '—'], state: tone(rAuth), why: why(rAuth, 'Mismo código', scCodeReason(sug) || 'Código distinto') },
+      { label: 'Documento', values: ['—', shortDoc(rDoc.erp_value), shortDoc(rDoc.op_value)], state: tone(rDoc), why: why(rDoc, 'Mismo documento en ERP y Operadora', 'Documento distinto', scDbReason(sug)) },
+      { label: 'Monto US$', values: [rUsd.tbk_value || scUsd(v.gross_amount_usd), '—', rUsd.op_value || '—'], state: tone(rUsd), why: why(rUsd, 'Monto exacto en dólares', `Diferencia de ${scUsd(usdGap)}`) },
+      { label: 'Saldo CLP', values: ['—', rClp.erp_value || '—', rClp.op_value || '—'], state: tone(rClp), why: why(rClp, 'Mismo saldo en pesos', 'Saldo en pesos distinto') },
+      { label: 'Detalle', values: [rCtx.tbk_value || v.sale_date || '—', rCtx.erp_value || '—', rCtx.op_value || '—'], state: tone(rCtx), why: why(rCtx, 'Misma fecha', 'Fecha distinta', 'Para identificar la venta') }
     ]
   };
 }
@@ -133,12 +181,13 @@ function scModelUsd(v) {
 function scComparison(model) {
   const head = model.columns.map(c =>
     `<th scope="col"><span class="sc-col-title">${scEsc(c.title)}</span><span class="sc-col-file">${scEsc(c.file)}</span></th>`
-  ).join('');
+  ).join('') + '<th scope="col" class="sc-why-col"><span class="sc-col-title">Por qué</span><span class="sc-col-file">Lo que se comparó</span></th>';
   const body = model.rows.map(r => {
     const icon = r.state === 'diff'
       ? '<i class="bi bi-exclamation-triangle-fill" aria-label="Distinto"></i>'
       : (r.state === 'ok' ? '<i class="bi bi-check2" aria-label="Coincide"></i>' : '');
-    const cells = r.values.map(val => `<td><span class="sc-val" title="${scEsc(val)}">${scEsc(val || '—')}</span></td>`).join('');
+    const cells = r.values.map(val => `<td><span class="sc-val" title="${scEsc(val)}">${scEsc(val || '—')}</span></td>`).join('') +
+      `<td class="sc-why-col"><span class="sc-why-text">${scEsc(r.why || '')}</span></td>`;
     return `<tr class="sc-row sc-row-${r.state || 'neutral'}"><th scope="row"><span class="sc-state">${icon}</span>${scEsc(r.label)}</th>${cells}</tr>`;
   }).join('');
   return (
@@ -150,16 +199,12 @@ function scComparison(model) {
 }
 
 function scReasons(sug) {
-  const reasons = Array.isArray(sug.reasons) ? sug.reasons : [];
-  const chips = reasons.slice(0, 5).map(r =>
-    `<span class="sc-chip sc-chip-${scEsc(r.tone || 'cyan')}">${scEsc(r.label)}</span>`
-  ).join('');
   const note = sug.manual_check_note
     ? `<details class="sc-note"><summary>Ver explicación completa</summary><p>${scEsc(sug.manual_check_note)}</p></details>`
     : '';
   const cause = sug.cause ? `<p class="sc-cause">${scEsc(sug.cause)}</p>` : '';
-  if (!chips && !note && !cause) return '';
-  return `<div class="sc-why"><div class="sc-section-label">Por qué se sugiere</div>${cause}<div class="sc-chips">${chips}</div>${note}</div>`;
+  if (!note && !cause) return '';
+  return `<div class="sc-why"><div class="sc-section-label">Conclusión</div>${cause}${note}</div>`;
 }
 
 function scInput(pc, id, name, choices) {

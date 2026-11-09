@@ -1959,3 +1959,9 @@ a.segmented-item { text-decoration: none; }
   to { box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
 }
 @media (prefers-reduced-motion: reduce) { .sc-just-applied { animation: none; } }
+/* "Por qué" column of the suggestion comparison */
+.sc-compare { min-width: 640px; }
+.sc-compare th.sc-why-col, .sc-compare td.sc-why-col { border-left: 1px dashed var(--border-strong); width: 28%; }
+.sc-why-text { font-size: .8rem; color: var(--text-muted); }
+.sc-row-ok .sc-why-text { color: var(--success); }
+.sc-row-diff .sc-why-text { color: var(--warning); font-weight: 600; }
