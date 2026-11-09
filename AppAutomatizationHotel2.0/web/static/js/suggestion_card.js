@@ -189,9 +189,9 @@ function scFix(v, opts) {
   const head = `<div class="sc-section-label">Corrección en el ERP</div><div class="sc-fix-target">${scEsc(doc)} · ${scEsc(fieldLabel)}</div>`;
 
   if (pc.status) {
-    const done = opts.mode === 'preview'
+    const done = v._applyNote || (opts.mode === 'preview'
       ? 'Aplicada. Se guarda en el ERP, con historial, al confirmar el cierre.'
-      : (pc.status === 'rejected' ? 'Rechazada. El ERP no se modificó.' : 'Aceptada y guardada en el ERP.');
+      : (pc.status === 'rejected' ? 'Rechazada. El ERP no se modificó.' : 'Aceptada y guardada en el ERP.'));
     return (
       `<div class="sc-fix sc-fix-done">${head}` +
         `<div class="sc-diff"><span class="sc-old">${scEsc(scProposalOldDisplay(pc))}</span><i class="bi bi-arrow-right" aria-hidden="true"></i><span class="sc-new">${scEsc(scProposalInputValue(pc))}</span></div>` +

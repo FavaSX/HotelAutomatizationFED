@@ -1953,3 +1953,9 @@ a.segmented-item { text-decoration: none; }
   .sc-headline { padding-left: .8rem; padding-right: .8rem; }
   .sc-input { max-width: 100%; flex: 1 1 auto; }
 }
+.sc-just-applied { animation: sc-applied-flash 1.2s ease-out; }
+@keyframes sc-applied-flash {
+  from { box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 55%, transparent); }
+  to { box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
+}
+@media (prefers-reduced-motion: reduce) { .sc-just-applied { animation: none; } }

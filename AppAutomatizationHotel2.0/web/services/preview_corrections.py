@@ -222,7 +222,8 @@ def apply_preview_correction(preview: Dict[str, Any], currency: str, tbk_index: 
     preview.setdefault("pending_corrections", []).append(entry)
 
     if not in_memory:
-        return {"result": voucher["system_result"], "matched": False, "applied_on_save": True}
+        return {"result": voucher["system_result"], "matched": False, "applied_on_save": True,
+                "proposal": voucher["suggestion"]["proposed_change"]}
 
     _set_preview_value(erp_rows[proposal["erp_index"]], proposal["field"], new_text, doc_field)
     _recross_clp_in_preview(preview, voucher)
@@ -232,7 +233,7 @@ def apply_preview_correction(preview: Dict[str, Any], currency: str, tbk_index: 
         preview.setdefault(target, []).append(voucher)
     _refresh_clp_totals(preview)
     return {"result": voucher["system_result"], "matched": voucher["system_result"] == "MATCHED", "applied_on_save": False,
-            "remaining": abs(voucher["difference"])}
+            "remaining": abs(voucher["difference"]), "proposal": voucher["suggestion"]["proposed_change"]}
 
 
 # ------------------------------------------------------------------------------

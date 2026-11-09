@@ -1,71 +1,49 @@
 /**
  * Step 2 (preview): apply the suggested ERP correction of a voucher before saving the closing.
- * Used by the CLP and USD suggestion cards. The page sets data-preview-correction-url on <body>.
- * The accountant may edit the suggested value. After applying, the page reloads with the voucher
- * crossed again (CLP) or marked to be applied when the closing is saved (USD / sale in database).
+ * The page sets data-preview-correction-url and data-preview-currency on <body>.
+ *
+ * Applying does NOT reload the page: the card turns into "Aplicada" inside the suggestions modal so the
+ * accountant can keep going with the next one. The page reloads once, when the modal is closed, so the
+ * counters, tabs and totals show the corrected vouchers.
  */
 
-const PROPOSAL_FIELD_LABELS = {
-  amount: 'Monto',
-  authorization_code: 'Código de autorización',
-  transaction_date: 'Fecha',
-  payment_code: 'Medio de pago',
-  document_number: 'Documento'
-};
 const PREVIEW_NOTICE_KEY = 'previewCorrectionNotice';
+const PREVIEW_SUGGESTION_MODALS = ['clpSuggestionModal', 'suggestionDetailModal'];
+let previewCorrectionsApplied = 0;
 
-function escapeProposal(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+function previewVoucherLists() {
+  const lists = [];
+  if (typeof currentClpSugAllVouchers !== 'undefined') lists.push(currentClpSugAllVouchers);
+  if (typeof currentSugAllVouchers !== 'undefined') lists.push(currentSugAllVouchers);
+  return lists;
 }
 
-function proposalInputValue(pc) {
-  if (pc.field === 'amount') {
-    const num = Number(pc.new);
-    return Number.isInteger(num) ? String(num) : String(pc.new);
+function findPreviewVoucher(tbkIndex) {
+  for (const list of previewVoucherLists()) {
+    const found = (list || []).find(v => Number(v.tbk_index) === Number(tbkIndex));
+    if (found) return found;
   }
-  return String(pc.new ?? '');
+  return null;
 }
 
-function renderProposalBlock(voucher) {
-  const pc = (voucher.suggestion || {}).proposed_change;
-  if (!pc) return '';
-  if (pc.status) {
-    return (
-      `<div class="px-3 py-2 border-top small proposal-block proposal-applied">` +
-        `<i class="bi bi-check2-circle me-1"></i><strong>Corrección aplicada:</strong> ` +
-        `<span class="font-monospace">${escapeProposal(pc.label)}</span>. ` +
-        `Se guarda en el ERP, con historial, al confirmar el cierre.` +
-      `</div>`
-    );
-  }
-  const id = `proposal-${voucher.tbk_index}`;
-  const label = PROPOSAL_FIELD_LABELS[pc.field] || pc.field;
-  const input = pc.field === 'transaction_date'
-    ? `<input type="date" id="${id}" class="form-control form-control-sm" value="${escapeProposal(pc.new)}">`
-    : `<input id="${id}" class="form-control form-control-sm font-monospace" value="${escapeProposal(proposalInputValue(pc))}"${pc.field === 'amount' ? ' inputmode="decimal"' : ''}>`;
-  return (
-    `<div class="px-3 py-2 border-top proposal-block">` +
-      `<div class="small fw-bold mb-1"><i class="bi bi-magic me-1"></i>Corrección sugerida en el ERP</div>` +
-      `<div class="small font-monospace mb-2">${escapeProposal(pc.label)}</div>` +
-      `<div class="d-flex flex-wrap align-items-end gap-2">` +
-        `<div><label class="form-label small mb-0" for="${id}">${escapeProposal(label)} nuevo (puedes editarlo)</label>${input}</div>` +
-        `<button type="button" class="btn btn-success btn-sm rounded-pill px-3 fw-semibold" ` +
-          `onclick="applyPreviewCorrection(${Number(voucher.tbk_index)}, '${id}', this)">` +
-          `<i class="bi bi-check2 me-1"></i>Aplicar corrección</button>` +
-      `</div>` +
-      `<div class="small text-danger mt-1" id="${id}-error" role="alert" hidden></div>` +
-    `</div>`
-  );
+function applyResultNote(data) {
+  if (data.applied_on_save) return 'Aplicada. El voucher se vuelve a cruzar cuando confirmes el cierre.';
+  if (data.matched) return 'Aplicada. El voucher ahora cuadra y pasa a Ubicadas.';
+  return 'Aplicada, pero el voucher todavía no cuadra.';
 }
 
 async function applyPreviewCorrection(tbkIndex, inputId, btn) {
   const url = document.body.dataset.previewCorrectionUrl;
+  const currency = document.body.dataset.previewCurrency || 'CLP';
   const tokenEl = document.querySelector('[name=csrfmiddlewaretoken]');
   const errEl = document.getElementById(`${inputId}-error`);
   const inputEl = document.getElementById(inputId);
+  const card = btn.closest('.sc-card');
+  const originalLabel = btn.innerHTML;
   btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Aplicando…';
+  if (errEl) errEl.hidden = true;
+
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -78,26 +56,50 @@ async function applyPreviewCorrection(tbkIndex, inputId, btn) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.success) throw new Error(data.error || 'No se pudo aplicar la corrección.');
-    let notice;
-    if (data.applied_on_save) {
-      notice = 'Corrección aplicada. El voucher se vuelve a cruzar cuando confirmes el cierre.';
-    } else if (data.matched) {
-      notice = 'Corrección aplicada. El voucher ahora cuadra y pasó a Cuadrados.';
-    } else {
-      notice = 'Corrección aplicada, pero el voucher todavía no cuadra.';
+
+    previewCorrectionsApplied += 1;
+    const note = applyResultNote(data);
+    const voucher = findPreviewVoucher(tbkIndex);
+    if (voucher && voucher.suggestion) {
+      voucher.suggestion.proposed_change = data.proposal || { ...voucher.suggestion.proposed_change, status: 'applied' };
+      voucher._applyNote = note;
     }
-    try { sessionStorage.setItem(PREVIEW_NOTICE_KEY, notice); } catch (e) { /* storage blocked: no notice */ }
-    window.location.reload();
+    if (card && voucher && typeof renderSuggestionCard === 'function') {
+      const indexEl = card.querySelector('.sc-index');
+      const index = indexEl ? Number(indexEl.textContent.replace('#', '')) : undefined;
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = renderSuggestionCard(voucher, currency, { mode: 'preview', index });
+      const fresh = wrapper.firstElementChild;
+      card.replaceWith(fresh);
+      fresh.classList.add('sc-just-applied');
+    } else if (card) {
+      btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Aplicada';
+    }
   } catch (error) {
     if (errEl) {
       errEl.textContent = error.message;
       errEl.hidden = false;
     }
     btn.disabled = false;
+    btn.innerHTML = originalLabel;
   }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Closing the suggestions modal after applying refreshes the page once, with a summary notice
+  PREVIEW_SUGGESTION_MODALS.forEach(id => {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.addEventListener('hidden.bs.modal', () => {
+      if (!previewCorrectionsApplied) return;
+      const n = previewCorrectionsApplied;
+      try {
+        sessionStorage.setItem(PREVIEW_NOTICE_KEY, `${n} corrección${n === 1 ? '' : 'es'} aplicada${n === 1 ? '' : 's'}. El cruce y los totales ya las incluyen; se guardan en el ERP al confirmar el cierre.`);
+      } catch (e) { /* storage blocked: no notice */ }
+      window.location.reload();
+    });
+  });
+
   let notice = null;
   try {
     notice = sessionStorage.getItem(PREVIEW_NOTICE_KEY);
