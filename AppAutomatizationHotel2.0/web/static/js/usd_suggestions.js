@@ -156,6 +156,8 @@ function renderModalSuggestionsPage() {
       } else {
         withListEl.innerHTML = pageWith.map((v, i) => {
           const idx = startWith + i + 1;
+          // Same component as the Pendientes inbox (suggestion_card.js)
+          if (typeof renderSuggestionCard === 'function') return renderSuggestionCard(v, 'USD', { mode: 'preview', index: idx });
           const sug = v.suggestion || {};
           const files = sug.files_involved || {};
           const rows = Array.isArray(sug.comparison_rows) ? sug.comparison_rows : [];

@@ -30,6 +30,7 @@ from ..services.erp_editing import (
 )
 from ..services.exception_resolution import ResolutionError, reopen_exception, resolve_exception
 from ..services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion
+from ..services.clp_reconciliation import MODALITY_LABELS
 from ..services.voucher_recross import RecrossError
 from ..services.report_exporter import generate_exceptions_excel_bytes
 from .dashboard import CLP_EXCEPTION_LABELS, EXCEPTION_LABELS, _exception_label, _split_status_detail
@@ -185,12 +186,55 @@ def exceptions_view(request):
         ).order_by("name"),
         "form": ExceptionResolutionForm(),
         "suggestion_items": suggestion_items,
+        "suggestion_cards": {
+            "cases": {str(i.id): _suggestion_card(i) for i in [*suggestion_items, *rows] if i.suggestion},
+            "return_query": query_string + (f"&page={page.number}" if page.number > 1 else ""),
+            "payment_choices": {cur: [[code, label] for code, label, _ in opts] for cur, opts in choices.items()},
+        },
         "suggestion_total": suggestion_total,
         "panel_payment_choices": choices[currency.upper()],
     })
 
 
 SUGGESTION_PANEL_LIMIT = 30
+
+
+def _suggestion_card(item):
+    """The case in the same shape as a step-2 voucher, so suggestion_card.js draws the same component."""
+    suggestion = dict(item.suggestion or {})
+    proposal = suggestion.get("proposed_change")
+    if proposal and not proposal.get("status") and not item.proposal:
+        suggestion.pop("proposed_change")  # closed case: show the comparison, no buttons
+    tbk = item.transbank_transaction
+    card = {
+        "case_id": item.id,
+        "currency": item.process.process_currency,
+        "authorization_code": item.authorization_code,
+        "sale_date": item.sale_date.strftime("%d/%m/%Y") if item.sale_date else "",
+        "system_result": item.system_result,
+        "type_label": item.type_label,
+        "action": item.action,
+        "suggestion": suggestion,
+        "accept_url": reverse("exception_suggestion_accept", args=[item.id]),
+        "reject_url": reverse("exception_suggestion_reject", args=[item.id]),
+    }
+    if item.is_clp:
+        modality = tbk.payment_modality if tbk else "CREDIT"
+        card.update({
+            "tbk_amount": float(item.transbank_amount),
+            "payment_modality": modality,
+            "modality_label": MODALITY_LABELS.get(modality, ""),
+            "card_name": "Redcompra" if modality in ("DEBIT", "PREPAID") else (item.card_type.name if item.card_type else ""),
+            "merchant_location": item.merchant_location_name or "",
+        })
+    else:
+        card.update({
+            "gross_amount_usd": float(item.transbank_amount),
+            "card_name": item.card_type.name if item.card_type else "",
+            "card_code": item.card_type.code if item.card_type else "",
+            "cashier_username": item.cashier_username or "",
+        })
+    return card
 
 
 def _suggestion_panel(currency, today):

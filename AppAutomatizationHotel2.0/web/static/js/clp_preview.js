@@ -51,6 +51,8 @@ function renderClpKv(label, value, tone) {
 }
 
 function renderClpSuggestionCard(voucher, idx) {
+  // Same component as the Pendientes inbox (suggestion_card.js)
+  if (typeof renderSuggestionCard === 'function') return renderSuggestionCard(voucher, 'CLP', { mode: 'preview', index: idx });
   const sug = voucher.suggestion || {};
   const erp = sug.erp_row || {};
   const files = sug.files_involved || {};

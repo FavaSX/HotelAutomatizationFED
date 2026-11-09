@@ -951,7 +951,8 @@ class SuggestionAcceptRejectTests(TestCase):
         self.client.force_login(self.user)
         case = self._case("F0FUAZ")
         page = self.client.get(reverse("exceptions") + "?moneda=clp")
-        self.assertContains(page, "Cambio sugerido en el ERP")
+        self.assertContains(page, "Correcciones sugeridas en el ERP")
+        self.assertContains(page, f'data-suggestion-case="{case.id}"')
         self.assertContains(page, reverse("exception_suggestion_accept", args=[case.id]))
 
         other = self._case("007626")
@@ -1042,11 +1043,14 @@ class SuggestionPanelTests(TestCase):
         page = self.client.get(reverse("exceptions") + "?moneda=clp")
         self.assertContains(page, "Correcciones sugeridas en el ERP")
         case = self.process.cross_match_results.get(authorization_code="007626")
-        self.assertContains(page, f'id="sugval-{case.id}"')
+        self.assertContains(page, f'data-suggestion-case="{case.id}" data-suffix="p"')
+        cards = page.context["suggestion_cards"]["cases"]
+        self.assertEqual(cards[str(case.id)]["suggestion"]["proposed_change"]["new"], "115204.00")
+        self.assertEqual(cards[str(case.id)]["tbk_amount"], 115204.0)
 
         self.client.post(reverse("exception_suggestion_accept", args=[case.id]), {"value": "115000", "return_query": "moneda=clp"})
         case.refresh_from_db()
         self.assertEqual(case.management_status.code, "RESOLVED_ERP_FIXED")
         self.assertEqual(case.erp_transaction.amount, Decimal("115000.00"))
         self.assertEqual(ErpTransactionChange.objects.get().reason, "Sugerencia aceptada con el valor ajustado")
-        self.assertNotContains(self.client.get(reverse("exceptions") + "?moneda=clp"), f'id="sugval-{case.id}"')
+        self.assertNotContains(self.client.get(reverse("exceptions") + "?moneda=clp"), f'data-suggestion-case="{case.id}" data-suffix="p"')
