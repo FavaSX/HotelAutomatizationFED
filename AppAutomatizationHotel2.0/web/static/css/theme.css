@@ -1902,30 +1902,37 @@ a.segmented-item { text-decoration: none; }
 .sc-confidence-mid { color: var(--warning); }
 .sc-headline { margin: 0; padding: 0 1.1rem .75rem; font-size: .9rem; font-weight: 600; color: var(--text); }
 
-.sc-compare-wrap { overflow-x: auto; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.sc-compare { width: 100%; border-collapse: collapse; font-size: .84rem; min-width: 480px; }
-.sc-compare th, .sc-compare td { padding: .5rem .9rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
-.sc-compare tbody tr:last-child th, .sc-compare tbody tr:last-child td { border-bottom: 0; }
-.sc-compare thead th { background: var(--surface-2); font-weight: 600; }
-.sc-col-title { display: block; font-size: .78rem; color: var(--text); }
-.sc-col-file { display: block; font-size: .7rem; font-weight: 400; color: var(--text-muted); overflow-wrap: anywhere; }
-.sc-compare tbody th { width: 7.5rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
-.sc-state { display: inline-block; width: 1.1rem; }
-.sc-val { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: .8rem; overflow-wrap: anywhere; }
+/* One card per file + a "Por qué" card on the right; rows line up across cards via subgrid */
+.sc-files {
+  display: grid; column-gap: .5rem; row-gap: 0; padding: .15rem 1.1rem .75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, .9fr); grid-auto-rows: auto;
+}
+.sc-files-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, .9fr); }
+.sc-file {
+  display: grid; grid-template-rows: subgrid; min-width: 0;
+  border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); overflow: hidden;
+  font-size: .78rem;
+}
+.sc-file-head { padding: .35rem .65rem; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.sc-file-tbk .sc-file-head { background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+.sc-file-why { border-style: dashed; }
+.sc-col-title { display: block; font-size: .74rem; font-weight: 700; color: var(--text); }
+.sc-col-file { display: block; font-size: .66rem; font-weight: 400; color: var(--text-muted); overflow-wrap: anywhere; }
+.sc-frow { display: flex; flex-direction: column; justify-content: center; gap: .05rem; padding: .3rem .65rem; border-bottom: 1px solid var(--border); min-width: 0; }
+.sc-frow:last-child { border-bottom: 0; }
+.sc-flabel { font-size: .62rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.sc-state { display: inline-block; width: 1rem; }
+.sc-val { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: .76rem; overflow-wrap: anywhere; }
 .sc-row-diff { background: color-mix(in srgb, var(--warning) 9%, transparent); }
-.sc-row-diff .sc-state, .sc-row-diff th { color: var(--warning); }
+.sc-row-diff .sc-state, .sc-row-diff .sc-flabel { color: var(--warning); }
 .sc-row-diff .sc-val { font-weight: 700; }
 .sc-row-ok .sc-state { color: var(--success); }
+@media (max-width: 768px) {
+  .sc-files, .sc-files-3 { grid-template-columns: minmax(0, 1fr); }
+  .sc-file + .sc-file { margin-top: .5rem; }
+}
 
-.sc-why { padding: .75rem 1.1rem; display: flex; flex-direction: column; gap: .4rem; }
 .sc-section-label { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
-.sc-cause { margin: 0; font-size: .85rem; }
-.sc-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
-.sc-chip { font-size: .72rem; font-weight: 600; padding: .15rem .55rem; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--text-muted); }
-.sc-chip-emerald { color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
-.sc-chip-gold { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
-.sc-note summary { font-size: .78rem; font-weight: 600; color: var(--accent); cursor: pointer; }
-.sc-note p { margin: .4rem 0 0; font-size: .8rem; color: var(--text-muted); max-width: 75ch; }
 
 .sc-fix {
   margin: 0; padding: .85rem 1.1rem 1rem; display: flex; flex-direction: column; gap: .45rem;
@@ -1949,7 +1956,7 @@ a.segmented-item { text-decoration: none; }
 .sc-fix-manual p { margin: 0; font-size: .85rem; }
 .sc-fix-manual { background: var(--surface-2); }
 @media (max-width: 576px) {
-  .sc-head, .sc-why, .sc-fix { padding-left: .8rem; padding-right: .8rem; }
+  .sc-head, .sc-files, .sc-fix { padding-left: .8rem; padding-right: .8rem; }
   .sc-headline { padding-left: .8rem; padding-right: .8rem; }
   .sc-input { max-width: 100%; flex: 1 1 auto; }
 }
@@ -1959,9 +1966,7 @@ a.segmented-item { text-decoration: none; }
   to { box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
 }
 @media (prefers-reduced-motion: reduce) { .sc-just-applied { animation: none; } }
-/* "Por qué" column of the suggestion comparison */
-.sc-compare { min-width: 640px; }
-.sc-compare th.sc-why-col, .sc-compare td.sc-why-col { border-left: 1px dashed var(--border-strong); width: 28%; }
-.sc-why-text { font-size: .8rem; color: var(--text-muted); }
+/* "Por qué" card */
+.sc-why-text { font-size: .74rem; color: var(--text-muted); }
 .sc-row-ok .sc-why-text { color: var(--success); }
 .sc-row-diff .sc-why-text { color: var(--warning); font-weight: 600; }

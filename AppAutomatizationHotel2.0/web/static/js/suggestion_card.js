@@ -3,9 +3,8 @@
  *   - step 2 (CLP and USD preview modals), and
  *   - the Pendientes inbox (panel above the table and the detail of each case).
  *
- * Layout: header (voucher, amount, what happened, confidence) → comparison table with one row
- * per data point and one column per file, mismatches marked → why the system suggests it →
- * the ERP correction (old value struck through → editable new value) with its actions.
+ * Layout: header (voucher, amount, what happened, confidence) → one card per file with the same
+ * rows side by side, mismatches marked, and a "Por qué" card on the right → the ERP correction (old value struck through → editable new value) with its actions.
  *
  * renderSuggestionCard(voucher, currency, { mode, index })
  *   mode 'preview' → "Aplicar corrección" (suggestion_apply.js → applyPreviewCorrection)
@@ -178,33 +177,40 @@ function scModelUsd(v) {
 /* Pieces                                                              */
 /* ------------------------------------------------------------------ */
 
+/* One card per file (Transbank | Borderó, or Transbank | ERP | Operadora) plus a "Por qué" card
+   on the right. Rows line up across the cards (CSS subgrid). */
 function scComparison(model) {
-  const head = model.columns.map(c =>
-    `<th scope="col"><span class="sc-col-title">${scEsc(c.title)}</span><span class="sc-col-file">${scEsc(c.file)}</span></th>`
-  ).join('') + '<th scope="col" class="sc-why-col"><span class="sc-col-title">Por qué</span><span class="sc-col-file">Lo que se comparó</span></th>';
-  const body = model.rows.map(r => {
-    const icon = r.state === 'diff'
-      ? '<i class="bi bi-exclamation-triangle-fill" aria-label="Distinto"></i>'
-      : (r.state === 'ok' ? '<i class="bi bi-check2" aria-label="Coincide"></i>' : '');
-    const cells = r.values.map(val => `<td><span class="sc-val" title="${scEsc(val)}">${scEsc(val || '—')}</span></td>`).join('') +
-      `<td class="sc-why-col"><span class="sc-why-text">${scEsc(r.why || '')}</span></td>`;
-    return `<tr class="sc-row sc-row-${r.state || 'neutral'}"><th scope="row"><span class="sc-state">${icon}</span>${scEsc(r.label)}</th>${cells}</tr>`;
+  const icon = (r) => (r.state === 'diff'
+    ? '<i class="bi bi-exclamation-triangle-fill" aria-label="Distinto"></i>'
+    : (r.state === 'ok' ? '<i class="bi bi-check2" aria-label="Coincide"></i>' : ''));
+  const span = `style="grid-row: span ${model.rows.length + 1}"`;
+  const cards = model.columns.map((c, ci) => {
+    const rows = model.rows.map(r => {
+      const val = r.values[ci];
+      return (
+        `<div class="sc-frow sc-row-${r.state || 'neutral'}">` +
+          `<span class="sc-flabel"><span class="sc-state">${icon(r)}</span>${scEsc(r.label)}</span>` +
+          `<span class="sc-val" title="${scEsc(val)}">${scEsc(val || '—')}</span>` +
+        `</div>`
+      );
+    }).join('');
+    return (
+      `<section class="sc-file${ci === 0 ? ' sc-file-tbk' : ''}" ${span} aria-label="${scEsc(c.title)}">` +
+        `<header class="sc-file-head"><span class="sc-col-title">${scEsc(c.title)}</span><span class="sc-col-file">${scEsc(c.file)}</span></header>` +
+        rows +
+      `</section>`
+    );
   }).join('');
-  return (
-    `<div class="sc-compare-wrap"><table class="sc-compare">` +
-      `<thead><tr><th scope="col"><span class="visually-hidden">Dato</span></th>${head}</tr></thead>` +
-      `<tbody>${body}</tbody>` +
-    `</table></div>`
+  const whyRows = model.rows.map(r =>
+    `<div class="sc-frow sc-row-${r.state || 'neutral'}"><span class="sc-flabel">${scEsc(r.label)}</span><span class="sc-why-text">${scEsc(r.why || '—')}</span></div>`
+  ).join('');
+  const whyCard = (
+    `<section class="sc-file sc-file-why" ${span} aria-label="Por qué">` +
+      `<header class="sc-file-head"><span class="sc-col-title">Por qué</span><span class="sc-col-file">Lo que se comparó</span></header>` +
+      whyRows +
+    `</section>`
   );
-}
-
-function scReasons(sug) {
-  const note = sug.manual_check_note
-    ? `<details class="sc-note"><summary>Ver explicación completa</summary><p>${scEsc(sug.manual_check_note)}</p></details>`
-    : '';
-  const cause = sug.cause ? `<p class="sc-cause">${scEsc(sug.cause)}</p>` : '';
-  if (!note && !cause) return '';
-  return `<div class="sc-why"><div class="sc-section-label">Conclusión</div>${cause}${note}</div>`;
+  return `<div class="sc-files sc-files-${model.columns.length}">${cards}${whyCard}</div>`;
 }
 
 function scInput(pc, id, name, choices) {
@@ -312,7 +318,6 @@ function renderSuggestionCard(v, currency, opts = {}) {
       `</header>` +
       (sug.headline ? `<p class="sc-headline">${scEsc(sug.headline)}</p>` : '') +
       scComparison(model) +
-      scReasons(sug) +
       scFix(v, opts) +
     `</article>`
   );
