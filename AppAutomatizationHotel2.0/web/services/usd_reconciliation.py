@@ -6,6 +6,7 @@ Supports multiple ERP files (e.g. daily extracts, shifts, auxiliary borderos) wi
 """
 
 import os
+import re
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
@@ -14,7 +15,9 @@ from ..models import CardType, ErpTransaction, SystemConfiguration
 from .erp_corrections import overlay_on_instances
 from .column_detector import (
     TRANSBANK_USD_COLUMN_RULES,
-    clean_code_string, normalize_auth_code,
+    clean_code_string,
+    normalize_auth_code,
+    normalize_text,
     resolve_dataframe_columns,
     safe_cell,
     safe_date,
@@ -22,6 +25,7 @@ from .column_detector import (
     safe_time,
 )
 from .excel_parsers import (
+    card_code_from_masked_number,
     parse_and_validate_bank_deposits,
     parse_card_operator_statements,
     parse_erp_transactions,
@@ -35,23 +39,159 @@ BANK_KEYWORDS = (
 )
 
 
-def _extract_bank_and_settlement_metadata(
-    tbk_df: pd.DataFrame, bank_df: pd.DataFrame
-) -> Tuple[Decimal, str, str, Any]:
-    """Extracts calculated deposit, bank name, account number, and settlement date from header rows."""
-    calc_deposit, bank_name, account_num, settlement_date = Decimal("0.00"), "", "", None
+def _read_transbank_dataframe(transbank_file: Any) -> pd.DataFrame:
+    """Reads a Transbank USD settlement file (.xlsx, BIFF .xls, or HTML-table .xls) with raw row indexing."""
+    if isinstance(transbank_file, pd.DataFrame):
+        return transbank_file
+    if hasattr(transbank_file, "seek"):
+        transbank_file.seek(0)
+    try:
+        return pd.read_excel(transbank_file, header=None)
+    except Exception:
+        if hasattr(transbank_file, "seek"):
+            transbank_file.seek(0)
+        tables = pd.read_html(transbank_file)
+        return tables[0] if tables else pd.DataFrame()
 
-    for _, row in tbk_df.iloc[:38].iterrows():
-        label_col = str(safe_cell(row, 1) or "").strip().lower()
-        val_col = str(safe_cell(row, 2) or "").strip()
-        if "abono calculado" in label_col:
-            calc_deposit = safe_decimal(safe_cell(row, 2))
-        elif label_col.startswith("banco") and val_col and val_col.lower() != "nan":
-            bank_name = val_col.title().replace("De ", "de ")
-        elif ("numero" in label_col or "número" in label_col) and val_col and not account_num:
-            account_num = clean_code_string(val_col)
-        elif "fecha abono" in label_col and not settlement_date:
-            settlement_date = safe_date(safe_cell(row, 2))
+
+def _find_tbk_usd_detail_header_row(df: pd.DataFrame) -> Tuple[int, Dict[str, int]]:
+    """
+    Dynamically locates the Transbank USD detail table header row and resolves column indices by title.
+    Supports both the legacy Transbank USD format (with 'Tipo Tarjeta' / 'Abono Calculado')
+    and the Transbank 'Abonos por día' portal format (with 'N° de tarjeta' / 'Total abono').
+    Returns -1 for optional columns absent in a particular format.
+    """
+    header_idx: Optional[int] = None
+    for r in range(min(len(df), 80)):
+        row_norm = [normalize_text(val) for val in df.iloc[r] if pd.notna(val)]
+        has_auth = any("autoriz" in x for x in row_norm)
+        has_amt_or_sale = any("venta" in x or "monto" in x for x in row_norm)
+        if has_auth and has_amt_or_sale:
+            header_idx = r
+            break
+
+    if header_idx is None:
+        fallback = resolve_dataframe_columns(df, TRANSBANK_USD_COLUMN_RULES)
+        for opt_key in ("merchant_location", "commission", "commission_vat", "net_deposit", "transaction_identifier", "receipt_number"):
+            fallback.setdefault(opt_key, -1)
+        return 0, fallback
+
+    col_names: List[str] = []
+    for c in range(df.shape[1]):
+        val_curr = str(df.iloc[header_idx, c]).strip() if pd.notna(df.iloc[header_idx, c]) else ""
+        val_prev = (
+            str(df.iloc[header_idx - 1, c]).strip()
+            if header_idx > 0 and pd.notna(df.iloc[header_idx - 1, c])
+            else ""
+        )
+        combined = f"{val_prev} {val_curr}".strip() if val_prev != val_curr else val_curr
+        col_names.append(combined)
+
+    def find_col(keywords: List[str], exclude: Optional[List[str]] = None) -> int:
+        exclude_list = exclude or []
+        for kw in keywords:
+            for idx, name in enumerate(col_names):
+                n_name = normalize_text(name)
+                if kw in n_name and not any(ex in n_name for ex in exclude_list):
+                    return idx
+        return -1
+
+    resolved = {
+        "movement_type": find_col(["tipo de movimiento", "tipo transaccion", "tipo de transaccion"]),
+        "authorization_code": find_col([
+            "codigo de autorizacion de venta", "codigo autorizacion venta",
+            "codigo autorizacion", "autorizacion venta", "autorizacion",
+        ], exclude=["anulacion"]),
+        "gross_amount": find_col([
+            "monto venta valido para abono", "monto original de venta",
+            "monto original venta", "monto original",
+        ]),
+        "card_type": find_col(["tipo tarjeta", "tipo de tarjeta"]),
+        "masked_card_number": find_col(
+            ["n de tarjeta", "n° de tarjeta", "no de tarjeta", "numero de tarjeta", "identificador"],
+            exclude=["tipo"],
+        ),
+        "sale_date": find_col(["fecha de venta", "fecha venta", "fecha"], exclude=["anulacion", "cobro"]),
+        "merchant_code": find_col(["codigo de comercio", "codigo comercio"]),
+        "merchant_location": find_col(["nombre local", "local"]),
+        "installment_type": find_col(["tipo de venta/cuota", "tipo venta/cuota", "tipo cuota", "tipo de cuota"]),
+        "installment_number": find_col(["n de cuota", "n° de cuota", "no cuota", "n cuota"]),
+        "commission": find_col(["comision transbank (-)", "comision transbank", "comision e iva comision"]),
+        "commission_vat": find_col(
+            ["iva comision transbank (-)", "iva de comision transbank", "iva comision transbank"],
+            exclude=["devolucion", "comision e iva"],
+        ),
+        "net_deposit": find_col(["total abono (=)", "monto para abono", "total abono"]),
+        "transaction_identifier": find_col(["id transaccion", "tid"]),
+        "receipt_number": find_col(["n de boleta", "n° de boleta", "no boleta", "boleta"]),
+    }
+    return header_idx, resolved
+
+
+def _extract_bank_and_settlement_metadata(
+    tbk_df: pd.DataFrame, bank_df: pd.DataFrame, max_tbk_row: int = 45
+) -> Tuple[Decimal, str, str, Any, str, str]:
+    """
+    Extracts calculated deposit, bank name, account number, settlement date,
+    merchant code, and merchant location from Transbank and Bank header blocks.
+    """
+    calc_deposit, bank_name, account_num, settlement_date = Decimal("0.00"), "", "", None
+    header_merchant_code, header_location = "", ""
+
+    scan_limit = min(len(tbk_df), max_tbk_row if max_tbk_row > 0 else 45)
+    for r_idx in range(scan_limit):
+        row = tbk_df.iloc[r_idx]
+        non_empty_cells = [
+            (c_idx, val) for c_idx, val in enumerate(row.values)
+            if pd.notna(val) and str(val).strip()
+        ]
+        for pos, (col_idx, raw_val) in enumerate(non_empty_cells):
+            cell_str = str(raw_val).strip()
+            label_norm = normalize_text(cell_str)
+            next_raw = non_empty_cells[pos + 1][1] if pos + 1 < len(non_empty_cells) else None
+            below_raw = (
+                tbk_df.iloc[r_idx + 1, col_idx]
+                if r_idx + 1 < scan_limit and col_idx < tbk_df.shape[1] and pd.notna(tbk_df.iloc[r_idx + 1, col_idx])
+                else None
+            )
+
+            if ("abono calculado" in label_norm or label_norm.startswith("total abono")) and next_raw is not None:
+                candidate_dep = safe_decimal(next_raw)
+                if candidate_dep > 0:
+                    calc_deposit = candidate_dep
+
+            if not bank_name:
+                if label_norm.startswith("banco") and next_raw is not None:
+                    val_str = str(next_raw).strip()
+                    if val_str and val_str.lower() != "nan":
+                        bank_name = val_str.title().replace("De ", "de ")
+                else:
+                    for kw in BANK_KEYWORDS:
+                        if kw in label_norm:
+                            bank_name = kw.title().replace("De ", "de ")
+                            break
+
+            if not account_num:
+                if label_norm.startswith(("numero", "cuenta corriente")):
+                    target_str = str(next_raw or "") if label_norm.startswith("numero") else str(below_raw or next_raw or "")
+                    digits = re.findall(r"\d{6,}", target_str)
+                    if digits:
+                        account_num = digits[0]
+                        for kw in BANK_KEYWORDS:
+                            if not bank_name and kw in normalize_text(target_str):
+                                bank_name = kw.title().replace("De ", "de ")
+                                break
+
+            if not settlement_date and any(
+                k in label_norm for k in ("fecha abono", "dia de abono", "periodo de consulta")
+            ):
+                if next_raw is not None:
+                    settlement_date = safe_date(next_raw)
+
+            if not header_merchant_code and "codigo local" in label_norm and next_raw is not None:
+                header_merchant_code = clean_code_string(next_raw)
+            if not header_location and "nombre fantasia" in label_norm and next_raw is not None:
+                header_location = str(next_raw).strip()
 
     for _, row in bank_df.iloc[:15].iterrows():
         non_empty = [str(c).strip() for c in row if pd.notna(c) and str(c).strip()]
@@ -65,7 +205,7 @@ def _extract_bank_and_settlement_metadata(
                         bank_name = kw.title().replace("De ", "de ")
                         break
 
-    return calc_deposit, bank_name, account_num, settlement_date
+    return calc_deposit, bank_name, account_num, settlement_date, header_merchant_code, header_location
 
 
 def _resolve_operator_for_erp(
@@ -77,7 +217,7 @@ def _resolve_operator_for_erp(
     erp_clp = erp_entry["amount_clp"]
     candidates = card_operator_index.get(card_code, {}).get(erp_entry["document_number"], [])
 
-    chosen_op, obs = None, "No encontrado en archivo Operadora"
+    chosen_op, obs = None, "No encontrado en Posición por Clientes"
     for cand in candidates:
         if cand["balance_clp"] == erp_clp:
             chosen_op, obs = cand, f"Coincide con SALDO {cand['balance_clp']}"
@@ -184,7 +324,7 @@ def calculate_usd_preview(
             f.seek(0)
 
     erp_df = pd.read_excel(erp_file)
-    tbk_df = pd.read_excel(transbank_file)
+    tbk_df = _read_transbank_dataframe(transbank_file)
     bank_df = pd.read_excel(bank_statement_file)
     operator_dfs = {
         "AX": pd.read_excel(amex_file), "DI": pd.read_excel(diners_file),
@@ -210,8 +350,12 @@ def calculate_usd_preview(
         except Exception:
             continue
 
-    # 1. Bank Statement Abono & Metadata
-    calc_deposit, bank_name, account_num, settlement_date = _extract_bank_and_settlement_metadata(tbk_df, bank_df)
+    # 1. Detect Transbank Detail Header & Extract Bank Statement Abono / Metadata
+    detail_header_row, tbk_cols = _find_tbk_usd_detail_header_row(tbk_df)
+    (
+        calc_deposit, bank_name, account_num,
+        settlement_date, header_merchant_code, header_location,
+    ) = _extract_bank_and_settlement_metadata(tbk_df, bank_df, max_tbk_row=detail_header_row)
     bank_validations = parse_and_validate_bank_deposits(
         bank_dataframe=bank_df,
         expected_deposits=[("USD_GENERAL", calc_deposit)],
@@ -287,25 +431,31 @@ def calculate_usd_preview(
                 })
 
     # 3. Cross-Match Transbank -> ERP -> Card Operator
-    tbk_cols = resolve_dataframe_columns(tbk_df, TRANSBANK_USD_COLUMN_RULES)
     matched_vouchers, discrepancy_vouchers, orphan_vouchers, tbk_txs_data = [], [], [], []
     summary_accumulators = {
         code: {k: Decimal("0.00") for k in ("usd_erp_total", "usd_tbk_total", "clp_erp_total", "clp_tbk_total")}
         for code in CARD_CODES
     }
 
-    for _, row in tbk_df.iterrows():
-        raw_card_type = str(safe_cell(row, tbk_cols["card_type"]) or "").strip().upper()
-        if raw_card_type not in summary_accumulators:
-            continue
-
+    start_row = detail_header_row + 1 if detail_header_row > 0 else 0
+    for _, row in tbk_df.iloc[start_row:].iterrows():
         auth_code = clean_code_string(safe_cell(row, tbk_cols["authorization_code"]))
         gross_amount_usd = safe_decimal(safe_cell(row, tbk_cols["gross_amount"]))
         if not auth_code or gross_amount_usd <= 0:
             continue
 
-        sale_date = safe_date(safe_cell(row, tbk_cols["sale_date"]))
+        movement_type = normalize_text(safe_cell(row, tbk_cols.get("movement_type", -1)))
+        if movement_type and "venta" not in movement_type and "anulac" not in movement_type:
+            continue
+
         masked_card = str(safe_cell(row, tbk_cols["masked_card_number"]) or "").strip()
+        raw_card_type = str(safe_cell(row, tbk_cols.get("card_type", -1)) or "").strip().upper()
+        if raw_card_type not in summary_accumulators and masked_card:
+            raw_card_type = card_code_from_masked_number(masked_card)
+        if raw_card_type not in summary_accumulators:
+            continue
+
+        sale_date = safe_date(safe_cell(row, tbk_cols["sale_date"]))
         card_model = card_types.get(raw_card_type)
         card_name = card_model.name if card_model else raw_card_type
         tbk_index = len(tbk_txs_data)
@@ -367,7 +517,7 @@ def calculate_usd_preview(
                 document_number = " / ".join(doc_numbers)[:50]
                 observation_text = (
                     f"Voucher dividido en {len(resolved_candidates)} facturas ({document_number}) | Suma SALDO {operator_clp}"
-                    if all_ops_found else "No encontrado en archivo Operadora"
+                    if all_ops_found else "No encontrado en Posición por Clientes"
                 )
 
             difference_usd = round(gross_amount_usd - operator_usd, 2)
@@ -392,15 +542,30 @@ def calculate_usd_preview(
         acc["clp_tbk_total"] += operator_clp
 
         sale_date_str = sale_date.strftime("%d/%m/%Y") if sale_date else None
+        row_merchant_code = clean_code_string(safe_cell(row, tbk_cols.get("merchant_code", -1))) or header_merchant_code
+        raw_loc = str(safe_cell(row, tbk_cols.get("merchant_location", -1)) or "").split(",")[0].strip()
+        merchant_loc = raw_loc or header_location or "HOTEL PLAZA SAN FRANCISCO"
+        commission_val = safe_decimal(safe_cell(row, tbk_cols.get("commission", -1)))
+        vat_val = safe_decimal(safe_cell(row, tbk_cols.get("commission_vat", -1)))
+        net_val = safe_decimal(safe_cell(row, tbk_cols.get("net_deposit", -1)))
+
         tbk_txs_data.append({
-            "card_code": raw_card_type, "payment_modality": "CREDIT",
-            "merchant_code": clean_code_string(safe_cell(row, tbk_cols.get("merchant_code", 1))),
-            "merchant_location_name": "HOTEL PLAZA SAN FRANCISCO",
+            "card_code": raw_card_type,
+            "payment_modality": "CREDIT",
+            "merchant_code": row_merchant_code,
+            "merchant_location_name": merchant_loc,
             "masked_card_number": masked_card,
-            "installment_type": str(safe_cell(row, tbk_cols.get("installment_type", 5)) or "").strip(),
-            "installment_number": clean_code_string(safe_cell(row, tbk_cols.get("installment_number", 8))),
-            "authorization_code": auth_code, "sale_date": sale_date_str,
-            "original_sale_amount": float(gross_amount_usd), "reconciled": is_within_tolerance,
+            "transaction_identifier": clean_code_string(safe_cell(row, tbk_cols.get("transaction_identifier", -1))),
+            "receipt_number": clean_code_string(safe_cell(row, tbk_cols.get("receipt_number", -1))),
+            "installment_type": str(safe_cell(row, tbk_cols.get("installment_type", -1)) or "").strip(),
+            "installment_number": clean_code_string(safe_cell(row, tbk_cols.get("installment_number", -1))),
+            "authorization_code": auth_code,
+            "sale_date": sale_date_str,
+            "original_sale_amount": float(gross_amount_usd),
+            "transbank_commission": float(commission_val),
+            "commission_vat_tax": float(vat_val),
+            "net_deposit_amount": float(net_val),
+            "reconciled": is_within_tolerance,
         })
 
         voucher_dict = {
@@ -408,7 +573,7 @@ def calculate_usd_preview(
             "authorization_code": auth_code, "erp_authorization_code": erp_auth_code,
             "document_number": document_number, "operator_document_number": operator_doc_number or document_number,
             "card_code": raw_card_type, "card_name": card_name, "masked_card": masked_card,
-            "sale_date": sale_date_str or "", "merchant_location": "HOTEL PLAZA SAN FRANCISCO",
+            "sale_date": sale_date_str or "", "merchant_location": merchant_loc,
             "guest_name": guest_name, "room_number": room_number, "cashier_username": cashier_username,
             "gross_amount_usd": float(gross_amount_usd), "operator_amount_usd": float(operator_usd),
             "erp_amount_clp": float(erp_amount_clp), "operator_amount_clp": float(operator_clp),

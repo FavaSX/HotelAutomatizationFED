@@ -75,15 +75,15 @@ def _write_summary_table(
 
 def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
     headers = [
-        "Fecha", "Cruce Voucher (TBK = ERP)", "Cruce Documento (ERP = OP)", "Cajero", "Tarjeta",
-        "Monto TBK USD", "Monto Operador USD", "Diferencia USD", "Monto ERP CLP", "Diagnóstico",
+        "Fecha", "Cruce Voucher (TBK = ERP)", "Cruce Documento (ERP = Pos. Clientes)", "Cajero", "Tarjeta",
+        "Monto TBK USD", "Monto Pos. Clientes USD", "Diferencia USD", "Monto ERP CLP", "Diagnóstico",
     ]
     write_header_row(ws, 1, headers, fill=NAVY_FILL)
 
     for r_idx, v in enumerate((m for m in cross_matches if m.system_result == "MATCHED"), 2):
         ws.cell(row=r_idx, column=1, value=v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—")
         ws.cell(row=r_idx, column=2, value=f"TBK: {v.authorization_code} = ERP: {v.authorization_code}" if v.authorization_code else "")
-        ws.cell(row=r_idx, column=3, value=f"ERP: {v.document_number} = OP: {v.document_number}" if v.document_number else "")
+        ws.cell(row=r_idx, column=3, value=f"ERP: {v.document_number} = PC: {v.document_number}" if v.document_number else "")
         ws.cell(row=r_idx, column=4, value=v.cashier_username or "")
         ws.cell(row=r_idx, column=5, value=v.card_type.name if v.card_type else "")
         ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = USD_FORMAT
@@ -96,7 +96,7 @@ def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]
 def _populate_discrepancies_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
     headers = [
         "Autorización", "Documento", "Huésped", "Habitación", "Tarjeta",
-        "Monto TBK USD", "Monto Operador USD", "Diferencia USD", "Diagnóstico",
+        "Monto TBK USD", "Monto Pos. Clientes USD", "Diferencia USD", "Diagnóstico",
     ]
     write_header_row(ws, 1, headers, fill=GOLD_FILL)
 
@@ -116,7 +116,7 @@ def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchRes
     headers = [
         "#", "Voucher TBK", "Tipo Discrepancia", "Tarjeta", "Monto TBK (US$)", "Fecha POS",
         "Cód. ERP Sugerido", "Doc. ERP", "Monto ERP (CLP)", "Cajero ERP", "Huésped / Habitación",
-        "Doc. Operadora", "Monto Op. (US$)", "Saldo Op. (CLP)", "Confianza",
+        "Doc. Pos. Clientes", "Monto Pos. Clientes (US$)", "Saldo Pos. Clientes (CLP)", "Confianza",
         "Diagnóstico Sugerido", "Motivos Coincidencia", "Nota de Auditoría",
     ]
     write_header_row(ws, 1, headers, fill=NAVY_FILL, center=True)
@@ -218,8 +218,8 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
     last_usd_row = _write_summary_table(
         ws_summary,
         4,
-        "1. CUADRATURA POR OPERADOR EN DÓLARES (US$)",
-        ["Operador", "Total TBK (US$)", "Total Operador (US$)", "Diferencia (US$)"],
+        "1. CUADRATURA POSICIÓN POR CLIENTES EN DÓLARES (US$)",
+        ["Tarjeta", "Total TBK (US$)", "Total Pos. Clientes (US$)", "Diferencia (US$)"],
         usd_summaries,
         "TOTAL GENERAL USD",
         USD_FORMAT,
@@ -229,7 +229,7 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
         ws_summary,
         last_usd_row + 3,
         "2. CUADRATURA EN MONEDA NACIONAL (PESOS CLP)",
-        ["Operador", "Total ERP (CLP)", "Total Operador (CLP)", "Diferencia (CLP)"],
+        ["Tarjeta", "Total ERP (CLP)", "Total Pos. Clientes (CLP)", "Diferencia (CLP)"],
         clp_summaries,
         "TOTAL GENERAL CLP",
         CLP_FORMAT,

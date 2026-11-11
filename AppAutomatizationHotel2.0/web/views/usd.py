@@ -176,10 +176,27 @@ def usd_export_committed_view(request, process_id: int):
     )
 
 
+USD_POSITION_ROLE_LABELS = {
+    "amex": "4. Posición por Clientes — American Express (USD)",
+    "diners": "5. Posición por Clientes — Diners Club (USD)",
+    "visa": "6. Posición por Clientes — Visa (USD)",
+    "mastercard": "7. Posición por Clientes — MasterCard (USD)",
+}
+
+
+def _detect_and_align_usd_with_hotel_labels(uploaded_files):
+    report = detect_and_align_usd_files(uploaded_files)
+    for role in report.get("aligned_roles", []):
+        role_key = role.get("role_key")
+        if role_key in USD_POSITION_ROLE_LABELS:
+            role["role_label"] = USD_POSITION_ROLE_LABELS[role_key]
+    return report
+
+
 @login_required(login_url="login")
 def usd_detect_files_view(request):
     """Inspects the internal cell structure of uploaded Excel files and aligns them to the 7 USD roles."""
-    return handle_detect_files_api(request, detect_and_align_usd_files)
+    return handle_detect_files_api(request, _detect_and_align_usd_with_hotel_labels)
 
 
 @login_required(login_url="login")

@@ -120,8 +120,14 @@ function getConfidenceBadgeHtml(type) {
 }
 
 function renderAlignmentTable(data) {
-  const tbody = document.getElementById('alignmentTableBody');
-  tbody.innerHTML = '';
+  const mainTbody = document.getElementById('alignmentMainTableBody');
+  const posTbody = document.getElementById('alignmentPositionTableBody');
+  const defaultTbody = document.getElementById('alignmentTableBody');
+
+  if (mainTbody) mainTbody.innerHTML = '';
+  if (posTbody) posTbody.innerHTML = '';
+  if (defaultTbody) defaultTbody.innerHTML = '';
+
   extraErpIndices.clear();
   extraTbkIndices.clear();
 
@@ -136,6 +142,8 @@ function renderAlignmentTable(data) {
   if (tbkRole && tbkRole.extra_files && Array.isArray(tbkRole.extra_files)) {
     tbkRole.extra_files.forEach(ef => extraTbkIndices.add(ef.file_index));
   }
+
+  const positionRoleKeys = new Set(['amex', 'diners', 'visa', 'mastercard']);
 
   data.aligned_roles.forEach(role => {
     const tr = document.createElement('tr');
@@ -230,7 +238,14 @@ function renderAlignmentTable(data) {
         </td>
       `;
     }
-    tbody.appendChild(tr);
+
+    if (posTbody && positionRoleKeys.has(role.role_key)) {
+      posTbody.appendChild(tr);
+    } else if (mainTbody) {
+      mainTbody.appendChild(tr);
+    } else if (defaultTbody) {
+      defaultTbody.appendChild(tr);
+    }
   });
 
   renderExtraErpWidgets();

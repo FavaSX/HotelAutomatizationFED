@@ -93,7 +93,7 @@ def _enrich_discrepancy_voucher(
     sale_date, guest_name = str(disc.get("sale_date") or "—"), str(disc.get("guest_name") or "—")
     room_number, cashier = str(disc.get("room_number") or "—"), str(disc.get("cashier_username") or "—")
     masked_card, obs = str(disc.get("masked_card") or "—"), str(disc.get("observation") or "")
-    op_file_label = op_file_by_card.get(card_code, "Operadora DOLAR.XLS")
+    op_file_label = op_file_by_card.get(card_code, "POSICION POR CLIENTES.XLS")
 
     erp_idx_val = disc.get("erp_index")
     erp_date_val = (
@@ -101,8 +101,8 @@ def _enrich_discrepancy_voucher(
         if erp_idx_val is not None and 0 <= erp_idx_val < len(erp_txs) else sale_date
     )
 
-    # Case 1A: Not found in Operator by document_number (op_usd == 0 and op_clp == 0)
-    if op_usd == 0.0 and "No encontrado en archivo Operadora" in obs:
+    # Case 1A: Not found in Posición por Clientes by document_number (op_usd == 0 and op_clp == 0)
+    if op_usd == 0.0 and ("No encontrado en Posición por Clientes" in obs or "No encontrado en archivo Operadora" in obs):
         best_op, best_op_idx, best_score = None, None, 0
         for idx, op in enumerate(operator_txs):
             if idx in claimed_op_indices or op.get("card_code") != card_code:
@@ -127,12 +127,12 @@ def _enrich_discrepancy_voucher(
             reasons.extend([
                 _chip(f"Monto US$ Exacto ({fmt_usd(cand_usd)})" if usd_var < 0.01 else f"Monto US$ Cercano ({fmt_usd(cand_usd)} · Dif: {fmt_usd(usd_var)})", "emerald"),
                 _chip(f"Misma Tarjeta ({card_code})", "purple"),
-                _chip(f"Doc. Operadora #{op_doc} vs ERP #{doc_num}", "gold"),
+                _chip(f"Doc. Pos. Clientes #{op_doc} vs ERP #{doc_num}", "gold"),
             ])
             disc["suggestion"] = {
                 "confidence": "ALTA" if best_score >= 90 else "MEDIA",
-                "headline": f"Registro hallado en Operadora bajo Doc #{op_doc}",
-                "action": f"Validar folio Doc #{op_doc} en archivo Operadora y vincular con Doc #{doc_num} del ERP",
+                "headline": f"Registro hallado en Posición por Clientes bajo Doc #{op_doc}",
+                "action": f"Validar folio Doc #{op_doc} en Posición por Clientes y vincular con Doc #{doc_num} del ERP",
                 "files_involved": files_for_card(card_code),
                 "erp_cashier": cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date_val,
                 "manual_check_note": (
@@ -150,29 +150,29 @@ def _enrich_discrepancy_voucher(
                     erp_clp_str=fmt_clp(erp_clp), op_clp_str=fmt_clp(cand_clp), clp_tone="emerald",
                     tbk_context=f"{card_name} ({card_code}) · {sale_date} · {masked_card}",
                     erp_context=f"{guest_name} · Hab. {room_number} · {erp_date_val} ({cashier})",
-                    op_context=f"Operadora {card_name} · Doc #{op_doc}", context_tone="cyan",
+                    op_context=f"Posición por Clientes {card_name} · Doc #{op_doc}", context_tone="cyan",
                 ),
             }
             return
 
-    # Case 1B: Operator matched by Doc and Corrected CLP, but Foreign Currency USD is 0.00
+    # Case 1B: Matched by Doc and Corrected CLP, but Foreign Currency USD is 0.00
     if op_usd == 0.0 and erp_clp > 0 and "SALDO" in obs.upper():
         disc["suggestion"] = {
             "confidence": "ALTA",
-            "headline": f"Vinculado por Doc #{doc_num} y Saldo CLP (Col. USD en 0,00 en Operadora)",
-            "action": f"Verificar columna USD en archivo Operadora para Doc #{doc_num}; saldo CLP cuadra exactamente",
+            "headline": f"Vinculado por Doc #{doc_num} y Saldo CLP (Col. USD en 0,00 en Posición por Clientes)",
+            "action": f"Verificar columna USD en Posición por Clientes para Doc #{doc_num}; saldo CLP cuadra exactamente",
             "files_involved": files_for_card(card_code),
             "erp_cashier": cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date_val,
             "manual_check_note": (
                 f"El documento #{doc_num} ({guest_name}, Hab. {room_number}) coincide exactamente en "
                 f"Saldo Corregido CLP ({fmt_clp(erp_clp)}) entre el ERP y '{op_file_label}', pero la columna "
-                f"Moneda Extranjera (US$) viene en 0,00 en el archivo de la operadora."
+                f"Moneda Extranjera (US$) viene en 0,00 en el archivo de Posición por Clientes."
             ),
             "reasons": [
-                _chip(f"Doc. ERP = Operadora (#{doc_num})", "cyan"),
+                _chip(f"Doc. ERP = Pos. Clientes (#{doc_num})", "cyan"),
                 _chip(f"Saldo CLP Exacto ({fmt_clp(erp_clp)})", "emerald"),
                 _chip(f"Cód. Autorización ({auth_code})", "emerald"),
-                _chip("Col. USD en 0,00 en Operadora", "gold"),
+                _chip("Col. USD en 0,00 en Pos. Clientes", "gold"),
             ],
             "comparison_rows": _build_standard_comparison_rows(
                 tbk_auth=auth_code, erp_auth=auth_code, op_auth=auth_code, auth_tone="emerald",
@@ -186,12 +186,12 @@ def _enrich_discrepancy_voucher(
         }
         return
 
-    # Case 1C: Both ERP and Operator matched (op_usd > 0), explain exchange/partial difference
+    # Case 1C: Both ERP and Posición por Clientes matched (op_usd > 0), explain exchange/partial difference
     if op_usd > 0.0:
         is_small_diff = abs(diff_usd) <= 5.0
         reasons = [
             _chip(f"Cód. Autorización Exacto ({auth_code})", "emerald"),
-            _chip(f"Doc. ERP = Operadora (#{doc_num})", "cyan"),
+            _chip(f"Doc. ERP = Pos. Clientes (#{doc_num})", "cyan"),
         ]
         if erp_clp > 0 and abs(erp_clp - op_clp) <= 10:
             reasons.append(_chip(f"Saldo CLP Exacto ({fmt_clp(erp_clp)})", "emerald"))
@@ -210,7 +210,7 @@ def _enrich_discrepancy_voucher(
                 if is_small_diff else f"Cruce parcial en Doc #{doc_num} — Saldo CLP cuadra en {fmt_clp(erp_clp)}"
             ),
             "action": (
-                f"Ajustar diferencia cambiaria de {fmt_usd(abs(diff_usd))} entre POS Transbank y Operadora"
+                f"Ajustar diferencia cambiaria de {fmt_usd(abs(diff_usd))} entre POS Transbank y Posición por Clientes"
                 if is_small_diff else f"Revisar cobro parcial o propina por diferencia de {fmt_usd(abs(diff_usd))} con cajero {cashier}"
             ),
             "files_involved": files_for_card(card_code),
@@ -218,7 +218,7 @@ def _enrich_discrepancy_voucher(
             "manual_check_note": (
                 f"Tanto el Código ({auth_code}), el Doc (#{doc_num}) como el Saldo CLP ({fmt_clp(erp_clp)}) "
                 f"coinciden al 100% entre ERP y '{op_file_label}'. La diferencia de {fmt_usd(abs(diff_usd))} "
-                f"entre Transbank ({fmt_usd(tbk_usd)}) y Operadora ({fmt_usd(op_usd)}) debe verificarse manualmente."
+                f"entre Transbank ({fmt_usd(tbk_usd)}) y Posición por Clientes ({fmt_usd(op_usd)}) debe verificarse manualmente."
             ),
             "reasons": reasons,
             "comparison_rows": _build_standard_comparison_rows(
@@ -228,7 +228,7 @@ def _enrich_discrepancy_voucher(
                 erp_clp_str=fmt_clp(erp_clp), op_clp_str=fmt_clp(op_clp), clp_tone="emerald",
                 tbk_context=f"Tarjeta: {masked_card} · {sale_date}",
                 erp_context=f"{guest_name} · Hab. {room_number} · Cajero: {cashier}",
-                op_context=f"Operadora {card_name}", context_tone="cyan",
+                op_context=f"Posición por Clientes {card_name}", context_tone="cyan",
             ),
         }
 
@@ -280,7 +280,7 @@ def _collect_orphan_erp_op_proposals(
                 reasons = [_chip(f"Monto US$ Exacto ({fmt_usd(op_usd)})" if usd_diff < 0.01 else f"Monto US$ Cercano ({fmt_usd(op_usd)})", "emerald")]
                 if typo_badge:
                     reasons.append(_chip(typo_badge, "gold"))
-                reasons.append(_chip(f"Doc. ERP = Operadora (#{erp_doc})" if same_doc else f"Doc. ERP #{erp_doc} / Op #{op_doc}", "cyan"))
+                reasons.append(_chip(f"Doc. ERP = Pos. Clientes (#{erp_doc})" if same_doc else f"Doc. ERP #{erp_doc} / PC #{op_doc}", "cyan"))
                 if same_clp:
                     reasons.append(_chip(f"Saldo CLP Exacto ({fmt_clp(erp_clp)})", "emerald"))
                 if same_date:
@@ -290,7 +290,7 @@ def _collect_orphan_erp_op_proposals(
                 erp_match_code = f"Cód. {erp_auth}" if erp_auth else "Sin código"
                 suggestion_payload = {
                     "confidence": "ALTA" if score >= 120 else "MEDIA",
-                    "headline": f"Coincidencia sugerida en ERP y Operadora ({erp_match_code})",
+                    "headline": f"Coincidencia sugerida en ERP y Posición por Clientes ({erp_match_code})",
                     "action": f"Corregir código de autorización en ERP de '{erp_auth or 'sin código'}' a '{auth_code}' (Doc #{erp_doc})",
                     "files_involved": files_for_card(card_code),
                     "erp_cashier": erp_cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date,
@@ -395,7 +395,7 @@ def _enrich_unassigned_orphan(
                         op_clp_str=fmt_clp(op_clp or sum_clp), clp_tone="emerald",
                         tbk_context=f"Tarjeta: {masked_card} · {sale_date}",
                         erp_context=f"{guest} · Hab. {room} · {sale_date}",
-                        op_context=f"Operadora {card_name}", context_tone="emerald",
+                        op_context=f"Posición por Clientes {card_name}", context_tone="emerald",
                     ),
                 }
                 claimed_erp_indices.update((idx1, idx2))
@@ -415,19 +415,19 @@ def _enrich_unassigned_orphan(
         op_match_str = f"Cód. {op_auth_match}" if op_auth_match else f"Monto {fmt_usd(op_usd)}"
         orph["suggestion"] = {
             "confidence": "MEDIA",
-            "headline": f"Ubicado en Operadora ({op_match_str}) — No facturado en ERP",
+            "headline": f"Ubicado en Posición por Clientes ({op_match_str}) — No facturado en ERP",
             "action": f"Ingresar cobro de Doc #{op_doc} ({fmt_usd(tbk_usd)}) en ERP Hotel o verificar omisión de facturación",
             "files_involved": files_for_card(card_code),
             "manual_check_note": (
-                f"El voucher '{auth_code}' ({fmt_usd(tbk_usd)}) fue localizado en la Operadora bajo el Doc #{op_doc} "
+                f"El voucher '{auth_code}' ({fmt_usd(tbk_usd)}) fue localizado en Posición por Clientes bajo el Doc #{op_doc} "
                 f"con un saldo equivalente de {fmt_clp(op_clp)} CLP, pero ese folio no aparece en el ERP Hotel. "
                 f"Revise manualmente si el número de documento fue truncado o facturado en el periodo siguiente."
             ),
             "reasons": [
-                _chip(f"Monto US$ Exacto en Operadora ({fmt_usd(op_usd)})", "emerald"),
-                _chip(f"Saldo Operadora ({fmt_clp(op_clp)})", "cyan"),
+                _chip(f"Monto US$ Exacto en Pos. Clientes ({fmt_usd(op_usd)})", "emerald"),
+                _chip(f"Saldo Pos. Clientes ({fmt_clp(op_clp)})", "cyan"),
                 _chip(f"Misma Tarjeta ({card_code})", "purple"),
-                _chip(f"Doc. Operadora #{op_doc} ausente en ERP", "gold"),
+                _chip(f"Doc. Pos. Clientes #{op_doc} ausente en ERP", "gold"),
             ],
             "comparison_rows": _build_standard_comparison_rows(
                 tbk_auth=auth_code, erp_auth="— (No figura en ERP)",
@@ -436,7 +436,7 @@ def _enrich_unassigned_orphan(
                 tbk_usd=tbk_usd, op_usd_str=fmt_usd(op_usd), usd_tone="emerald",
                 erp_clp_str="—", op_clp_str=fmt_clp(op_clp), clp_tone="cyan",
                 tbk_context=f"Tarjeta: {masked_card} · {sale_date}", erp_context="—",
-                op_context=f"Operadora {card_name}", context_tone="gold",
+                op_context=f"Posición por Clientes {card_name}", context_tone="gold",
             ),
         }
 
@@ -541,7 +541,7 @@ def _find_db_suggestion_for_orphan(
     elif typo_badge:
         reasons.append(_chip(typo_badge, "gold"))
     if same_doc:
-        reasons.append(_chip(f"Doc. ERP = Operadora (#{db_doc})", "cyan"))
+        reasons.append(_chip(f"Doc. ERP = Pos. Clientes (#{db_doc})", "cyan"))
     if same_clp:
         reasons.append(_chip(f"Saldo CLP Coincide ({fmt_clp(db_clp)})", "emerald"))
     reasons.append(_chip(f"Fecha Venta ERP: {db_date}", "cyan"))
@@ -571,7 +571,7 @@ def _find_db_suggestion_for_orphan(
         clp_tone="emerald" if same_clp else "gold",
         tbk_context=f"Tarjeta: {masked_card} · {sale_date}",
         erp_context=f"{db_guest} · Hab. {db_room} · {db_date} {db_time} ({db_cashier})",
-        op_context=f"Operadora {card_name}",
+        op_context=f"Posición por Clientes {card_name}",
         context_tone="cyan",
     )
 
@@ -616,7 +616,7 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
     erp_file_name = file_names.get("erp", "TARJETAS ERP.xlsx")
 
     def _files_for_card(card_code: str) -> Dict[str, str]:
-        return {"tbk": tbk_file_name, "erp": erp_file_name, "op": op_file_by_card.get(card_code, "Operadora DOLAR.XLS")}
+        return {"tbk": tbk_file_name, "erp": erp_file_name, "op": op_file_by_card.get(card_code, "POSICION POR CLIENTES.XLS")}
 
     claimed_op_indices: Set[int] = {v["operator_index"] for v in matched_vouchers if v.get("operator_index") is not None}
     for disc in discrepancy_vouchers:
