@@ -1,0 +1,78 @@
+{% load currency_filters %}
+<section class="card card-executive">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4 text-nowrap">Cód. Autorización</th>
+          <th class="text-nowrap">Modalidad</th>
+          <th class="text-nowrap">Tarjeta</th>
+          <th class="text-nowrap">Fecha Venta</th>
+          <th class="text-nowrap">Tarjeta Enmascarada</th>
+          <th class="text-nowrap">Cód. Comercio</th>
+          <th class="text-nowrap">Comercio / Local</th>
+          <th class="text-nowrap">Boleta</th>
+          <th class="text-nowrap">TID</th>
+          <th class="text-nowrap">Tipo Cuota</th>
+          <th class="text-nowrap">N° Cuota</th>
+          <th class="text-nowrap">Moneda</th>
+          {% if consolidated %}<th class="text-nowrap">Cierre</th>{% endif %}
+          <th class="text-end text-nowrap">Venta</th>
+          <th class="text-end text-nowrap">Comisión TBK</th>
+          <th class="text-end text-nowrap">IVA Com.</th>
+          <th class="text-end text-nowrap">Abono Neto</th>
+          <th class="pe-4 text-nowrap">Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in tbk_rows %}
+        <tr>
+          <td class="ps-4 font-mono fw-semibold text-nowrap">{{ row.authorization_code }}</td>
+          <td class="small text-nowrap">{{ row.modality_label }}</td>
+          <td class="small text-nowrap">{{ row.card_type.name|default:"—" }}</td>
+          <td class="small text-nowrap">{{ row.sale_date|date:"d/m/Y"|default:"—" }}</td>
+          <td class="small font-mono text-nowrap">{{ row.masked_card_number|default:"—" }}</td>
+          <td class="small font-mono text-nowrap">{{ row.merchant_code|default:"—" }}</td>
+          <td class="small">{{ row.merchant_location_name|default:"—" }}</td>
+          <td class="small font-mono text-nowrap">{{ row.receipt_number|default:"—" }}</td>
+          <td class="small font-mono text-nowrap">{{ row.transaction_identifier|default:"—" }}</td>
+          <td class="small text-nowrap">{{ row.installment_type|default:"—" }}</td>
+          <td class="small font-mono text-nowrap">{{ row.installment_number|default:"—" }}</td>
+          <td class="small text-nowrap">
+            <span class="status-chip {% if row.row_is_usd %}status-neutral{% else %}status-success{% endif %}">{{ row.process.process_currency }}</span>
+          </td>
+          {% if consolidated %}
+          <td class="small text-nowrap">
+            <a href="{% url 'closing_detail' row.process_id %}?vista=transbank" class="text-decoration-none font-mono">#{{ row.process_id }}</a>
+          </td>
+          {% endif %}
+          <td class="text-end fw-semibold text-nowrap">
+            {% if row.row_is_usd %}US$ {{ row.original_sale_amount|num_usd }}{% else %}${{ row.original_sale_amount|num_clp }}{% endif %}
+          </td>
+          <td class="text-end small text-nowrap">
+            {% if row.row_is_usd %}US$ {{ row.transbank_commission|num_usd }}{% else %}${{ row.transbank_commission|num_clp }}{% endif %}
+          </td>
+          <td class="text-end small text-nowrap">
+            {% if row.row_is_usd %}US$ {{ row.commission_vat_tax|num_usd }}{% else %}${{ row.commission_vat_tax|num_clp }}{% endif %}
+          </td>
+          <td class="text-end fw-semibold text-nowrap">
+            {% if row.row_is_usd %}US$ {{ row.net_deposit_amount|num_usd }}{% else %}${{ row.net_deposit_amount|num_clp }}{% endif %}
+          </td>
+          <td class="pe-4">
+            {% if row.tbk_status_label %}
+            <span class="status-chip {{ row.tbk_status_tone }}"{% if row.tbk_status_title %} title="{{ row.tbk_status_title }}"{% endif %}>{{ row.tbk_status_label }}</span>
+            {% elif row.reconciled %}
+            <span class="status-chip status-success">Conciliado</span>
+            {% else %}
+            <span class="status-chip status-warning">Pendiente</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{% if consolidated %}18{% else %}17{% endif %}" class="text-center py-4 text-muted">No hay transacciones Transbank para esos filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/db_pagination_bar.html" with page=page query_string=query_string aria_label="Paginación de Transbank" %}
+</section>

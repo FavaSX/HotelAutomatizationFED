@@ -15,6 +15,7 @@ from ..services import (
     generate_committed_clp_excel_bytes,
     detect_and_align_clp_files,
 )
+from ..services.tables_viewer import build_preview_source_tables_context
 from .common import (
     handle_preview_correction,
     CLP_SESSION_KEY,
@@ -173,6 +174,7 @@ def clp_preview_view(request):
         "counts": preview.get("counts", {}),
         "suggestion_counts": preview.get("suggestion_counts", {}),
         "all_banks_matched": all(b.get("is_matched") for b in active_banks),
+        "source_tables": build_preview_source_tables_context(preview, "CLP"),
     }
     return render(request, "clp_preview.html", context)
 

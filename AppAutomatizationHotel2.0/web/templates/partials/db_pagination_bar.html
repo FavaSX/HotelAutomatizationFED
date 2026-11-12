@@ -1,0 +1,30 @@
+{% if page.paginator.num_pages > 1 %}
+<div class="border-top px-4 py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div class="small text-muted">
+    Mostrando <strong>{{ page.start_index }}–{{ page.end_index }}</strong> de <strong>{{ page.paginator.count }}</strong>
+  </div>
+  <nav aria-label="{{ aria_label|default:'Paginación de resultados' }}">
+    <ul class="pagination pagination-sm mb-0">
+      {% if page.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page=1" aria-label="Primera">&laquo;</a>
+      </li>
+      <li class="page-item">
+        <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page.previous_page_number }}" aria-label="Anterior">&lsaquo;</a>
+      </li>
+      {% endif %}
+      <li class="page-item active">
+        <span class="page-link">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+      </li>
+      {% if page.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page.next_page_number }}" aria-label="Siguiente">&rsaquo;</a>
+      </li>
+      <li class="page-item">
+        <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page.paginator.num_pages }}" aria-label="Última">&raquo;</a>
+      </li>
+      {% endif %}
+    </ul>
+  </nav>
+</div>
+{% endif %}

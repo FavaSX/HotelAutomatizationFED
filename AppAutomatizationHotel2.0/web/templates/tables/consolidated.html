@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% load currency_filters l10n %}
+
+{% block page_title %}Hotel Plaza San Francisco | {{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <span class="badge rounded-pill px-3 py-1 badge-brand-pill">
+        <i class="bi {{ badge_icon }} me-1"></i> {{ badge_label }}
+      </span>
+    </div>
+    <h1 class="h3 fw-bold mb-1">{{ page_title }}</h1>
+    <p class="text-muted small mb-0">{{ page_subtitle }}</p>
+  </div>
+  <a href="{% url 'audit_trail' %}" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold">
+    <i class="bi bi-journal-text me-1"></i> Ver bitácora de auditoría
+  </a>
+</div>
+
+{% include "partials/consultas_nav.html" %}
+
+<!-- KPIs -->
+{% if tab_key == "erp" %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Filas en filtro</div>
+      <div class="stat-value">{{ kpis.total }}</div>
+      {% if kpis.modified %}<div class="text-muted small">{{ kpis.modified }} modificadas</div>{% endif %}
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Conciliados</div>
+      <div class="stat-value text-success">{{ kpis.matched }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Solo en ERP (sin TBK)</div>
+      <div class="stat-value {% if kpis.solo_erp %}text-danger{% endif %}">{{ kpis.solo_erp }}</div>
+      {% if kpis.diff %}<div class="text-muted small">+ {{ kpis.diff }} con diferencia</div>{% endif %}
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Suma Borderó (CLP)</div>
+      <div class="stat-value">${{ kpis.total_clp|num_clp }}</div>
+    </div>
+  </div>
+</div>
+{% elif tab_key == "transbank" %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Transacciones</div>
+      <div class="stat-value">{{ kpis.total }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Conciliadas</div>
+      <div class="stat-value text-success">{{ kpis.conciliadas }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Pendientes</div>
+      <div class="stat-value {% if kpis.pendientes %}text-warning{% endif %}">{{ kpis.pendientes }}</div>
+      {% if kpis.resueltas %}<div class="text-muted small">+ {{ kpis.resueltas }} resueltas</div>{% endif %}
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Abono neto acumulado</div>
+      <div class="fw-bold fs-5 text-nowrap">${{ kpis.net_clp|num_clp }} <span class="text-muted small fw-normal">CLP</span></div>
+      {% if kpis.net_usd %}
+      <div class="small fw-semibold text-primary text-nowrap">US$ {{ kpis.net_usd|num_usd }} USD</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% elif tab_key == "cartola" %}
+<div class="row g-3 mb-3">
+  <div class="col-4">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Movimientos</div>
+      <div class="stat-value">{{ kpis.total }}</div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Abonos cuadrados</div>
+      <div class="stat-value text-success">{{ kpis.matched }}</div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Movimientos TBK</div>
+      <div class="stat-value">{{ kpis.tbk }}</div>
+    </div>
+  </div>
+</div>
+{% elif tab_key == "operadoras" %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Registros</div>
+      <div class="stat-value">{{ kpis.total }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Usados en cruce</div>
+      <div class="stat-value text-success">{{ kpis.used }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Sin usar en cruce</div>
+      <div class="stat-value">{{ kpis.unused }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Total USD</div>
+      <div class="stat-value">US$ {{ kpis.total_usd|num_usd }}</div>
+    </div>
+  </div>
+</div>
+{% elif tab_key == "cruces" %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Vouchers en filtro</div>
+      <div class="stat-value">{{ kpis.total }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Conciliados</div>
+      <div class="stat-value text-success">{{ kpis.matched }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Con discrepancia</div>
+      <div class="stat-value {% if kpis.discrepancies %}text-warning{% endif %}">{{ kpis.discrepancies }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Tasa conciliación</div>
+      <div class="stat-value">{{ kpis.match_rate }}%</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Filters (GET only) -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    {% if tab_key != "operadoras" %}
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-moneda">Moneda</label>
+      <select id="f-moneda" name="moneda" class="form-select form-select-sm">
+        <option value="ALL" {% if filters.moneda == "ALL" %}selected{% endif %}>Todas</option>
+        <option value="USD" {% if filters.moneda == "USD" %}selected{% endif %}>Dólares (USD)</option>
+        <option value="CLP" {% if filters.moneda == "CLP" %}selected{% endif %}>Pesos (CLP)</option>
+      </select>
+    </div>
+    {% endif %}
+
+    {% if tab_key == "erp" %}
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-cruce">Estado de cruce</label>
+      <select id="f-cruce" name="cruce" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="solo_erp" {% if filters.cruce == "solo_erp" %}selected{% endif %}>Solo en ERP (sin TBK)</option>
+        <option value="conciliados" {% if filters.cruce == "conciliados" %}selected{% endif %}>Conciliados</option>
+        <option value="con_diferencia" {% if filters.cruce == "con_diferencia" %}selected{% endif %}>Con diferencia</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-orig">Origen</label>
+      <select id="f-orig" name="origen" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="EXCEL" {% if filters.origen == "EXCEL" %}selected{% endif %}>Excel (Borderó)</option>
+        <option value="MANUAL" {% if filters.origen == "MANUAL" %}selected{% endif %}>Agregada a mano</option>
+        <option value="MODIFIED" {% if filters.origen == "MODIFIED" %}selected{% endif %}>Modificadas (ver antes)</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-card">Tarjeta</label>
+      <select id="f-card" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% elif tab_key == "transbank" %}
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-mod">Modalidad</label>
+      <select id="f-mod" name="modalidad" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        <option value="CREDIT" {% if filters.modalidad == "CREDIT" %}selected{% endif %}>Crédito</option>
+        <option value="DEBIT" {% if filters.modalidad == "DEBIT" %}selected{% endif %}>Débito</option>
+        <option value="PREPAID" {% if filters.modalidad == "PREPAID" %}selected{% endif %}>Prepago</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-card">Tarjeta</label>
+      <select id="f-card" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-est">Estado</label>
+      <select id="f-est" name="estado" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="conciliado" {% if filters.estado == "conciliado" %}selected{% endif %}>Conciliado</option>
+        <option value="resuelto" {% if filters.estado == "resuelto" %}selected{% endif %}>Resuelto</option>
+        <option value="pendiente" {% if filters.estado == "pendiente" %}selected{% endif %}>Pendiente</option>
+      </select>
+    </div>
+    {% elif tab_key == "cartola" %}
+    <div class="col-6 col-md-3">
+      <label class="form-label small fw-semibold mb-1" for="f-tipo">Movimientos</label>
+      <select id="f-tipo" name="tipo" class="form-select form-select-sm">
+        <option value="">Todos los movimientos</option>
+        <option value="cuadrados" {% if filters.tipo == "cuadrados" %}selected{% endif %}>Solo abonos cuadrados</option>
+        <option value="tbk" {% if filters.tipo == "tbk" %}selected{% endif %}>Solo relacionados con Transbank</option>
+      </select>
+    </div>
+    {% elif tab_key == "operadoras" %}
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-card">Franquicia</label>
+      <select id="f-card" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-cruce">Uso</label>
+      <select id="f-cruce" name="cruce" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="usados" {% if filters.cruce == "usados" %}selected{% endif %}>Usados en cruce</option>
+        <option value="sin_usar" {% if filters.cruce == "sin_usar" %}selected{% endif %}>Sin usar en cruce</option>
+      </select>
+    </div>
+    {% elif tab_key == "cruces" %}
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-res">Resultado</label>
+      <select id="f-res" name="resultado" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        {% for code, lbl in result_choices %}
+        <option value="{{ code }}" {% if filters.resultado == code %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-card">Tarjeta</label>
+      <select id="f-card" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-est">Gestión</label>
+      <select id="f-est" name="estado" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for st in status_choices %}
+        <option value="{{ st.code }}" {% if filters.estado == st.code %}selected{% endif %}>{{ st.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-desde">Desde</label>
+      <input id="f-desde" type="date" name="desde" value="{{ filters.desde }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="f-hasta">Hasta</label>
+      <input id="f-hasta" type="date" name="hasta" value="{{ filters.hasta }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label small fw-semibold mb-1" for="f-q">Buscar</label>
+      <input id="f-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="{% if tab_key == 'erp' %}Cuenta, documento, reserva, habitación, huésped, autorización, cajero…{% else %}Cuenta, documento, autorización, cajero…{% endif %}">
+    </div>
+    <div class="col-12 col-md-auto ms-auto d-flex gap-2 justify-content-end">
+      <a href="{% url reset_url_name %}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold">
+        <i class="bi bi-funnel me-1"></i>Filtrar
+      </button>
+    </div>
+  </div>
+</form>
+
+{% if tab_key == "erp" %}
+  {% include "partials/tables/_erp_table.html" %}
+{% elif tab_key == "transbank" %}
+  {% include "partials/tables/_transbank_table.html" %}
+{% elif tab_key == "cartola" %}
+  {% include "partials/tables/_cartola_table.html" %}
+{% elif tab_key == "operadoras" %}
+  {% include "partials/tables/_operadoras_table.html" %}
+{% elif tab_key == "cruces" %}
+  {% include "partials/tables/_cruce_table.html" %}
+{% endif %}
+{% endblock %}

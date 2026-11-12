@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+{% load currency_filters l10n %}
+
+{% block page_title %}Cierre #{{ process.id }} ({{ process.process_currency }}) | Tablas{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div class="min-w-0">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <a href="{% url 'closings_list' %}" class="text-decoration-none small fw-semibold">
+        <i class="bi bi-arrow-left me-1"></i>Cierres y Tablas
+      </a>
+      <span class="text-muted">·</span>
+      <span class="badge rounded-pill px-3 py-1 badge-brand-pill">{{ process.process_currency }}</span>
+      {% if process.tolerance_applied is not None %}
+      <span class="status-chip status-neutral">
+        <i class="bi bi-rulers"></i>Tolerancia ±{% if is_usd %}US$ {{ process.tolerance_applied|num_usd }}{% else %}${{ process.tolerance_applied|num_clp }}{% endif %}
+      </span>
+      {% endif %}
+    </div>
+    <h1 class="h3 fw-bold mb-1">
+      Cierre #{{ process.id }} · {{ process.accounting_period|default:"Cierre Guardado" }}
+    </h1>
+    <p class="text-muted small mb-0">
+      Guardado el {{ process.execution_date|date:"d/m/Y H:i" }} por <strong>{{ process.user.username }}</strong>
+      · Tasa de conciliación: <strong>{{ match_rate }}%</strong> ({{ tab_counts.matched }} de {{ tab_counts.cruce }} vouchers)
+    </p>
+  </div>
+
+  <div class="d-flex flex-wrap gap-2">
+    <a href="{% url 'audit_trail' %}?moneda={{ process.process_currency }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold">
+      <i class="bi bi-journal-text me-1"></i> Bitácora auditoría
+    </a>
+    {% if is_usd %}
+    <a href="{% url 'usd_export_committed' process.id %}" class="btn btn-sm btn-primary rounded-pill px-3 fw-semibold">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i> Descargar Excel USD
+    </a>
+    {% else %}
+    <a href="{% url 'clp_export_committed' process.id %}" class="btn btn-sm btn-primary rounded-pill px-3 fw-semibold">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i> Descargar Excel CLP
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Tab Selector -->
+<div class="card card-executive p-2 mb-3">
+  <div class="segmented flex-wrap" role="tablist" aria-label="Tablas del cierre">
+    <a href="{% url 'closing_detail' process.id %}?vista=resumen"
+       class="segmented-item {% if active_tab == 'resumen' %}active{% endif %}">
+      <i class="bi bi-grid-1x2"></i>Resumen y Cuadratura
+    </a>
+    <a href="{% url 'closing_detail' process.id %}?vista=cruce"
+       class="segmented-item {% if active_tab == 'cruce' %}active{% endif %}">
+      <i class="bi bi-arrow-left-right"></i>Resultados del Cruce
+      <span class="segmented-count">{{ tab_counts.cruce }}</span>
+    </a>
+    <a href="{% url 'closing_detail' process.id %}?vista=erp"
+       class="segmented-item {% if active_tab == 'erp' %}active{% endif %}">
+      <i class="bi bi-building"></i>Borderó ERP
+      <span class="segmented-count">{{ tab_counts.erp }}</span>
+      {% if tab_counts.erp_unlinked %}
+      <span class="status-chip status-danger ms-1 py-0" title="Filas en ERP sin voucher Transbank vinculado">{{ tab_counts.erp_unlinked }} sin TBK</span>
+      {% endif %}
+    </a>
+    <a href="{% url 'closing_detail' process.id %}?vista=cartola"
+       class="segmented-item {% if active_tab == 'cartola' %}active{% endif %}">
+      <i class="bi bi-bank"></i>Cartola Bancaria
+      <span class="segmented-count">{{ tab_counts.bank }}</span>
+    </a>
+    {% if is_usd %}
+    <a href="{% url 'closing_detail' process.id %}?vista=operadoras"
+       class="segmented-item {% if active_tab == 'operadoras' %}active{% endif %}">
+      <i class="bi bi-credit-card"></i>Posición por Clientes
+      <span class="segmented-count">{{ tab_counts.operadoras }}</span>
+    </a>
+    {% endif %}
+    <a href="{% url 'closing_detail' process.id %}?vista=transbank"
+       class="segmented-item {% if active_tab == 'transbank' %}active{% endif %}">
+      <i class="bi bi-receipt"></i>Transbank Detallado
+      <span class="segmented-count">{{ tab_counts.transbank }}</span>
+    </a>
+  </div>
+</div>
+
+{% if active_tab == "resumen" %}
+<!-- ================= TAB 1: RESUMEN Y CUADRATURA ================= -->
+<div class="row g-3 mb-3">
+  {% for bv in validations %}
+  <div class="col-md-{% if validations|length == 1 %}12{% else %}4{% endif %}">
+    <div class="card card-executive p-4 h-100">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div class="kpi-label">Abono · {{ bv.modality_label }}</div>
+        {% if bv.is_matched %}
+        <span class="status-chip status-success"><i class="bi bi-check2-circle"></i>Cuadrado en cartola</span>
+        {% else %}
+        <span class="status-chip status-danger"><i class="bi bi-exclamation-circle"></i>Pendiente</span>
+        {% endif %}
+      </div>
+      <div class="row g-2 mt-2 small">
+        <div class="col-4">
+          <div class="text-muted">Calculado TBK</div>
+          <div class="fw-bold fs-6">
+            {% if is_usd %}US$ {{ bv.transbank_calculated_deposit|num_usd }}{% else %}${{ bv.transbank_calculated_deposit|num_clp }}{% endif %}
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="text-muted">En cartola{% if bv.deposit_date %} ({{ bv.deposit_date|date:"d/m/Y" }}){% endif %}</div>
+          <div class="fw-bold fs-6">
+            {% if is_usd %}US$ {{ bv.bank_statement_deposit|default:0|num_usd }}{% else %}${{ bv.bank_statement_deposit|default:0|num_clp }}{% endif %}
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="text-muted">Diferencia</div>
+          <div class="fw-bold fs-6 {% if bv.difference == 0 %}text-success{% else %}text-danger{% endif %}">
+            {% if is_usd %}US$ {{ bv.difference|num_usd }}{% else %}${{ bv.difference|num_clp }}{% endif %}
+          </div>
+        </div>
+      </div>
+      {% if bv.bank_movement %}
+      <div class="small text-muted mt-2 pt-2 border-top-soft">
+        <i class="bi bi-bank2 me-1"></i>{{ bv.bank_movement.description|default:"Movimiento vinculado" }}
+        {% if bv.bank_movement.bank_account_number %} · Cta. {{ bv.bank_movement.bank_account_number }}{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% empty %}
+  <div class="col-12">
+    <div class="card card-executive p-4 text-muted small">Este cierre no registró validaciones bancarias.</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Cuadratura contable guardada</h2>
+          <p class="panel-sub">Totales por franquicia{% if not is_usd %} y medio de pago{% endif %}</p>
+        </div>
+      </header>
+      <div class="table-responsive">
+        {% if is_usd %}
+        <table class="table table-dash align-middle mb-0">
+          <thead>
+            <tr>
+              <th class="ps-4">Franquicia</th>
+              <th class="text-end">ERP (US$)</th>
+              <th class="text-end">Operadora (US$)</th>
+              <th class="text-end">Dif. USD</th>
+              <th class="text-end">ERP (CLP)</th>
+              <th class="text-end">Operadora (CLP)</th>
+              <th class="text-end pe-4">Dif. CLP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in summary_rows %}
+            <tr>
+              <td class="ps-4 fw-semibold">{{ s.card_name }}</td>
+              <td class="text-end">US$ {{ s.usd.erp_sales_total|num_usd }}</td>
+              <td class="text-end">US$ {{ s.usd.transbank_sales_total|num_usd }}</td>
+              <td class="text-end fw-semibold {% if s.usd.difference == 0 %}text-success{% else %}text-danger{% endif %}">US$ {{ s.usd.difference|num_usd }}</td>
+              <td class="text-end">${{ s.clp.erp_sales_total|default:0|num_clp }}</td>
+              <td class="text-end">${{ s.clp.transbank_sales_total|default:0|num_clp }}</td>
+              <td class="text-end pe-4 fw-semibold {% if s.clp and s.clp.difference == 0 %}text-success{% else %}text-danger{% endif %}">${{ s.clp.difference|default:0|num_clp }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="text-center py-4 text-muted">Sin resumen guardado.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <table class="table table-dash align-middle mb-0">
+          <thead>
+            <tr>
+              <th class="ps-4">Medio / Tarjeta</th>
+              <th class="text-end">Ventas TBK</th>
+              <th class="text-end">Ventas Borderó</th>
+              <th class="text-end">Diferencia</th>
+              <th class="text-end">Comisión + IVA</th>
+              <th class="text-end pe-4">Abono Neto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in summary_rows %}
+            <tr>
+              <td class="ps-4 fw-semibold">{{ s.modality_label }} · {{ s.card_name }}</td>
+              <td class="text-end">${{ s.row.transbank_sales_total|num_clp }}</td>
+              <td class="text-end">${{ s.row.erp_sales_total|num_clp }}</td>
+              <td class="text-end fw-semibold {% if s.row.difference == 0 %}text-success{% else %}text-danger{% endif %}">${{ s.row.difference|num_clp }}</td>
+              <td class="text-end">${{ s.row.total_commissions|num_clp }}</td>
+              <td class="text-end pe-4">${{ s.row.net_deposit_total|num_clp }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center py-4 text-muted">Sin resumen guardado.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-4">
+    <section class="card card-executive h-100">
+      <header class="panel-head">
+        <div>
+          <h2 class="panel-title">Archivos de origen</h2>
+          <p class="panel-sub">Nombres registrados en el cierre #{{ process.id }}</p>
+        </div>
+      </header>
+      <ul class="list-group list-group-flush small">
+        {% for label, fname in source_files %}
+        <li class="list-group-item d-flex justify-content-between align-items-start gap-2 bg-transparent">
+          <span class="text-muted">{{ label }}</span>
+          <span class="fw-semibold font-mono text-end text-break">{{ fname }}</span>
+        </li>
+        {% empty %}
+        <li class="list-group-item text-muted bg-transparent">Sin archivos registrados.</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</div>
+
+{% elif active_tab == "cruce" %}
+<!-- ================= TAB 2: RESULTADOS DEL CRUCE ================= -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <input type="hidden" name="vista" value="cruce">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label small fw-semibold mb-1" for="c-q">Buscar</label>
+      <input id="c-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Voucher, cuenta, documento o cajero…">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="c-res">Resultado</label>
+      <select id="c-res" name="resultado" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        {% for code, lbl in result_choices %}
+        <option value="{{ code }}" {% if filters.resultado == code %}selected{% endif %}>{{ lbl }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="c-card">Tarjeta</label>
+      <select id="c-card" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="c-est">Gestión</label>
+      <select id="c-est" name="estado" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for st in status_choices %}
+        <option value="{{ st.code }}" {% if filters.estado == st.code %}selected{% endif %}>{{ st.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2 d-flex gap-2 justify-content-end">
+      <a href="{% url 'closing_detail' process.id %}?vista=cruce" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
+    </div>
+  </div>
+</form>
+{% include "partials/tables/_cruce_table.html" %}
+
+{% elif active_tab == "erp" %}
+<!-- ================= TAB 3: BORDERÓ ERP (INCLUYE SOLO EN ERP) ================= -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <input type="hidden" name="vista" value="erp">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label small fw-semibold mb-1" for="e-q">Buscar</label>
+      <input id="e-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Cuenta, documento, reserva, habitación, huésped, autorización, factura o cajero…">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="e-cruce">Estado de cruce</label>
+      <select id="e-cruce" name="cruce" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="solo_erp" {% if filters.cruce == "solo_erp" %}selected{% endif %}>Solo en ERP (sin TBK)</option>
+        <option value="conciliados" {% if filters.cruce == "conciliados" %}selected{% endif %}>Conciliados</option>
+        <option value="con_diferencia" {% if filters.cruce == "con_diferencia" %}selected{% endif %}>Con diferencia</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="e-orig">Origen</label>
+      <select id="e-orig" name="origen" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="EXCEL" {% if filters.origen == "EXCEL" %}selected{% endif %}>Excel (Borderó)</option>
+        <option value="MANUAL" {% if filters.origen == "MANUAL" %}selected{% endif %}>Agregada a mano</option>
+        <option value="MODIFIED" {% if filters.origen == "MODIFIED" %}selected{% endif %}>Modificadas (ver antes)</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="e-card">Tarjeta</label>
+      <select id="e-card" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2 d-flex gap-2 justify-content-end">
+      <a href="{% url 'closing_detail' process.id %}?vista=erp" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
+    </div>
+  </div>
+</form>
+{% include "partials/tables/_erp_table.html" %}
+
+{% elif active_tab == "cartola" %}
+<!-- ================= TAB 4: CARTOLA BANCARIA ================= -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <input type="hidden" name="vista" value="cartola">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-6">
+      <label class="form-label small fw-semibold mb-1" for="b-q">Buscar</label>
+      <input id="b-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Descripción, número de documento o sucursal…">
+    </div>
+    <div class="col-6 col-md-4">
+      <label class="form-label small fw-semibold mb-1" for="b-tipo">Movimientos</label>
+      <select id="b-tipo" name="tipo" class="form-select form-select-sm">
+        <option value="">Todos los movimientos</option>
+        <option value="cuadrados" {% if filters.tipo == "cuadrados" %}selected{% endif %}>Solo abonos cuadrados</option>
+        <option value="tbk" {% if filters.tipo == "tbk" %}selected{% endif %}>Solo relacionados con Transbank</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2 d-flex gap-2 justify-content-end">
+      <a href="{% url 'closing_detail' process.id %}?vista=cartola" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
+    </div>
+  </div>
+</form>
+{% include "partials/tables/_cartola_table.html" %}
+
+{% elif active_tab == "operadoras" %}
+<!-- ================= TAB 5: POSICIÓN POR CLIENTES (USD) ================= -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <input type="hidden" name="vista" value="operadoras">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-5">
+      <label class="form-label small fw-semibold mb-1" for="o-q">Buscar</label>
+      <input id="o-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Documento PC, parcela o código de autorización…">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small fw-semibold mb-1" for="o-card">Franquicia</label>
+      <select id="o-card" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="o-cruce">Uso</label>
+      <select id="o-cruce" name="cruce" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="usados" {% if filters.cruce == "usados" %}selected{% endif %}>Usados en cruce</option>
+        <option value="sin_usar" {% if filters.cruce == "sin_usar" %}selected{% endif %}>Sin usar en cruce</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-2 d-flex gap-2 justify-content-end">
+      <a href="{% url 'closing_detail' process.id %}?vista=operadoras" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
+    </div>
+  </div>
+</form>
+{% include "partials/tables/_operadoras_table.html" %}
+
+{% elif active_tab == "transbank" %}
+<!-- ================= TAB 6: TRANSBANK DETALLADO ================= -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <input type="hidden" name="vista" value="transbank">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label small fw-semibold mb-1" for="tb-q">Buscar</label>
+      <input id="tb-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Autorización, tarjeta, local, boleta o TID…">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="tb-mod">Modalidad</label>
+      <select id="tb-mod" name="modalidad" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        <option value="CREDIT" {% if filters.modalidad == "CREDIT" %}selected{% endif %}>Crédito</option>
+        <option value="DEBIT" {% if filters.modalidad == "DEBIT" %}selected{% endif %}>Débito</option>
+        <option value="PREPAID" {% if filters.modalidad == "PREPAID" %}selected{% endif %}>Prepago</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="tb-card">Tarjeta</label>
+      <select id="tb-card" name="tarjeta" class="form-select form-select-sm">
+        <option value="">Todas</option>
+        {% for card in card_types %}
+        <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="tb-est">Estado</label>
+      <select id="tb-est" name="estado" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="conciliado" {% if filters.estado == "conciliado" %}selected{% endif %}>Conciliado</option>
+        <option value="resuelto" {% if filters.estado == "resuelto" %}selected{% endif %}>Resuelto</option>
+        <option value="pendiente" {% if filters.estado == "pendiente" %}selected{% endif %}>Pendiente</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2 d-flex gap-2 justify-content-end">
+      <a href="{% url 'closing_detail' process.id %}?vista=transbank" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
+    </div>
+  </div>
+</form>
+{% include "partials/tables/_transbank_table.html" %}
+{% endif %}
+{% endblock %}

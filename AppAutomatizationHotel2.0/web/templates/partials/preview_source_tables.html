@@ -1,0 +1,101 @@
+{% load currency_filters %}
+{% if source_tables %}
+<section class="card card-executive mb-4" id="sourceTablesCard" aria-labelledby="sourceTablesHeading">
+  <div class="card-header panel-head flex-wrap gap-2">
+    <div>
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <h2 class="panel-title mb-0" id="sourceTablesHeading">
+          <i class="bi bi-table me-1 text-primary"></i>Tablas de respaldo cargadas
+        </h2>
+      </div>
+      <p class="panel-sub mb-0">
+        Borderó ERP: <strong>{{ source_tables.counts.erp_total }}</strong>
+        ({{ source_tables.counts.erp_unlinked }} solo en ERP)
+        · Cartola: <strong>{{ source_tables.counts.bank_total }}</strong>
+        {% if source_tables.currency == "USD" %}
+        · Pos. Clientes: <strong>{{ source_tables.counts.operator_total }}</strong>
+        {% endif %}
+        · Transbank: <strong>{{ source_tables.counts.tbk_total }}</strong>
+      </p>
+    </div>
+    <button type="button"
+            class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold"
+            data-bs-toggle="collapse"
+            data-bs-target="#sourceTablesCollapse"
+            aria-expanded="false"
+            aria-controls="sourceTablesCollapse"
+            id="btnToggleSourceTables">
+      <i class="bi bi-chevron-down me-1"></i>Explorar tablas de respaldo
+    </button>
+  </div>
+
+  <div class="collapse" id="sourceTablesCollapse">
+    <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div class="segmented flex-wrap" id="sourceTablesTabs" role="tablist" aria-label="Tablas de respaldo en memoria">
+        <button type="button" class="segmented-item active" data-src-tab="erp" role="tab" aria-selected="true">
+          <i class="bi bi-building"></i>Borderó ERP
+          <span class="segmented-count">{{ source_tables.counts.erp_total }}</span>
+        </button>
+        <button type="button" class="segmented-item" data-src-tab="bank" role="tab" aria-selected="false">
+          <i class="bi bi-bank"></i>Cartola Bancaria
+          <span class="segmented-count">{{ source_tables.counts.bank_total }}</span>
+        </button>
+        {% if source_tables.currency == "USD" %}
+        <button type="button" class="segmented-item" data-src-tab="operator" role="tab" aria-selected="false">
+          <i class="bi bi-credit-card"></i>Posición por Clientes
+          <span class="segmented-count">{{ source_tables.counts.operator_total }}</span>
+        </button>
+        {% endif %}
+        <button type="button" class="segmented-item" data-src-tab="tbk" role="tab" aria-selected="false">
+          <i class="bi bi-receipt"></i>Transbank Detallado
+          <span class="segmented-count">{{ source_tables.counts.tbk_total }}</span>
+        </button>
+      </div>
+      <span class="small text-muted">Mostrando <strong id="srcVisibleCount">0</strong> registros</span>
+    </div>
+
+    <div class="toolbar">
+      <div class="search-field">
+        <i class="bi bi-search"></i>
+        <input type="text"
+               id="srcSearchInput"
+               class="form-control form-control-sm"
+               placeholder="Buscar cuenta, documento, reserva, autorización, cajero, descripción…"
+               aria-label="Buscar en tabla de respaldo">
+        <button type="button" id="btnClearSrcSearch" class="search-clear d-none" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">
+          <i class="bi bi-x-circle-fill"></i>
+        </button>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <select id="srcStatusFilter" class="form-select form-select-sm" style="width: auto;" aria-label="Filtrar por estado"></select>
+        <select id="srcCardFilter" class="form-select form-select-sm" style="width: auto;" aria-label="Filtrar por tarjeta">
+          <option value="ALL">Todas las tarjetas</option>
+          <option value="VI">Visa</option>
+          <option value="MC">MasterCard</option>
+          <option value="AX">American Express</option>
+          <option value="DI">Diners Club</option>
+          <option value="REDCOMPRA">Redcompra / Débito</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-responsive voucher-table-scroll">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light small text-uppercase text-muted sticky-top" id="srcThead"></thead>
+        <tbody id="srcTbody"></tbody>
+      </table>
+    </div>
+
+    <div class="border-top px-4 py-2 d-flex flex-wrap justify-content-between align-items-center gap-2" id="srcPaginationBar">
+      <div class="small text-muted">Mostrando <strong id="srcPageRange">0</strong> de <strong id="srcPageTotal">0</strong></div>
+      <nav aria-label="Paginación de tabla de respaldo">
+        <ul class="pagination pagination-sm mb-0" id="srcPaginationList"></ul>
+      </nav>
+    </div>
+  </div>
+</section>
+
+<script type="application/json" id="jsonSourceTablesData">{{ source_tables.payload|to_json|safe }}</script>
+{% include "partials/tables/_erp_history_modal.html" %}
+{% endif %}

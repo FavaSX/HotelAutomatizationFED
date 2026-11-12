@@ -13,6 +13,8 @@ from .models import (
     CardOperatorTransaction,
     CrossMatchResult,
     AuditResolutionLog,
+    UserAccountStatus,
+    UserAuditLog,
 )
 
 
@@ -106,3 +108,17 @@ class CrossMatchResultAdmin(admin.ModelAdmin):
 class AuditResolutionLogAdmin(admin.ModelAdmin):
     list_display = ('cross_match_result', 'user', 'previous_status', 'new_status', 'created_at')
     list_filter = ('new_status', 'created_at')
+
+
+@admin.register(UserAccountStatus)
+class UserAccountStatusAdmin(admin.ModelAdmin):
+    list_display = ('user', 'is_soft_deleted', 'deleted_at', 'deleted_by', 'delete_reason', 'restored_at', 'restored_by')
+    list_filter = ('is_soft_deleted',)
+    search_fields = ('user__username', 'delete_reason')
+
+
+@admin.register(UserAuditLog)
+class UserAuditLogAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'target_user', 'action', 'actor', 'details')
+    list_filter = ('action', 'created_at')
+    search_fields = ('target_user__username', 'actor__username', 'details')
