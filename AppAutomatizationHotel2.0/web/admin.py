@@ -63,9 +63,9 @@ class ReconciliationSummaryAdmin(admin.ModelAdmin):
 
 @admin.register(ErpTransaction)
 class ErpTransactionAdmin(admin.ModelAdmin):
-    list_display = ('process', 'card_type', 'document_number', 'authorization_code', 'amount', 'room_number', 'guest_name', 'cashier_username', 'reconciled')
+    list_display = ('process', 'card_type', 'account_code', 'document_number', 'authorization_code', 'amount', 'cashier_username', 'reconciled')
     list_filter = ('reconciled', 'card_type', 'cashier_username')
-    search_fields = ('authorization_code', 'document_number', 'guest_name', 'room_number', 'cashier_username')
+    search_fields = ('authorization_code', 'account_code', 'document_number', 'cashier_username')
 
 
 @admin.register(TransbankTransaction)
@@ -84,9 +84,9 @@ class CardOperatorTransactionAdmin(admin.ModelAdmin):
 
 @admin.register(CrossMatchResult)
 class CrossMatchResultAdmin(admin.ModelAdmin):
-    list_display = ('process', 'card_type', 'authorization_code', 'system_result', 'difference_usd', 'difference_clp', 'room_number', 'guest_name', 'cashier_username', 'management_status')
+    list_display = ('process', 'card_type', 'authorization_code', 'account_code', 'document_number', 'system_result', 'difference_usd', 'difference_clp', 'cashier_username', 'management_status')
     list_filter = ('system_result', 'management_status', 'card_type', 'merchant_location_name')
-    search_fields = ('authorization_code', 'document_number', 'guest_name', 'room_number', 'cashier_username')
+    search_fields = ('authorization_code', 'account_code', 'document_number', 'cashier_username')
 
 
 @admin.register(AuditResolutionLog)

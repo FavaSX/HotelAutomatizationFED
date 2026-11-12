@@ -124,7 +124,10 @@ def _usd_dashboard():
         key=lambda c: (c["is_unassigned"], -c["count"]),
     )[:6]
 
-    largest_exceptions = list(pending.select_related("card_type", "process").order_by("-transbank_amount")[:6])
+    largest_exceptions = list(
+        pending.select_related("card_type", "process", "erp_transaction", "card_operator_transaction")
+        .order_by("-transbank_amount")[:6]
+    )
     for item in largest_exceptions:
         item.type_label = _exception_label(EXCEPTION_LABELS, item.system_result)
 
@@ -215,7 +218,10 @@ def _clp_dashboard():
         group["pct"] = round(group["count"] / max_group * 100) if max_group else 0
         pending_by_error.append(group)
 
-    largest_exceptions = list(pending.select_related("card_type", "process").order_by("-transbank_amount")[:6])
+    largest_exceptions = list(
+        pending.select_related("card_type", "process", "erp_transaction", "card_operator_transaction")
+        .order_by("-transbank_amount")[:6]
+    )
     for item in largest_exceptions:
         modality, error_type, action = _split_status_detail(item.system_status_detail)
         item.type_label = error_type or _exception_label(CLP_EXCEPTION_LABELS, item.system_result)

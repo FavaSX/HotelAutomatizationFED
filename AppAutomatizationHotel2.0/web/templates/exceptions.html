@@ -108,7 +108,7 @@
     </div>
     <div class="col-12 col-md-6 col-xl-3">
       <label class="form-label small fw-semibold mb-1" for="f-q">Buscar</label>
-      <input id="f-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Voucher, documento, hab., huésped">
+      <input id="f-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Voucher, cuenta, documento">
     </div>
     <div class="col-12 col-md-3 col-xl-12 d-flex gap-2 justify-content-end">
       <a href="{% url 'exceptions' %}?moneda={{ currency }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
@@ -126,7 +126,7 @@
         <tr>
           <th>Voucher</th>
           <th>Tipo</th>
-          <th class="d-none d-lg-table-cell">Huésped / Cajero</th>
+          <th class="d-none d-lg-table-cell">Cuenta / Doc. / Cajero</th>
           <th class="text-end">Monto</th>
           <th class="text-center">Días</th>
           <th>Estado</th>
@@ -146,8 +146,12 @@
             <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}">{{ e.type_label }}</span>
           </td>
           <td class="d-none d-lg-table-cell">
-            {% if e.guest_name and e.guest_name != "—" %}
-            <div class="text-truncate" style="max-width: 200px;">{{ e.guest_name }}{% if e.room_number and e.room_number != "—" %} · Hab. {{ e.room_number }}{% endif %}</div>
+            {% if e.display_account_code or e.display_document_number %}
+            <div class="small font-mono text-truncate" style="max-width: 240px;" title="Cta: {{ e.display_account_code|default:'—' }} · Doc: {{ e.display_document_number|default:'—' }}">
+              {% if e.display_account_code %}<span class="fw-semibold">Cta: {{ e.display_account_code }}</span>{% endif %}
+              {% if e.display_account_code and e.display_document_number %} · {% endif %}
+              {% if e.display_document_number %}<span class="text-muted">Doc: {{ e.display_document_number }}</span>{% endif %}
+            </div>
             {% endif %}
             <div class="text-muted small"><i class="bi bi-person me-1"></i>{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}Sin cajero{% endif %}</div>
           </td>
@@ -214,13 +218,12 @@
       <div class="modal-body">
         <div class="row g-3 small mb-3">
           <div class="col-6 col-md-3"><div class="text-muted">Cierre</div><div class="fw-semibold">#{{ e.process_id }} · {{ e.process.execution_date|date:"d/m/Y" }}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Documento ERP</div><div class="fw-semibold font-mono">{{ e.document_number|default:"—" }}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Cuenta (Col. D)</div><div class="fw-semibold font-mono">{{ e.display_account_code|default:"—" }}</div></div>
+          <div class="col-6 col-md-3"><div class="text-muted">Documento</div><div class="fw-semibold font-mono">{{ e.display_document_number|default:"—" }}</div></div>
           <div class="col-6 col-md-3"><div class="text-muted">Tarjeta</div><div class="fw-semibold">{{ e.card_type.name }}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Fecha venta</div><div class="fw-semibold">{{ e.sale_date|date:"d/m/Y"|default:"—" }}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Huésped</div><div class="fw-semibold">{% if e.guest_name and e.guest_name != "—" %}{{ e.guest_name }}{% else %}—{% endif %}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Habitación</div><div class="fw-semibold">{% if e.room_number and e.room_number != "—" %}{{ e.room_number }}{% else %}—{% endif %}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Cajero</div><div class="fw-semibold">{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}Sin cajero{% endif %}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Días pendiente</div><div><span class="age-pill age-{{ e.age_level }}">{{ e.days_open }}</span></div></div>
+          <div class="col-6 col-md-4"><div class="text-muted">Fecha venta</div><div class="fw-semibold">{{ e.sale_date|date:"d/m/Y"|default:"—" }}</div></div>
+          <div class="col-6 col-md-4"><div class="text-muted">Cajero</div><div class="fw-semibold">{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}Sin cajero{% endif %}</div></div>
+          <div class="col-6 col-md-4"><div class="text-muted">Días pendiente</div><div><span class="age-pill age-{{ e.age_level }}">{{ e.days_open }}</span></div></div>
         </div>
 
         <table class="table table-sm small mb-3">

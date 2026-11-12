@@ -487,6 +487,15 @@ def parse_universal_transbank_clp(files_or_dfs: List[Any]) -> Dict[str, Dict[str
             if not auth_code:
                 continue
 
+            # Skip secondary detail header rows (e.g. Row 30 carrying "Código de autorización de venta")
+            norm_auth = normalize_text(auth_code)
+            if (
+                norm_auth in ("autorizacion", "codigo autorizacion", "codigo de autorizacion", "codigo de autorizacion de venta")
+                or ("codigo" in norm_auth and "autorizacion" in norm_auth)
+                or "monto original" in normalize_text(safe_cell(row, columns["gross_amount"]))
+            ):
+                continue
+
             movement_type = normalize_text(safe_cell(row, columns["movement_type"]))
             is_void = "anulac" in movement_type or "devoluc" in movement_type
             if movement_type and not movement_type.startswith("venta") and not is_void:

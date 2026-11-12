@@ -205,8 +205,8 @@ function renderModalSuggestionsPage() {
           );
 
           const colErpHtml = hasErpData ? (
-            renderKv('Cód. ERP', rAuth.erp_value, authDiff, authMatch) +
-            renderKv('Documento', docErpShort || rDoc.erp_value, false, docMatch) +
+            renderKv('Documento ERP (Col. J)', rAuth.erp_value, authDiff, authMatch) +
+            renderKv('Cuenta ERP (Col. D)', docErpShort || rDoc.erp_value, false, docMatch) +
             renderKv('Monto CLP', rClp.erp_value, clpDiff, clpMatch) +
             renderKv('Tarjeta', erpCardLabel, false, true) +
             renderKv('Fecha ERP', erpDate, false, isDateMatched)
@@ -216,7 +216,7 @@ function renderModalSuggestionsPage() {
 
           const colOpHtml = (
             renderKv('Monto US$', rUsd.op_value, usdDiff, usdMatch) +
-            renderKv('Documento', docOpShort || rDoc.op_value, false, docMatch) +
+            renderKv('Doc. Pos. Clientes', docOpShort || rDoc.op_value, false, docMatch) +
             renderKv('Saldo CLP', rClp.op_value, clpDiff, clpMatch) +
             renderKv('Tarjeta', operatorLabel, false, true)
           );

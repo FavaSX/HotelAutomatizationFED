@@ -70,12 +70,19 @@ def usd_preview_view(request):
         messages.warning(request, "No hay ningún proceso preliminar en memoria. Por favor cargue los archivos.")
         return redirect("usd_upload")
 
+    stale_tokens = ("doc #", "hab.", "habitación", "huésped")
     needs_enrichment = (
         "suggestion_counts" not in preview
         or any(
             v.get("suggestion") and (
                 "action" not in v.get("suggestion", {})
-                or "Doc #" in v.get("suggestion", {}).get("headline", "")
+                or any(
+                    tok in " ".join(
+                        str(v.get("suggestion", {}).get(k, "") or "").lower()
+                        for k in ("headline", "action", "manual_check_note")
+                    )
+                    for tok in stale_tokens
+                )
             )
             for v in preview.get("discrepancy_vouchers", []) + preview.get("orphan_vouchers", [])
         )

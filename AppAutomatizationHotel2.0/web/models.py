@@ -269,6 +269,7 @@ class CrossMatchResult(models.Model):
     card_operator_transaction = models.ForeignKey(CardOperatorTransaction, on_delete=models.SET_NULL, null=True, blank=True)
 
     authorization_code = models.CharField(max_length=50, blank=True, null=True)
+    account_code = models.CharField(max_length=50, blank=True, null=True)
     document_number = models.CharField(max_length=50, blank=True, null=True)
     sale_date = models.DateField(blank=True, null=True)
 
@@ -302,6 +303,64 @@ class CrossMatchResult(models.Model):
 
     def __str__(self):
         return f"Match {self.authorization_code} - {self.system_result}"
+
+    @staticmethod
+    def _clean_code(value) -> str:
+        val = (str(value) if value is not None else "").strip()
+        return "" if val in ("", "—") else val
+
+    @property
+    def display_account_code(self) -> str:
+        """Bordero Col. D ('Cuenta'), supporting both new rows and historical DB rows."""
+        direct = self._clean_code(self.account_code)
+        if direct:
+            return direct
+        if self.erp_transaction_id:
+            from_erp = self._clean_code(self.erp_transaction.account_code or self.erp_transaction.document_number)
+            if from_erp:
+                return from_erp
+        if self.process_id and self.process.process_currency == "USD":
+            return self._clean_code(self.document_number)
+        return ""
+
+    @property
+    def display_erp_document(self) -> str:
+        """Bordero Col. J ('Documento'), supporting both new rows and historical DB rows."""
+        if self.erp_transaction_id:
+            from_erp = self._clean_code(self.erp_transaction.authorization_code)
+            if from_erp:
+                return from_erp
+        doc = self._clean_code(self.document_number)
+        if not doc:
+            return ""
+        # Historical USD rows stored Bordero Cuenta / Op. Doc in document_number without account_code
+        if self.process_id and self.process.process_currency == "USD" and not self._clean_code(self.account_code):
+            if self.system_result != "NOT_FOUND_IN_ERP":
+                return self._clean_code(self.authorization_code)
+            return ""
+        return doc
+
+    @property
+    def display_operator_document(self) -> str:
+        """Posición por Clientes Col. C ('Documento')."""
+        if self.card_operator_transaction_id:
+            return self._clean_code(self.card_operator_transaction.document_number)
+        return ""
+
+    @property
+    def display_document_number(self) -> str:
+        """Unified 'Documento' representation for shared views and exports."""
+        erp_doc = self.display_erp_document
+        if self.process_id and self.process.process_currency == "CLP":
+            return erp_doc
+        op_doc = self.display_operator_document
+        if erp_doc and op_doc:
+            return erp_doc if erp_doc == op_doc else f"ERP: {erp_doc} / PC: {op_doc}"
+        if erp_doc:
+            return erp_doc
+        if op_doc:
+            return f"PC: {op_doc}"
+        return ""
 
 
 class AuditResolutionLog(models.Model):

@@ -61,7 +61,7 @@ function renderClpSuggestionCard(voucher, idx) {
                      (voucher.modality_label !== 'Crédito' && erp.payment_group === 'REDCOMPRA');
 
   // Symmetrical 5 rows aligned horizontally:
-  // Row 1: Voucher TBK      <-> Código ERP
+  // Row 1: Voucher TBK      <-> Documento Borderó
   // Row 2: Monto TBK        <-> Monto ERP
   // Row 3: Fecha Venta      <-> Fecha Venta
   // Row 4: Medio / Marca    <-> Medio / Marca
@@ -75,7 +75,7 @@ function renderClpSuggestionCard(voucher, idx) {
   );
 
   const colErp = (
-    renderClpKv('Código ERP', erp.authorization_code || '— (sin código)', sameCode ? 'match' : 'diff') +
+    renderClpKv('Documento Borderó', erp.authorization_code || '— (sin código)', sameCode ? 'match' : 'diff') +
     renderClpKv('Monto ERP', formatClpClient(erp.amount), sameAmount ? 'match' : 'diff') +
     renderClpKv('Fecha Venta', `${erp.transaction_date || '—'}${erp.transaction_time ? ' ' + erp.transaction_time : ''}`, sameDate ? 'match' : '') +
     renderClpKv('Medio / Marca', `${erp.payment_code || '—'} · ${erp.card_name || '—'}`, sameMedium ? 'match' : 'diff') +

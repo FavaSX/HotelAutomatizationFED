@@ -219,17 +219,28 @@ def _sync_cross_match_results(
     def _build_entry(v_dict: Dict[str, Any], sys_result: str, status_detail: str, default_status):
         tbk_obj = get_model_at(tbk_models, v_dict.get("tbk_index"))
         sug_payload = v_dict.get("suggestion")
+        erp_linked = v_dict.get("erp_index") is not None
+        acc_code = (
+            (v_dict.get("account_code") or "").strip()
+            or ((v_dict.get("document_number") or "").strip() if erp_linked else "")
+        )
+        if acc_code == "—":
+            acc_code = ""
+        erp_doc = (v_dict.get("erp_authorization_code") or "").strip() if erp_linked else ""
+        if erp_doc == "—":
+            erp_doc = ""
         match_fields = {
             "process": process,
             "card_type": card_types.get(v_dict["card_code"], card_types.get("VI")),
             "erp_transaction": get_model_at(erp_models, v_dict.get("erp_index")),
             "card_operator_transaction": get_model_at(operator_models, v_dict.get("operator_index")),
             "authorization_code": v_dict["authorization_code"],
-            "document_number": v_dict.get("document_number", ""),
+            "account_code": acc_code,
+            "document_number": erp_doc,
             "sale_date": safe_date(v_dict.get("sale_date")),
             "merchant_location_name": v_dict.get("merchant_location", "HOTEL PLAZA SAN FRANCISCO"),
-            "guest_name": v_dict.get("guest_name", "—"),
-            "room_number": v_dict.get("room_number", "—"),
+            "guest_name": "—",
+            "room_number": "—",
             "cashier_username": v_dict.get("cashier_username", "—"),
             "transbank_amount": Decimal(str(v_dict.get("gross_amount_usd", 0.0))),
             "operator_amount_usd": Decimal(str(v_dict.get("operator_amount_usd", 0.0))),

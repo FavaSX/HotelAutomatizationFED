@@ -175,7 +175,7 @@
           <thead>
             <tr>
               <th>Voucher</th>
-              <th class="d-none d-md-table-cell">Huésped</th>
+              <th class="d-none d-md-table-cell">Cuenta / Documento</th>
               <th>Tipo</th>
               <th class="text-end">Monto</th>
             </tr>
@@ -187,10 +187,10 @@
                 <div class="fw-semibold font-mono">{{ e.authorization_code }}</div>
                 <div class="text-muted small">{{ e.card_type.name }}{% if e.sale_date %} · <span class="text-nowrap">{{ e.sale_date|date:"d/m/Y" }}</span>{% endif %}</div>
               </td>
-              <td class="d-none d-md-table-cell">
-                {% if e.guest_name and e.guest_name != "—" %}
-                <div class="text-truncate" style="max-width: 180px;">{{ e.guest_name }}</div>
-                <div class="text-muted small">{% if e.room_number and e.room_number != "—" %}Hab. {{ e.room_number }}{% endif %}</div>
+              <td class="d-none d-md-table-cell small font-mono">
+                {% if e.display_account_code or e.display_document_number %}
+                {% if e.display_account_code %}<div><span class="text-muted">Cta:</span> {{ e.display_account_code }}</div>{% endif %}
+                {% if e.display_document_number %}<div class="text-muted text-truncate" style="max-width: 190px;" title="{{ e.display_document_number }}">Doc: {{ e.display_document_number }}</div>{% endif %}
                 {% else %}
                 <span class="text-muted">—</span>
                 {% endif %}

@@ -882,25 +882,35 @@ html[data-bs-theme="light"] .suggestion-caution-banner {
 .doc-dual-pill {
   display: inline-grid !important;
   align-items: stretch;
-  height: 30px;
+  width: auto;
+  height: 32px;
   border-radius: 9999px;
   border: 1px solid var(--border);
   background-color: var(--surface);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   font-family: var(--bs-font-monospace, monospace);
+  font-variant-numeric: tabular-nums;
   font-size: 0.8125rem;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   overflow: hidden;
   transition: box-shadow 0.15s ease, transform 0.15s ease;
   vertical-align: middle;
 }
 .voucher-dual-pill {
-  grid-template-columns: 110px 28px 122px;
-  width: 260px;
+  grid-template-columns: minmax(124px, max-content) 26px minmax(162px, max-content);
 }
 .doc-dual-pill {
-  grid-template-columns: 110px 28px 118px;
-  width: 256px;
+  grid-template-columns: minmax(140px, max-content) 26px minmax(146px, max-content);
+}
+.voucher-dual-pill small,
+.doc-dual-pill small {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  opacity: 0.82;
+  flex-shrink: 0;
 }
 .voucher-dual-pill:hover,
 .doc-dual-pill:hover {
@@ -912,13 +922,13 @@ html[data-bs-theme="light"] .suggestion-caution-banner {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 0.65rem;
+  padding: 0 0.7rem;
   background-color: var(--surface-2);
   color: var(--text);
   white-space: nowrap;
   font-weight: 600;
+  line-height: 1;
   gap: 0.35rem;
-  overflow: hidden;
 }
 .voucher-dual-equal,
 .doc-dual-equal {
@@ -944,15 +954,17 @@ html[data-bs-theme="light"] .suggestion-caution-banner {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 0.65rem;
+  padding: 0 0.7rem;
   font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
   gap: 0.35rem;
-  overflow: hidden;
 }
 .voucher-dual-erp .voucher-check,
 .doc-dual-op .doc-check {
   margin-left: auto;
+  padding-left: 0.15rem;
+  flex-shrink: 0;
   font-weight: 800;
   font-size: 0.95rem;
   line-height: 1;

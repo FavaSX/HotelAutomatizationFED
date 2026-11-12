@@ -50,7 +50,9 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     validations = list(process.bank_validations.select_related("bank_movement").order_by("payment_modality"))
     summaries = list(process.summaries.filter(currency_table="CLP").select_related("card_type"))
     cross_matches = list(
-        process.cross_match_results.select_related("card_type", "transbank_transaction").order_by("sale_date", "authorization_code")
+        process.cross_match_results.select_related(
+            "card_type", "transbank_transaction", "erp_transaction"
+        ).order_by("sale_date", "authorization_code")
     )
 
     wb = openpyxl.Workbook()
@@ -119,7 +121,7 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     # Sheet 2: Vouchers Cuadrados
     ws_matched = wb.create_sheet(title="Vouchers Cuadrados")
     write_header_row(ws_matched, 1, [
-        "Autorización TBK", "Código en Borderó", "Medio", "Tarjeta", "Fecha Venta", "Huésped", "Hab.",
+        "Autorización TBK", "Cuenta", "Documento Borderó", "Medio", "Tarjeta", "Fecha Venta",
         "Cajero", "Monto TBK", "Monto Borderó", "Diferencia", "Diagnóstico",
     ], fill=NAVY_FILL, center=True, wrap_text=True)
     row = 2
@@ -130,19 +132,18 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
             row,
             [
                 match.authorization_code or "",
-                match.document_number or match.authorization_code or "",
+                match.display_account_code or "",
+                match.display_erp_document or match.authorization_code or "",
                 MODALITY_LABELS.get(modality, modality),
                 match.card_type.name if match.card_type else "",
                 match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
-                match.guest_name or "",
-                match.room_number or "",
                 match.cashier_username or "",
                 float(match.transbank_amount),
                 float(match.erp_amount_clp),
                 float(match.difference_clp),
                 match.system_observation or "",
             ],
-            money_columns=(9, 10, 11),
+            money_columns=(8, 9, 10),
         )
         row += 1
 
@@ -153,11 +154,12 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
         "Fecha de origen",
         "Medio de pago",
         "Código en Transbank",
-        "Código en Borderó",
+        "Cuenta",
+        "Documento Borderó",
         "Monto Transbank (CLP)",
         "Monto Borderó (CLP)",
         "Monto discrepante (CLP)",
-        "Huésped / Hab. / Cajero",
+        "Cajero",
         "Acción sugerida",
         "Detalle",
     ], fill=GOLD_FILL, center=True, wrap_text=True)
@@ -168,10 +170,7 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     row = 2
     for match in exceptions:
         modality_label, error_type, action = _split_status_detail(match.system_status_detail)
-        context = " · ".join(
-            part for part in (match.guest_name, f"Hab. {match.room_number}" if match.room_number and match.room_number != "—" else "", match.cashier_username)
-            if part and part != "—"
-        )
+        cashier = match.cashier_username if match.cashier_username and match.cashier_username != "—" else "—"
         write_data_row(
             ws_exc,
             row,
@@ -180,16 +179,17 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
                 match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
                 modality_label,
                 match.authorization_code or "",
-                match.document_number or "—",
+                match.display_account_code or "—",
+                match.display_erp_document or "—",
                 float(match.transbank_amount),
                 float(match.erp_amount_clp),
                 float(match.difference_clp),
-                context or "—",
+                cashier,
                 action,
                 match.system_observation or "",
             ],
-            money_columns=(6, 7, 8),
-            red_columns=(1, 8),
+            money_columns=(7, 8, 9),
+            red_columns=(1, 9),
         )
         row += 1
 

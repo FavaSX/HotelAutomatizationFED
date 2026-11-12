@@ -9,17 +9,25 @@ from django.urls import reverse
 
 from .models import (
     BankStatementMovement,
+    CardOperatorTransaction,
     CrossMatchResult,
     ErpTransaction,
     ReconciliationProcess,
     SystemConfiguration,
     TransbankTransaction,
 )
-from .services import calculate_clp_preview, commit_clp_preview_to_database, detect_and_align_clp_files
+from .services import (
+    calculate_clp_preview,
+    calculate_usd_preview,
+    commit_clp_preview_to_database,
+    commit_usd_preview_to_database,
+    detect_and_align_clp_files,
+)
 from .services.clp_reconciliation import get_clp_tolerance
 from .services.column_detector import normalize_auth_code, safe_date
 from .services.clp_report_exporter import generate_committed_clp_excel_bytes
 from .services.exception_resolution import resolve_exception
+from .services.report_exporter import generate_committed_usd_excel_bytes
 
 
 # ------------------------------------------------------------------------------
@@ -199,13 +207,16 @@ class ClpPreviewTests(TestCase):
         voucher = _by_code(self.preview, "matched_vouchers")["405544"]
         self.assertEqual(voucher["erp_payment_code"], "MC$")
         self.assertEqual(voucher["difference"], 0)
-        self.assertEqual(voucher["guest_name"], "RODRIGO ISLA")
+        self.assertEqual(voucher["account_code"], "1786484")
+        self.assertEqual(voucher["erp_authorization_code"], "405544")
+        self.assertNotIn("guest_name", voucher)
+        self.assertNotIn("room_number", voucher)
         self.assertEqual(voucher["card_code"], "MC")
 
     def test_leading_zeros_reversals_and_tolerance(self):
         matched = _by_code(self.preview, "matched_vouchers")
         self.assertEqual(matched["003098"]["difference"], -1)
-        self.assertEqual(len(matched["823431"]["erp_indices"]), 3)
+        self.assertEqual(len(matched["823431"]["erp_indices"]), 1)
         self.assertEqual(matched["823431"]["erp_amount"], 9800)
         self.assertEqual(matched["112233"]["difference"], 704)
 
@@ -244,10 +255,27 @@ class ClpPersistenceTests(TestCase):
                   CrossMatchResult.objects.count(), BankStatementMovement.objects.count())
 
         orphan = process.cross_match_results.get(authorization_code="F0FUAZ")
+        self.assertEqual(orphan.account_code, "1787015")
         self.assertEqual(orphan.document_number, "0FOFUAZ")
+        self.assertEqual(orphan.display_account_code, "1787015")
+        self.assertEqual(orphan.display_erp_document, "0FOFUAZ")
+
+        matched_405544 = process.cross_match_results.get(authorization_code="405544")
+        self.assertEqual(matched_405544.account_code, "1786484")
+        self.assertEqual(matched_405544.document_number, "405544")
 
         workbook = openpyxl.load_workbook(generate_committed_clp_excel_bytes(process.id))
         self.assertEqual(workbook.sheetnames, ["Resumen Pesos", "Vouchers Cuadrados", "Reporte de Excepciones"])
+        matched_headers = [c.value for c in workbook["Vouchers Cuadrados"][1]]
+        self.assertIn("Cuenta", matched_headers)
+        self.assertIn("Documento Borderó", matched_headers)
+        self.assertNotIn("Huésped", matched_headers)
+        self.assertNotIn("Hab.", matched_headers)
+        exc_headers = [c.value for c in workbook["Reporte de Excepciones"][1]]
+        self.assertIn("Cuenta", exc_headers)
+        self.assertIn("Documento Borderó", exc_headers)
+        self.assertIn("Cajero", exc_headers)
+        self.assertNotIn("Huésped / Hab. / Cajero", exc_headers)
         first_exception = [c.value for c in workbook["Reporte de Excepciones"][2]]
         self.assertEqual(first_exception[0], "Error de tipeo")
 
@@ -308,9 +336,14 @@ class ClpViewsTests(TestCase):
         files = build_clp_files()
         report = detect_and_align_clp_files(list(files.values()))
         self.assertTrue(report["all_matched"])
-        roles = {r["role_key"]: r["file_name"] for r in report["aligned_roles"]}
-        self.assertEqual(roles["tbk_debit"], "DEBITOS TBK 08-09.xlsx")
-        self.assertEqual(roles["erp"], "BORDERO 04-09 A 07-09.xlsx")
+        aligned = {r["role_key"]: r for r in report["aligned_roles"]}
+        self.assertEqual(aligned["erp"]["file_name"], "BORDERO 04-09 A 07-09.xlsx")
+        self.assertEqual(aligned["bank"]["file_name"], "cartola.xlsx")
+        tbk_names = {aligned["tbk"]["file_name"], *(f["file_name"] for f in aligned["tbk"]["extra_files"])}
+        self.assertEqual(
+            tbk_names,
+            {"CREDITOS TBK 08-09.xlsx", "DEBITOS TBK 08-09.xlsx", "PREPAGO TBK 08-09.xlsx"},
+        )
 
     def test_upload_preview_commit_and_export(self):
         files = build_clp_files()
@@ -328,6 +361,12 @@ class ClpViewsTests(TestCase):
         self.assertContains(response, "F0FUAZ")
         self.assertContains(response, "Ubicadas Exactas")
         self.assertContains(response, "Tolerancia ±$1.000 CLP")
+        self.assertContains(response, "Cuenta / Documento")
+        self.assertContains(response, "Cta: 1786484")
+        self.assertContains(response, "Doc: 405544")
+        self.assertNotContains(response, "RODRIGO ISLA")
+        self.assertNotContains(response, "Huésped")
+        self.assertNotContains(response, "Habitación")
         self.assertNotContains(response, "Borderó histórico (")
 
         response = self.client.post(reverse("clp_commit"), HTTP_X_REQUESTED_WITH="XMLHttpRequest")
@@ -454,8 +493,10 @@ class UsdPreviewViewTests(TestCase):
 
     def test_merges_usd_and_clp_rows_per_franchise(self):
         voucher = {
-            "authorization_code": "A10001", "document_number": "9000001", "card_name": "Visa",
-            "guest_name": "HUESPED DE PRUEBA", "room_number": "101", "cashier_username": "CAJERO1",
+            "authorization_code": "A10001", "erp_authorization_code": "A10001",
+            "account_code": "9000001", "document_number": "9000001",
+            "operator_document_number": "9000001", "card_name": "Visa",
+            "cashier_username": "CAJERO1",
             "gross_amount_usd": 100.0, "operator_amount_usd": 100.11, "difference_usd": -0.11,
             "erp_amount_clp": 95000.0, "observation": "Coincide con SALDO 95000",
         }
@@ -632,8 +673,13 @@ class ExceptionInboxTests(TestCase):
         self.assertEqual(response.status_code, 200)
         sheet = openpyxl.load_workbook(io.BytesIO(response.content))["Excepciones"]
         self.assertEqual(sheet.max_row, 2)
+        headers = [c.value for c in sheet[1]]
+        self.assertIn("Cuenta", headers)
+        self.assertIn("Documento", headers)
+        self.assertNotIn("Huésped", headers)
+        self.assertNotIn("Habitación", headers)
         self.assertEqual(sheet["C2"].value, self.out_of_period.authorization_code)
-        self.assertEqual(sheet["J2"].value, "jperez")
+        self.assertEqual(sheet["I2"].value, "jperez")
 
 
 class ExceptionResolutionSurvivesReuploadTests(TestCase):
@@ -646,3 +692,254 @@ class ExceptionResolutionSurvivesReuploadTests(TestCase):
         commit_clp_preview_to_database(user, calculate_clp_preview(**build_clp_files()))
         exception.refresh_from_db()
         self.assertEqual(exception.management_status.code, "RESOLVED_ADJUSTMENT")
+
+
+def _build_usd_tbk_file(sales: list) -> io.BytesIO:
+    """sales = [(fecha, card_type, masked, monto_usd, codigo)]"""
+    total_usd = sum(Decimal(str(s[3])) for s in sales)
+    rows = {
+        2: {"A": "Abono calculado", "B": float(total_usd), "C": "Banco de Chile", "D": "Fecha abono", "E": "08/09/2026"},
+        3: {"A": "Numero cuenta", "B": "00-000-62110-07"},
+        5: {
+            "A": "Fecha de venta", "B": "Código de comercio", "C": "Tipo de tarjeta",
+            "D": "Identificador", "E": "Tipo de cuota", "F": "Monto original de venta",
+            "G": "Código de autorización de venta",
+        },
+    }
+    for idx, (fecha, card_type, masked, monto_usd, codigo) in enumerate(sales, start=6):
+        rows[idx] = {
+            "A": fecha, "B": "27941095", "C": card_type, "D": masked,
+            "E": "Venta Normal", "F": monto_usd, "G": codigo,
+        }
+    return _xlsx("ABONO TBK USD.xlsx", rows)
+
+
+def _build_usd_bordero_file(payments: list) -> io.BytesIO:
+    """payments = [(hab, cuenta, cod, descripcion, factura, valor_clp, documento, fecha, hora, usuario, huesped)]"""
+    rows = {
+        1: {"A": "HOTELERA SAN FRANCISCO S.A"},
+        2: {"A": "Cargos de Débitos y Créditos"},
+        4: {"A": "Periodo de:", "B": "04/09/2026", "C": "hasta", "D": "07/09/2026"},
+        5: {
+            "A": "Hab", "B": "Tipo Hab", "C": "Reserva", "D": "Cuenta", "E": "Cod. Deb.",
+            "F": "Descripción", "H": "Factura", "I": "Valor", "J": "Documento",
+            "K": "Fecha", "L": "Hora", "M": "Usuario", "N": "Designación",
+        },
+    }
+    for offset, (hab, cuenta, cod, desc, factura, valor, documento, fecha, hora, usuario, huesped) in enumerate(payments):
+        rows[6 + offset] = {
+            "A": hab, "D": cuenta, "E": cod, "F": desc, "G": factura,
+            "I": valor, "J": documento, "K": fecha, "L": hora, "M": usuario, "N": huesped,
+        }
+    return _xlsx("TARJETAS ERP USD.xlsx", rows)
+
+
+def _build_operator_file(name: str, items: list) -> io.BytesIO:
+    """items = [(documento, parcela, usd, saldo, saldo_corregido)]"""
+    rows = {
+        1: {"C": "Documento", "D": "Parcela", "M": "Otra Moneda", "N": "Saldo", "O": "Saldo Corregido"},
+    }
+    for idx, (doc, parcela, usd, saldo, saldo_corr) in enumerate(items, start=2):
+        rows[idx] = {"C": doc, "D": parcela, "M": usd, "N": saldo, "O": saldo_corr}
+    return _xlsx(name, rows)
+
+
+def _build_usd_files() -> dict:
+    sales = [
+        ("05/09/2026", "VI", "4260 40** **** 1111", 120.00, "112194"),
+        ("05/09/2026", "MC", "5525 61** **** 2222", 85.00, "334455"),
+        ("06/09/2026", "VI", "4260 40** **** 3333", 50.00, "556677"),
+        ("06/09/2026", "VI", "4260 40** **** 4444", 40.00, "888999"),
+    ]
+    bordero = [
+        (602, 1715625, "VUS$", "Visa US$", 99965, -114000, 112194, "05/09/2026", "19:28:02", "TMENDOZA", "JOHN DOE"),
+        (710, 1715800, "MUS$", "Master Card US$", 99970, -80750, 334455, "05/09/2026", "20:00:00", "CDAZA", "JANE SMITH"),
+        (815, 1715900, "VUS$", "Visa US$", 99980, -47500, 556677, "06/09/2026", "11:15:00", "SCORREA", "MARIO RUIZ"),
+    ]
+    return {
+        "erp_file": _build_usd_bordero_file(bordero),
+        "transbank_file": _build_usd_tbk_file(sales),
+        "bank_statement_file": build_cartola([("08/09/2026", "Pago: Abono Divisas Transbank", 295.00)]),
+        "amex_file": _build_operator_file("AX.xlsx", []),
+        "diners_file": _build_operator_file("DI.xlsx", []),
+        "visa_file": _build_operator_file("VI.xlsx", [
+            (1715625, 1, 120.00, 114000, 114000),
+            (1715900, 1, 0.00, 0, 47500),
+        ]),
+        "mastercard_file": _build_operator_file("MC.xlsx", [
+            (999888, 1, 85.00, 80750, 80750),
+        ]),
+    }
+
+
+class UsdAccountDocumentAndReportsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("contador_usd", password="clave-de-prueba-123")
+        self.client.force_login(self.user)
+
+    def test_usd_preview_commit_and_excel_show_account_and_document_without_guest_or_room(self):
+        preview = calculate_usd_preview(**_build_usd_files())
+
+        matched = {v["authorization_code"]: v for v in preview["matched_vouchers"]}
+        discrepancies = {v["authorization_code"]: v for v in preview["discrepancy_vouchers"]}
+        orphans = {v["authorization_code"]: v for v in preview["orphan_vouchers"]}
+
+        self.assertEqual(matched["112194"]["account_code"], "1715625")
+        self.assertEqual(matched["112194"]["erp_authorization_code"], "112194")
+        self.assertEqual(matched["112194"]["operator_document_number"], "1715625")
+
+        # Case 1A: Pos. Clientes folio mismatch -> empty operator_document_number & Level 2 suggestion
+        self.assertEqual(discrepancies["334455"]["account_code"], "1715800")
+        self.assertEqual(discrepancies["334455"]["erp_authorization_code"], "334455")
+        self.assertEqual(discrepancies["334455"]["operator_document_number"], "")
+        self.assertIn("999888", discrepancies["334455"]["suggestion"]["headline"])
+
+        # Case 1B: Linked by Cuenta 1715900 and Saldo Corregido CLP with USD == 0.00
+        self.assertEqual(discrepancies["556677"]["account_code"], "1715900")
+        self.assertEqual(discrepancies["556677"]["erp_authorization_code"], "556677")
+        self.assertEqual(discrepancies["556677"]["operator_document_number"], "1715900")
+        self.assertIn("Cta. ERP 1715900", discrepancies["556677"]["suggestion"]["headline"])
+
+        self.assertEqual(orphans["888999"]["account_code"], "")
+        self.assertEqual(orphans["888999"]["erp_authorization_code"], "")
+
+        for bucket in ("matched_vouchers", "discrepancy_vouchers", "orphan_vouchers"):
+            for item in preview[bucket]:
+                self.assertNotIn("guest_name", item)
+                self.assertNotIn("room_number", item)
+                if item.get("suggestion"):
+                    blob = str(item["suggestion"])
+                    self.assertNotIn("JOHN DOE", blob)
+                    self.assertNotIn("JANE SMITH", blob)
+                    self.assertNotIn("Hab.", blob)
+                    self.assertNotIn("Huésped", blob)
+
+        session = self.client.session
+        session["usd_reconciliation_preview"] = preview
+        session.save()
+        html_resp = self.client.get(reverse("usd_preview"))
+        self.assertEqual(html_resp.status_code, 200)
+        self.assertContains(html_resp, "Cruce Vouchers (TBK ⇄ Doc. ERP)")
+        self.assertContains(html_resp, "Cruce Cuenta ERP ⇄ Doc. Pos. Clientes")
+        self.assertContains(html_resp, "Cta ERP:")
+        self.assertContains(html_resp, "Doc ERP:")
+        self.assertContains(html_resp, "Doc PC:")
+        self.assertContains(html_resp, "1715625")
+        self.assertContains(html_resp, "1715900")
+        self.assertContains(html_resp, "Cta ERP: 1715800")
+        self.assertContains(html_resp, "Sin Pos. Cliente")
+        self.assertNotContains(html_resp, "JOHN DOE")
+        self.assertNotContains(html_resp, "JANE SMITH")
+        self.assertNotContains(html_resp, "MARIO RUIZ")
+        self.assertNotContains(html_resp, "Huésped")
+        self.assertNotContains(html_resp, "Habitación")
+
+        process = commit_usd_preview_to_database(self.user, preview)
+        cm_112194 = process.cross_match_results.get(authorization_code="112194")
+        cm_334455 = process.cross_match_results.get(authorization_code="334455")
+        cm_556677 = process.cross_match_results.get(authorization_code="556677")
+        self.assertEqual((cm_112194.account_code, cm_112194.document_number), ("1715625", "112194"))
+        self.assertEqual((cm_334455.account_code, cm_334455.document_number), ("1715800", "334455"))
+        self.assertEqual((cm_556677.account_code, cm_556677.document_number), ("1715900", "556677"))
+        self.assertEqual(cm_112194.guest_name, "—")
+        self.assertEqual(cm_112194.room_number, "—")
+
+        wb = openpyxl.load_workbook(generate_committed_usd_excel_bytes(process.id))
+        self.assertEqual(
+            wb.sheetnames,
+            ["Resumen Dólares", "Vouchers Ubicados", "Discrepancias y No Ubicados", "Sugerencias Asistidas"],
+        )
+
+        matched_row2 = [c.value for c in wb["Vouchers Ubicados"][2]]
+        self.assertIn("TBK: 112194 = Doc. ERP: 112194", matched_row2)
+        self.assertIn("Cta. ERP: 1715625 = Doc. PC: 1715625", matched_row2)
+
+        disc_ws = wb["Discrepancias y No Ubicados"]
+        disc_headers = [c.value for c in disc_ws[1]]
+        self.assertEqual(disc_headers[:4], ["Autorización TBK", "Cuenta", "Documento Borderó", "Doc. Pos. Clientes"])
+        disc_by_auth = {disc_ws.cell(r, 1).value: [disc_ws.cell(r, c).value or "" for c in range(1, 5)] for r in range(2, disc_ws.max_row + 1)}
+        self.assertEqual(disc_by_auth["334455"], ["334455", "1715800", "334455", ""])
+        self.assertEqual(disc_by_auth["556677"], ["556677", "1715900", "556677", "1715900"])
+        self.assertEqual(disc_by_auth["888999"], ["888999", "", "", ""])
+
+        sug_headers = [c.value for c in wb["Sugerencias Asistidas"][1]]
+        self.assertEqual(len(sug_headers), 17)
+        self.assertIn("Documento ERP", sug_headers)
+        self.assertIn("Cuenta ERP", sug_headers)
+        self.assertIn("Doc. Pos. Clientes", sug_headers)
+        self.assertNotIn("Huésped / Habitación", sug_headers)
+
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            for row_vals in ws.iter_rows(values_only=True):
+                for val in row_vals:
+                    if val is None:
+                        continue
+                    s_val = str(val)
+                    self.assertNotIn("JOHN DOE", s_val)
+                    self.assertNotIn("JANE SMITH", s_val)
+                    self.assertNotIn("MARIO RUIZ", s_val)
+                    self.assertNotIn("Huésped", s_val)
+                    self.assertNotIn("Habitación", s_val)
+
+
+class DashboardExceptionsAndLegacyCompatTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("contador_mix", password="clave-de-prueba-123")
+        self.client.force_login(self.user)
+        self.usd_process = commit_usd_preview_to_database(self.user, calculate_usd_preview(**_build_usd_files()))
+        self.clp_process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+
+    def test_dashboard_and_exceptions_display_and_search_by_account_and_document(self):
+        dash_usd = self.client.get(reverse("dashboard"), {"moneda": "usd"})
+        self.assertContains(dash_usd, "Cuenta / Documento")
+        self.assertContains(dash_usd, "Cta:</span> 1715800")
+        self.assertContains(dash_usd, "Doc: 334455")
+        self.assertNotContains(dash_usd, "JANE SMITH")
+
+        dash_clp = self.client.get(reverse("dashboard"), {"moneda": "clp"})
+        self.assertContains(dash_clp, "Cuenta / Documento")
+        self.assertContains(dash_clp, "Cta:</span> 1786853")
+        self.assertContains(dash_clp, "Doc: 7626")
+
+        exc_usd = self.client.get(reverse("exceptions"), {"moneda": "usd"})
+        self.assertContains(exc_usd, "Cuenta / Doc. / Cajero")
+        self.assertContains(exc_usd, "Cuenta (Col. D)")
+        self.assertContains(exc_usd, "Cta: 1715800")
+        self.assertContains(exc_usd, "Doc: 334455")
+        self.assertNotContains(exc_usd, "Habitación")
+        self.assertNotContains(exc_usd, "Huésped")
+        self.assertNotContains(exc_usd, "JANE SMITH")
+
+        exc_by_account = self.client.get(reverse("exceptions"), {"moneda": "usd", "q": "1715900"})
+        self.assertEqual([r.authorization_code for r in exc_by_account.context["rows"]], ["556677"])
+
+        exc_by_doc = self.client.get(reverse("exceptions"), {"moneda": "clp", "q": "7626"})
+        self.assertEqual([r.authorization_code for r in exc_by_doc.context["rows"]], ["007626"])
+
+        export_usd = self.client.get(reverse("exceptions_export"), {"moneda": "usd"})
+        sheet = openpyxl.load_workbook(io.BytesIO(export_usd.content))["Excepciones"]
+        headers = [c.value for c in sheet[1]]
+        self.assertIn("Cuenta", headers)
+        self.assertIn("Documento", headers)
+        self.assertNotIn("Huésped", headers)
+        self.assertNotIn("Habitación", headers)
+        exported_by_auth = {sheet.cell(r, 3).value: (sheet.cell(r, 4).value, sheet.cell(r, 5).value) for r in range(2, sheet.max_row + 1)}
+        self.assertEqual(exported_by_auth["334455"], ("1715800", "334455"))
+        self.assertEqual(exported_by_auth["556677"], ("1715900", "ERP: 556677 / PC: 1715900"))
+
+    def test_legacy_cross_match_without_account_code_uses_fallbacks(self):
+        legacy_usd = self.usd_process.cross_match_results.get(authorization_code="334455")
+        legacy_usd.account_code = None
+        legacy_usd.document_number = "1715800"
+        legacy_usd.save(update_fields=["account_code", "document_number"])
+        legacy_usd.refresh_from_db()
+        self.assertEqual(legacy_usd.display_account_code, "1715800")
+        self.assertEqual(legacy_usd.display_erp_document, "334455")
+
+        legacy_clp = self.clp_process.cross_match_results.get(authorization_code="007626")
+        legacy_clp.account_code = None
+        legacy_clp.save(update_fields=["account_code"])
+        legacy_clp.refresh_from_db()
+        self.assertEqual(legacy_clp.display_account_code, "1786853")
+        self.assertEqual(legacy_clp.display_erp_document, "7626")

@@ -106,13 +106,20 @@ def clp_preview_view(request):
         messages.warning(request, "No hay ningún proceso preliminar en memoria. Por favor cargue los archivos.")
         return redirect("clp_upload")
 
+    stale_tokens = ("doc #", "hab.", "habitación", "huésped")
     needs_enrichment = (
         "suggestion_counts" not in preview
         or any(
             v.get("suggestion") and (
                 "action" not in v.get("suggestion", {})
-                or "Doc #" in v.get("suggestion", {}).get("headline", "")
                 or v.get("suggestion", {}).get("headline", "").startswith("Posible registro")
+                or any(
+                    tok in " ".join(
+                        str(v.get("suggestion", {}).get(k, "") or "").lower()
+                        for k in ("headline", "action", "candidate_summary", "manual_check_note")
+                    )
+                    for tok in stale_tokens
+                )
             )
             for v in preview.get("discrepancy_vouchers", []) + preview.get("orphan_vouchers", []) + preview.get("out_of_period_vouchers", [])
         )

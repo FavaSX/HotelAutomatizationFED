@@ -52,7 +52,15 @@ def _filtered_exceptions(params):
     """Exceptions (never MATCHED vouchers) narrowed by the inbox filters, oldest closing first."""
     qs = (
         CrossMatchResult.objects.exclude(system_result="MATCHED")
-        .select_related("process", "card_type", "management_status", "resolved_by", "transbank_transaction")
+        .select_related(
+            "process",
+            "card_type",
+            "management_status",
+            "resolved_by",
+            "transbank_transaction",
+            "erp_transaction",
+            "card_operator_transaction",
+        )
         .order_by("process__execution_date", "-transbank_amount")
     )
     state = params.get("estado") or "pendientes"
@@ -80,8 +88,12 @@ def _filtered_exceptions(params):
     query = (params.get("q") or "").strip()
     if query:
         qs = qs.filter(
-            Q(authorization_code__icontains=query) | Q(document_number__icontains=query)
-            | Q(room_number__icontains=query) | Q(guest_name__icontains=query)
+            Q(authorization_code__icontains=query)
+            | Q(account_code__icontains=query)
+            | Q(document_number__icontains=query)
+            | Q(erp_transaction__account_code__icontains=query)
+            | Q(erp_transaction__authorization_code__icontains=query)
+            | Q(card_operator_transaction__document_number__icontains=query)
         )
     return qs, state
 

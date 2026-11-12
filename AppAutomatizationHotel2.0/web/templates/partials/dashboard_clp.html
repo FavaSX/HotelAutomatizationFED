@@ -192,6 +192,7 @@
           <thead>
             <tr>
               <th>Voucher</th>
+              <th class="d-none d-md-table-cell">Cuenta / Documento</th>
               <th>Tipo</th>
               <th class="text-end">Monto</th>
             </tr>
@@ -204,6 +205,14 @@
                 <div class="text-muted small">
                   {% if e.modality_label %}{{ e.modality_label }} · {% endif %}{{ e.card_type.name }}{% if e.sale_date %} · <span class="text-nowrap">{{ e.sale_date|date:"d/m/Y" }}</span>{% endif %}
                 </div>
+              </td>
+              <td class="d-none d-md-table-cell small font-mono">
+                {% if e.display_account_code or e.display_document_number %}
+                {% if e.display_account_code %}<div><span class="text-muted">Cta:</span> {{ e.display_account_code }}</div>{% endif %}
+                {% if e.display_document_number %}<div class="text-muted text-truncate" style="max-width: 190px;" title="{{ e.display_document_number }}">Doc: {{ e.display_document_number }}</div>{% endif %}
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
               </td>
               <td>
                 <span class="status-chip {% if e.system_result == 'OUT_OF_PERIOD' %}status-neutral{% elif e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}" title="{{ e.action }}">

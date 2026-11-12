@@ -390,6 +390,7 @@ def calculate_usd_preview(
             if inst.authorization_code:
                 erp_by_auth_code.setdefault(inst.authorization_code, []).append({
                     "instance": inst,
+                    "account_code": inst.account_code or inst.document_number,
                     "document_number": inst.document_number,
                     "invoice_number": inst.invoice_number,
                     "amount_clp": inst.amount,
@@ -472,6 +473,7 @@ def calculate_usd_preview(
                 erp_item = matched_erp["instance"]
                 erp_item.reconciled = True
                 erp_index = getattr(erp_item, "_memory_index", None)
+                account_code = matched_erp.get("account_code") or matched_erp["document_number"]
                 document_number = matched_erp["document_number"]
                 erp_amount_clp = matched_erp["amount_clp"]
                 operator_doc_number = selected_op["instance"].document_number if selected_op and selected_op.get("instance") else ""
@@ -482,28 +484,35 @@ def calculate_usd_preview(
                 primary_erp, selected_op, _, _, _ = resolved_candidates[0]
                 erp_item = primary_erp["instance"]
                 erp_index = getattr(erp_item, "_memory_index", None)
-                operator_doc_number = selected_op["instance"].document_number if selected_op and selected_op.get("instance") else ""
                 operator_index = selected_op["operator_index"] if selected_op else None
 
                 doc_numbers: List[str] = []
+                op_doc_numbers: List[str] = []
                 erp_amount_clp = operator_usd = operator_clp = Decimal("0.00")
                 all_ops_found = True
 
                 for erp_rec, chosen_op, op_usd, op_clp, _ in resolved_candidates:
                     erp_rec["instance"].reconciled = True
-                    if erp_rec["document_number"] not in doc_numbers:
-                        doc_numbers.append(erp_rec["document_number"])
+                    rec_acc = erp_rec.get("account_code") or erp_rec["document_number"]
+                    if rec_acc and rec_acc not in doc_numbers:
+                        doc_numbers.append(rec_acc)
                     erp_amount_clp += erp_rec["amount_clp"]
                     operator_usd += op_usd
                     operator_clp += op_clp
                     if chosen_op and chosen_op.get("operator_index") is not None:
                         card_operator_transactions_data[chosen_op["operator_index"]]["authorization_code"] = auth_code
+                        if chosen_op.get("instance") and chosen_op["instance"].document_number:
+                            op_d = chosen_op["instance"].document_number
+                            if op_d not in op_doc_numbers:
+                                op_doc_numbers.append(op_d)
                     else:
                         all_ops_found = False
 
-                document_number = " / ".join(doc_numbers)[:50]
+                account_code = " / ".join(doc_numbers)[:50]
+                document_number = account_code
+                operator_doc_number = " / ".join(op_doc_numbers)[:50]
                 observation_text = (
-                    f"Voucher dividido en {len(resolved_candidates)} facturas ({document_number}) | Suma SALDO {operator_clp}"
+                    f"Voucher dividido en {len(resolved_candidates)} facturas (Cta. {account_code}) | Suma SALDO {operator_clp}"
                     if all_ops_found else "No encontrado en Posición por Clientes"
                 )
 
@@ -511,12 +520,11 @@ def calculate_usd_preview(
             difference_clp = round(operator_clp - erp_amount_clp, 2)
             is_within_tolerance = abs(difference_usd) <= usd_tolerance and selected_op is not None
             sys_result = "MATCHED" if is_within_tolerance else "AMOUNT_MISMATCH"
-            guest_name, room_number = erp_item.guest_name or "—", erp_item.room_number or "—"
             cashier_username, erp_auth_code = erp_item.cashier_username or "—", erp_item.authorization_code or auth_code
         else:
             erp_index = operator_index = None
-            document_number = erp_auth_code = operator_doc_number = ""
-            guest_name = room_number = cashier_username = "—"
+            account_code = document_number = erp_auth_code = operator_doc_number = ""
+            cashier_username = "—"
             operator_usd = erp_amount_clp = operator_clp = difference_clp = Decimal("0.00")
             difference_usd, is_within_tolerance = gross_amount_usd, False
             sys_result = "NOT_FOUND_IN_ERP"
@@ -558,10 +566,11 @@ def calculate_usd_preview(
         voucher_dict = {
             "tbk_index": tbk_index, "erp_index": erp_index, "operator_index": operator_index,
             "authorization_code": auth_code, "erp_authorization_code": erp_auth_code,
-            "document_number": document_number, "operator_document_number": operator_doc_number or document_number,
+            "account_code": account_code, "document_number": document_number,
+            "operator_document_number": operator_doc_number,
             "card_code": raw_card_type, "card_name": card_name, "masked_card": masked_card,
             "sale_date": sale_date_str or "", "merchant_location": merchant_loc,
-            "guest_name": guest_name, "room_number": room_number, "cashier_username": cashier_username,
+            "cashier_username": cashier_username,
             "gross_amount_usd": float(gross_amount_usd), "operator_amount_usd": float(operator_usd),
             "erp_amount_clp": float(erp_amount_clp), "operator_amount_clp": float(operator_clp),
             "difference_usd": float(difference_usd), "difference_clp": float(difference_clp),
