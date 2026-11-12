@@ -1,4 +1,5 @@
 from .models import CrossMatchResult
+from .services.erp_editing import OPEN_STATUS_CODES
 
 
 def pending_exceptions(request):
@@ -6,7 +7,7 @@ def pending_exceptions(request):
     if not request.user.is_authenticated:
         return {}
     count = (
-        CrossMatchResult.objects.filter(management_status__code="PENDING")
+        CrossMatchResult.objects.filter(management_status__code__in=OPEN_STATUS_CODES)
         .exclude(system_result="MATCHED")
         .count()
     )

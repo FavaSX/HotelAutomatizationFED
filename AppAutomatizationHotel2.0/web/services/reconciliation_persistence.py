@@ -21,6 +21,8 @@ from ..models import (
 )
 from ..templatetags.currency_filters import format_observation
 from .column_detector import safe_date
+from .preview_corrections import apply_pending_corrections
+from .suggestion_actions import with_proposed_change
 from .persistence_common import (
     get_model_at,
     sync_bank_statement_movements,
@@ -218,7 +220,6 @@ def _sync_cross_match_results(
 
     def _build_entry(v_dict: Dict[str, Any], sys_result: str, status_detail: str, default_status):
         tbk_obj = get_model_at(tbk_models, v_dict.get("tbk_index"))
-        sug_payload = v_dict.get("suggestion")
         erp_linked = v_dict.get("erp_index") is not None
         acc_code = (
             (v_dict.get("account_code") or "").strip()
@@ -229,6 +230,7 @@ def _sync_cross_match_results(
         erp_doc = (v_dict.get("erp_authorization_code") or "").strip() if erp_linked else ""
         if erp_doc == "—":
             erp_doc = ""
+        sug_payload = with_proposed_change("USD", {**v_dict, "system_result": sys_result}, v_dict.get("suggestion"), erp_models)
         match_fields = {
             "process": process,
             "card_type": card_types.get(v_dict["card_code"], card_types.get("VI")),
@@ -308,4 +310,6 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         operator_models = _sync_operator_transactions(process, preview.get("card_operator_transactions", []), card_types)
         _sync_summaries(process, preview, card_types)
         _sync_cross_match_results(process, user, preview, erp_models, tbk_models, operator_models, card_types)
+        # Corrections the accountant accepted in step 2: written to the ERP with history and re-cross
+        apply_pending_corrections(preview, erp_models, tbk_models, user)
         return process

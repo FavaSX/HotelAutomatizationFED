@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from ..models import CardType, SystemConfiguration
+from .erp_corrections import apply_saved_corrections
 from .column_detector import (
     normalize_text,
     normalize_auth_code,
@@ -360,6 +361,22 @@ def calculate_clp_preview(
                 if norm_code:
                     rows_by_auth_code.setdefault(norm_code, []).append(pos)
 
+    # Corrections saved in the DB win over the Excel, so a re-upload does not undo them.
+    # Deleting rows shifts positions and a correction may change the code, so the index is rebuilt.
+    voucher_codes = {
+        normalize_auth_code(sale["authorization_code"])
+        for modality, _, _, _ in CLP_MODALITIES for sale in settlements[modality]["sales"]
+    }
+    erp_rows, erp_corrections = apply_saved_corrections(
+        erp_rows, source_currency="CLP", doc_field="account_code", voucher_codes=voucher_codes
+    )
+    if erp_corrections["corrected"] or erp_corrections["deleted"] or erp_corrections["manual"]:
+        rows_by_auth_code = {}
+        for pos, row in enumerate(erp_rows):
+            norm_code = normalize_auth_code(row.get("authorization_code") or "")
+            if norm_code:
+                rows_by_auth_code.setdefault(norm_code, []).append(pos)
+
     period = parse_bordero_period(bordero_dataframe)
     if period == (None, None):
         erp_dates = [d for d in (safe_date(r["transaction_date"]) for r in erp_rows if not r.get("is_auxiliary")) if d]
@@ -578,6 +595,7 @@ def calculate_clp_preview(
         "orphan_vouchers": buckets["NOT_FOUND_IN_ERP"],
         "out_of_period_vouchers": buckets["OUT_OF_PERIOD"],
         "skipped_movements": sum(s["skipped_movements"] for s in settlements.values()),
+        "erp_corrections_applied": erp_corrections,
         "counts": {
             "matched": len(buckets["MATCHED"]),
             "discrepancies": len(discrepancy_vouchers),

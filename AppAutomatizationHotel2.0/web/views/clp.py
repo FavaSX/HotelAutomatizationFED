@@ -16,6 +16,7 @@ from ..services import (
     detect_and_align_clp_files,
 )
 from .common import (
+    handle_preview_correction,
     CLP_SESSION_KEY,
     extract_unique_cashiers,
     handle_commit_preview,
@@ -216,3 +217,9 @@ def clp_export_committed_view(request, process_id: int):
         filename_prefix="reporte_oficial_pesos_proceso",
         not_found_label="proceso en pesos",
     )
+
+
+@login_required(login_url="login")
+def clp_preview_correction_view(request):
+    """Step 2: apply the suggested ERP correction of one voucher before saving the closing."""
+    return handle_preview_correction(request, CLP_SESSION_KEY, "CLP")

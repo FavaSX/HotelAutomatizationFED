@@ -102,7 +102,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
             client_line = client_line.split("| Tel")[0].replace("|", "").strip()[:85]
             for role_key, keywords in OPERATOR_KEYWORDS:
                 if any(kw in normalized_content for kw in keywords):
-                    return _build_result(role_key, "HIGH", f"Huella interna: {client_line}")
+                    return _build_result(role_key, "HIGH", f"{client_line}")
 
         # 2. Transbank Settlement ("Abono Calculado" / "Codigo Local" / "Identificador de Transaccion")
         if (
@@ -113,7 +113,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
             return _build_result(
                 "transbank",
                 "HIGH",
-                "Huella interna: Bloque 'Datos Empresa / Abono Calculado' y columnas POS Transbank",
+                "Bloque 'Datos Empresa / Abono Calculado' y columnas POS Transbank",
             )
 
         # 3. Bank Statement ("Saldo Disponible" + "Saldo Contable" or "Cargos" + "Abonos")
@@ -125,7 +125,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
             return _build_result(
                 "bank",
                 "HIGH",
-                "Huella interna: Cartola Cuenta Corriente USD ('Saldo Disponible', 'Cargos', 'Abonos')",
+                "Cartola Cuenta Corriente USD ('Saldo Disponible', 'Cargos', 'Abonos')",
             )
 
         # 4. Hotel ERP ("AME$", "VIS$", "MAS$", "DIN$" or ERP specific headers)
@@ -135,7 +135,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
             return _build_result(
                 "erp",
                 "HIGH",
-                "Huella interna: 'HOTELERA SAN FRANCISCO S.A' + Códigos de tarjeta ERP (AME$, VIS$, MAS$, DIN$)",
+                "'HOTELERA SAN FRANCISCO S.A' + Códigos de tarjeta ERP (AME$, VIS$, MAS$, DIN$)",
             )
 
     except Exception:
@@ -144,7 +144,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
     # Fallback por nombre solo para operadores y banco (nunca para ERP, para evitar falsos positivos con 0 filas)
     for role_key, keywords in FILENAME_FALLBACKS:
         if any(kw in normalized_filename for kw in keywords):
-            return _build_result(role_key, "MEDIUM", f"Identificado por nombre de archivo ('{file_name}')")
+            return _build_result(role_key, "MEDIUM", "Identificado por nombre de archivo")
 
     return _build_result(None, "LOW", "No se encontró una huella contable reconocida en las primeras filas")
 
@@ -210,7 +210,7 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
                 "file_name": None,
                 "confidence": "MISSING",
                 "row_count": 0,
-                "evidence": "No se detectó ningún archivo para este rol en el lote cargado.",
+                "evidence": "Sin archivo",
                 "extra_files": [],
             })
 
@@ -310,7 +310,7 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
                 detected_role="tbk",
                 confidence="HIGH",
                 period_end_ord=settlement_date.toordinal() if settlement_date else 0,
-                evidence=f"Huella interna: Transbank 'Abonos por día' · Medio: {medium_raw}{date_suffix}",
+                evidence=f"Transbank 'Abonos por día' · Medio: {medium_raw}{date_suffix}",
             )
             return result
 
@@ -332,7 +332,7 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
             result.update(
                 detected_role="erp",
                 confidence="HIGH",
-                evidence=f"Huella interna: Borderó FrontOffice 'Cargos de Débitos y Créditos'{period_label}",
+                evidence=f"Borderó FrontOffice 'Cargos de Débitos y Créditos'{period_label}",
             )
             return result
 
@@ -349,7 +349,7 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
             result.update(
                 detected_role="bank",
                 confidence="HIGH",
-                evidence=f"Huella interna: Cartola Cuenta Corriente ({bank_name} · {currency})",
+                evidence=f"Cartola Cuenta Corriente ({bank_name} · {currency})",
             )
             return result
     except Exception:
@@ -358,7 +358,7 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
     normalized_filename = normalize_text(file_name)
     for role_key, keywords in CLP_FILENAME_FALLBACKS:
         if any(kw in normalized_filename for kw in keywords):
-            result.update(detected_role=role_key, confidence="MEDIUM", evidence=f"Identificado por nombre de archivo ('{file_name}')")
+            result.update(detected_role=role_key, confidence="MEDIUM", evidence="Identificado por nombre de archivo")
             break
     return result
 

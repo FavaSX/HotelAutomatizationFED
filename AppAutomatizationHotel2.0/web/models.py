@@ -175,7 +175,21 @@ class ReconciliationSummary(models.Model):
 # 3. CLEAN DATA EXTRACTED FROM EXCEL FILES
 # ==========================================
 
+class ActiveErpTransactionManager(models.Manager):
+    """Default manager: hides soft-deleted Bordero rows from every normal query."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+
+
 class ErpTransaction(models.Model):
+    ORIGIN_EXCEL = 'EXCEL'
+    ORIGIN_MANUAL = 'MANUAL'
+    ORIGIN_CHOICES = [
+        (ORIGIN_EXCEL, 'Excel (Borderó)'),
+        (ORIGIN_MANUAL, 'Agregada a mano'),
+    ]
+
     process = models.ForeignKey(ReconciliationProcess, on_delete=models.CASCADE, related_name='erp_transactions')
     card_type = models.ForeignKey(CardType, on_delete=models.SET_NULL, null=True, blank=True)
 
@@ -197,13 +211,63 @@ class ErpTransaction(models.Model):
     source_currency = models.CharField(max_length=10, blank=True, null=True)
     reconciled = models.BooleanField(default=False)
 
+    # Corrections workflow: where the row came from, its fingerprint and soft delete
+    origin = models.CharField(max_length=10, choices=ORIGIN_CHOICES, default=ORIGIN_EXCEL)
+    # Hash of the ORIGINAL Excel values (see services/erp_corrections.erp_source_key). Never changes after
+    # a correction, so a new upload of the same Bordero still recognizes the row. Null for manual rows.
+    source_key = models.CharField(max_length=40, blank=True, null=True, db_index=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(blank=True, null=True)
+    deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+
+    objects = ActiveErpTransactionManager()
+    all_objects = models.Manager()
+
     class Meta:
         db_table = 'erp_transaction'
         verbose_name = 'ERP Transaction'
         verbose_name_plural = 'ERP Transactions'
+        base_manager_name = 'all_objects'
 
     def __str__(self):
         return f"ERP Doc {self.document_number} | Auth {self.authorization_code} | ${self.amount}"
+
+
+class ErpTransactionChange(models.Model):
+    """One field changed on one Bordero row: the audit trail of every ERP correction."""
+
+    SOURCE_SUGGESTION = 'SUGGESTION'
+    SOURCE_MANUAL = 'MANUAL'
+    SOURCE_CHOICES = [
+        (SOURCE_SUGGESTION, 'Sugerencia aceptada'),
+        (SOURCE_MANUAL, 'Corrección manual'),
+    ]
+
+    # Pseudo-fields for whole-row operations, so they live in the same history as field edits
+    FIELD_CREATED = '__created__'
+    FIELD_DELETED = '__deleted__'
+
+    erp_transaction = models.ForeignKey(ErpTransaction, on_delete=models.CASCADE, related_name='changes')
+    field_name = models.CharField(max_length=50)
+    old_value = models.TextField(blank=True, null=True)
+    new_value = models.TextField(blank=True, null=True)
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    source = models.CharField(max_length=12, choices=SOURCE_CHOICES)
+    # The pending case that triggered the change, when there is one
+    cross_match_result = models.ForeignKey(
+        'CrossMatchResult', on_delete=models.SET_NULL, null=True, blank=True, related_name='erp_changes'
+    )
+    reason = models.TextField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'erp_transaction_change'
+        ordering = ['-created_at', '-id']
+        verbose_name = 'ERP Transaction Change'
+        verbose_name_plural = 'ERP Transaction Changes'
+
+    def __str__(self):
+        return f"ERP #{self.erp_transaction_id} {self.field_name}: {self.old_value} -> {self.new_value}"
 
 
 class TransbankTransaction(models.Model):

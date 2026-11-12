@@ -8,6 +8,7 @@ from .models import (
     BankDepositValidation,
     ReconciliationSummary,
     ErpTransaction,
+    ErpTransactionChange,
     TransbankTransaction,
     CardOperatorTransaction,
     CrossMatchResult,
@@ -63,9 +64,21 @@ class ReconciliationSummaryAdmin(admin.ModelAdmin):
 
 @admin.register(ErpTransaction)
 class ErpTransactionAdmin(admin.ModelAdmin):
-    list_display = ('process', 'card_type', 'account_code', 'document_number', 'authorization_code', 'amount', 'cashier_username', 'reconciled')
-    list_filter = ('reconciled', 'card_type', 'cashier_username')
+    list_display = ('process', 'card_type', 'account_code', 'document_number', 'authorization_code', 'amount', 'cashier_username', 'reconciled', 'origin', 'is_deleted')
+    list_filter = ('reconciled', 'origin', 'is_deleted', 'card_type', 'cashier_username')
     search_fields = ('authorization_code', 'account_code', 'document_number', 'cashier_username')
+    readonly_fields = ('source_key',)
+
+    def get_queryset(self, request):
+        # The admin is the audit view: it must show soft-deleted rows too
+        return ErpTransaction.all_objects.all()
+
+
+@admin.register(ErpTransactionChange)
+class ErpTransactionChangeAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'erp_transaction', 'field_name', 'old_value', 'new_value', 'user', 'source')
+    list_filter = ('source', 'field_name')
+    search_fields = ('erp_transaction__account_code', 'erp_transaction__document_number', 'erp_transaction__authorization_code', 'reason')
 
 
 @admin.register(TransbankTransaction)

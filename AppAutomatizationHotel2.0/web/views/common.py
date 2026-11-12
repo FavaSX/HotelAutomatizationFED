@@ -125,3 +125,27 @@ def handle_export_committed(
     )
     response["Content-Disposition"] = f'attachment; filename="{filename_prefix}_{process_id}.xlsx"'
     return response
+
+
+def handle_preview_correction(request, session_key: str, currency: str):
+    """Step 2: the accountant applies (and may adjust) the suggested ERP correction of one voucher."""
+    import json as _json
+    from ..services.preview_corrections import PreviewCorrectionError, apply_preview_correction
+
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido."}, status=405)
+    preview = request.session.get(session_key)
+    if not preview:
+        return JsonResponse({"error": "La vista previa ya no está en memoria. Vuelve a cargar los archivos."}, status=400)
+    try:
+        payload = _json.loads(request.body or b"{}")
+        tbk_index = int(payload.get("tbk_index"))
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "Solicitud inválida."}, status=400)
+    try:
+        outcome = apply_preview_correction(preview, currency, tbk_index, payload.get("value"))
+    except PreviewCorrectionError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    request.session[session_key] = preview
+    request.session.modified = True
+    return JsonResponse({"success": True, **outcome})

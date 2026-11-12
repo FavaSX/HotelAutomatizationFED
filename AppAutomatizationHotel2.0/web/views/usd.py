@@ -19,6 +19,7 @@ from ..services import (
     enrich_preview_with_suggestions,
 )
 from .common import (
+    handle_preview_correction,
     USD_SESSION_KEY,
     extract_unique_cashiers,
     handle_commit_preview,
@@ -203,3 +204,9 @@ def _detect_and_align_usd_with_hotel_labels(uploaded_files):
 def usd_detect_files_view(request):
     """Inspects the internal cell structure of uploaded Excel files and aligns them to the 7 USD roles."""
     return handle_detect_files_api(request, _detect_and_align_usd_with_hotel_labels)
+
+
+@login_required(login_url="login")
+def usd_preview_correction_view(request):
+    """Step 2: apply the suggested ERP correction of one voucher before saving the closing."""
+    return handle_preview_correction(request, USD_SESSION_KEY, "USD")

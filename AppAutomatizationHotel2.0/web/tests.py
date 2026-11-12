@@ -8,10 +8,14 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .models import (
+    AuditResolutionLog,
     BankStatementMovement,
     CardOperatorTransaction,
+    CardType,
     CrossMatchResult,
+    ReconciliationStatus,
     ErpTransaction,
+    ErpTransactionChange,
     ReconciliationProcess,
     SystemConfiguration,
     TransbankTransaction,
@@ -26,6 +30,10 @@ from .services import (
 from .services.clp_reconciliation import get_clp_tolerance
 from .services.column_detector import normalize_auth_code, safe_date
 from .services.clp_report_exporter import generate_committed_clp_excel_bytes
+from .services.erp_corrections import erp_source_key
+from .services.erp_editing import CorrectionError, add_row, edit_row, soft_delete_row
+from .services.preview_corrections import PreviewCorrectionError, apply_preview_correction
+from .services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion
 from .services.exception_resolution import resolve_exception
 from .services.report_exporter import generate_committed_usd_excel_bytes
 
@@ -943,3 +951,430 @@ class DashboardExceptionsAndLegacyCompatTests(TestCase):
         legacy_clp.refresh_from_db()
         self.assertEqual(legacy_clp.display_account_code, "1786853")
         self.assertEqual(legacy_clp.display_erp_document, "7626")
+
+
+class ErpCorrectionsSurviveReuploadTests(TestCase):
+    """Momento 3 of the corrections flow: a new upload of the same Bordero must not undo a correction."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+
+    def _correct(self, row, field_name, new_value):
+        # Stand-in for the PR 2 service: change the row and record it in the history
+        ErpTransactionChange.objects.create(
+            erp_transaction=row, field_name=field_name, old_value=str(getattr(row, field_name)),
+            new_value=str(new_value), user=self.user, source=ErpTransactionChange.SOURCE_MANUAL,
+        )
+        setattr(row, field_name, new_value)
+        row.save()
+
+    def test_every_excel_row_gets_the_fingerprint_of_its_original_values(self):
+        rows = ErpTransaction.objects.all()
+        self.assertTrue(rows.exists())
+        for row in rows:
+            self.assertEqual(row.origin, ErpTransaction.ORIGIN_EXCEL)
+            self.assertEqual(row.source_key, erp_source_key(
+                "CLP", row.document_number, row.invoice_number, row.authorization_code,
+                row.amount, row.transaction_date, row.transaction_time,
+            ))
+
+    def test_corrected_amount_is_kept_and_the_voucher_stays_matched(self):
+        self.assertEqual(self.process.cross_match_results.get(authorization_code="007626").system_result, "AMOUNT_MISMATCH")
+        row = ErpTransaction.objects.get(authorization_code="7626")
+        original_key = row.source_key
+        self._correct(row, "amount", Decimal("115204.00"))
+        erp_count = ErpTransaction.all_objects.count()
+
+        preview = calculate_clp_preview(**build_clp_files())
+        self.assertEqual((preview["erp_corrections_applied"]["corrected"], preview["erp_corrections_applied"]["deleted"]), (1, 0))
+        self.assertEqual(_by_code(preview, "matched_vouchers")["007626"]["difference"], 0)
+        commit_clp_preview_to_database(self.user, preview)
+
+        row.refresh_from_db()
+        self.assertEqual(row.amount, Decimal("115204.00"))
+        self.assertEqual(row.source_key, original_key)
+        self.assertEqual(ErpTransaction.all_objects.count(), erp_count)  # the typo did not come back as a new row
+        self.assertEqual(self.process.cross_match_results.get(authorization_code="007626").system_result, "MATCHED")
+
+    def test_soft_deleted_row_stays_deleted_and_out_of_the_cross_match(self):
+        row = ErpTransaction.objects.get(authorization_code="112233")
+        ErpTransactionChange.objects.create(
+            erp_transaction=row, field_name=ErpTransactionChange.FIELD_DELETED, user=self.user,
+            source=ErpTransactionChange.SOURCE_MANUAL, reason="Fila duplicada",
+        )
+        row.is_deleted = True
+        row.save()
+        erp_count = ErpTransaction.all_objects.count()
+
+        preview = calculate_clp_preview(**build_clp_files())
+        self.assertEqual((preview["erp_corrections_applied"]["corrected"], preview["erp_corrections_applied"]["deleted"]), (0, 1))
+        self.assertIn("112233", _by_code(preview, "orphan_vouchers"))
+        commit_clp_preview_to_database(self.user, preview)
+
+        self.assertEqual(ErpTransaction.all_objects.count(), erp_count)
+        self.assertFalse(ErpTransaction.objects.filter(authorization_code="112233").exists())
+        self.assertTrue(ErpTransaction.all_objects.get(pk=row.pk).is_deleted)
+
+    def test_a_row_without_history_is_left_as_the_excel_says(self):
+        preview = calculate_clp_preview(**build_clp_files())
+        self.assertEqual(preview["erp_corrections_applied"], {"corrected": 0, "deleted": 0, "manual": 0, "possible_duplicates": []})
+        self.assertTrue(all(r["source_key"] for r in preview["erp_transactions"]))
+
+
+
+class ErpManualCorrectionTests(TestCase):
+    """Opción B: the accountant edits, adds or deletes an ERP row and the voucher is crossed again."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+
+    def _case(self, code):
+        return self.process.cross_match_results.select_related(
+            "process", "transbank_transaction", "card_type", "management_status"
+        ).get(authorization_code=code)
+
+    def test_fixing_the_amount_matches_and_survives_a_reupload(self):
+        case = self._case("007626")
+        row = case.erp_transaction
+        outcome = edit_row(row, {"amount": "115204"}, self.user, match=case, reason="Voucher físico")
+
+        self.assertTrue(outcome["matched"])
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        self.assertEqual(case.difference_clp, 0)
+        change = ErpTransactionChange.objects.get(erp_transaction=row)
+        self.assertEqual((change.field_name, change.old_value, change.new_value), ("amount", "113700.00", "115204.00"))
+        self.assertEqual(change.cross_match_result, case)
+        self.assertIn("Monto $113.700 → $115.204", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
+
+        commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+
+    def test_a_partial_fix_stays_pending_with_the_remaining_difference(self):
+        case = self._case("007626")
+        outcome = edit_row(case.erp_transaction, {"amount": "112000"}, self.user, match=case)
+        self.assertFalse(outcome["matched"])
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("AMOUNT_MISMATCH", "PENDING"))
+        self.assertIn("Aún hay diferencia de $3.204", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
+
+    def test_unknown_or_unchanged_values_are_rejected(self):
+        case = self._case("007626")
+        row = case.erp_transaction
+        with self.assertRaises(CorrectionError):
+            edit_row(row, {"payment_code": "XX$"}, self.user, match=case)
+        with self.assertRaises(CorrectionError):
+            edit_row(row, {"amount": "113700"}, self.user, match=case)  # nothing changed
+
+    def test_adding_a_missing_row_by_hand_matches_and_survives_a_reupload(self):
+        case = self._case("F0FUAZ")
+        self.assertEqual(case.system_result, "NOT_FOUND_IN_ERP")
+        outcome = add_row(case, {
+            "amount": "106999", "authorization_code": "F0FUAZ", "transaction_date": "2026-09-06",
+            "payment_code": "RCO", "document_number": "1787015",
+        }, self.user, reason="Cajero no registró el código")
+        self.assertTrue(outcome["matched"])
+        manual = ErpTransaction.objects.get(origin=ErpTransaction.ORIGIN_MANUAL)
+        self.assertIsNone(manual.source_key)
+        self.assertEqual(ErpTransactionChange.objects.get(erp_transaction=manual).field_name, ErpTransactionChange.FIELD_CREATED)
+        erp_count = ErpTransaction.all_objects.count()
+
+        preview = calculate_clp_preview(**build_clp_files())
+        self.assertEqual(preview["erp_corrections_applied"]["manual"], 1)
+        self.assertIn("F0FUAZ", _by_code(preview, "matched_vouchers"))
+        commit_clp_preview_to_database(self.user, preview)
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        self.assertEqual(ErpTransaction.all_objects.count(), erp_count)
+
+    def test_deleting_needs_a_reason_and_crosses_the_linked_voucher_again(self):
+        case = self._case("112233")
+        row = case.erp_transaction
+        with self.assertRaises(CorrectionError):
+            soft_delete_row(row, self.user, "  ", match=case)
+        soft_delete_row(row, self.user, "Fila duplicada", match=case)
+        row.refresh_from_db()
+        self.assertTrue(row.is_deleted)
+        self.assertEqual(row.deleted_by, self.user)
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("NOT_FOUND_IN_ERP", "PENDING"))
+
+    def test_possible_duplicate_of_a_hand_added_row_is_flagged_on_upload(self):
+        ErpTransaction.objects.create(
+            process=self.process, document_number="9999", account_code="9999", authorization_code="555444",
+            amount=Decimal("41000"), transaction_date=date(2026, 9, 5), payment_code="RCO",
+            source_currency="CLP", origin=ErpTransaction.ORIGIN_MANUAL,
+        )
+        payments = BORDERO_PAYMENTS + [
+            (None, 1799999, "RCO", "Red Compra", 260001, -41000, 555444, "05/09/2026", "11:00:00", "SCORREA", "PARC"),
+        ]
+        files = build_clp_files()
+        files["erp_file"] = build_bordero(payments)
+        duplicates = calculate_clp_preview(**files)["erp_corrections_applied"]["possible_duplicates"]
+        self.assertEqual(len(duplicates), 1)
+        self.assertEqual(duplicates[0]["authorization_code"], "555444")
+
+
+class ErpCorrectionInboxViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        self.client.force_login(self.user)
+        self.case = self.process.cross_match_results.get(authorization_code="007626")
+
+    def test_inbox_shows_the_correction_panel(self):
+        response = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(response, "Corregir el ERP")
+        self.assertContains(response, reverse("exception_erp_edit", args=[self.case.id, self.case.erp_transaction_id]))
+
+    def test_posting_a_fix_matches_and_the_case_moves_to_resolved(self):
+        response = self.client.post(
+            reverse("exception_erp_edit", args=[self.case.id, self.case.erp_transaction_id]),
+            {"amount": "115204", "authorization_code": "7626", "transaction_date": "2026-09-05",
+             "payment_code": "RCO", "document_number": "1786853", "return_query": "moneda=clp"},
+            follow=True,
+        )
+        self.assertContains(response, "Corregido en ERP")
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.management_status.code, "RESOLVED_ERP_FIXED")
+        resolved = self.client.get(reverse("exceptions") + "?moneda=clp&estado=resueltas")
+        self.assertContains(resolved, "007626")
+        self.assertContains(resolved, "Cambios en el ERP")
+
+    def test_a_bad_value_shows_an_error_and_changes_nothing(self):
+        response = self.client.post(
+            reverse("exception_erp_edit", args=[self.case.id, self.case.erp_transaction_id]),
+            {"amount": "abc", "return_query": "moneda=clp"}, follow=True,
+        )
+        self.assertContains(response, "no es un número válido")
+        self.assertFalse(ErpTransactionChange.objects.exists())
+
+
+class UsdVoucherRecrossTests(TestCase):
+    """A dollar voucher crosses again through ERP -> card operator -> Transbank after a code fix."""
+
+    def test_fixing_a_typo_in_the_code_matches_the_voucher(self):
+        user = User.objects.create_user("contador", password="x")
+        visa, _ = CardType.objects.get_or_create(code="VI", defaults={"name": "Visa"})
+        pending, _ = ReconciliationStatus.objects.get_or_create(code="PENDING", defaults={"display_name": "Pendiente"})
+        process = ReconciliationProcess.objects.create(user=user, process_currency="USD", accounting_period="Cierre Dólares")
+        tbk = TransbankTransaction.objects.create(
+            process=process, card_type=visa, payment_modality="CREDIT", authorization_code="ABC123",
+            sale_date=date(2025, 11, 26), original_sale_amount=Decimal("100.00"),
+        )
+        row = ErpTransaction.objects.create(
+            process=process, card_type=visa, document_number="D1", invoice_number="F1", authorization_code="ABC12",
+            amount=Decimal("95000"), transaction_date=date(2025, 11, 26), payment_code="VUS$", source_currency="USD",
+        )
+        CardOperatorTransaction.objects.create(
+            process=process, card_type=visa, document_number="D1", foreign_currency_amount=Decimal("100.00"),
+            balance_amount=Decimal("95000"),
+        )
+        case = CrossMatchResult.objects.create(
+            process=process, card_type=visa, transbank_transaction=tbk, authorization_code="ABC123",
+            transbank_amount=Decimal("100.00"), system_result="NOT_FOUND_IN_ERP", management_status=pending,
+        )
+        outcome = edit_row(row, {"authorization_code": "ABC123"}, user, match=case)
+        self.assertTrue(outcome["matched"])
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.erp_transaction, case.difference_usd), ("MATCHED", row, Decimal("0.00")))
+
+
+
+class SuggestionAcceptRejectTests(TestCase):
+    """Opción A: a suggestion carries one concrete change that the accountant accepts or rejects."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+
+    def _case(self, code):
+        return self.process.cross_match_results.select_related(
+            "process", "transbank_transaction", "card_type", "management_status"
+        ).get(authorization_code=code)
+
+    def test_typo_suggestion_names_the_row_field_and_value(self):
+        proposal = open_proposal(self._case("F0FUAZ"))
+        row = ErpTransaction.objects.get(pk=proposal["erp_id"])
+        self.assertEqual(row.authorization_code, "0FOFUAZ")
+        self.assertEqual((proposal["field"], proposal["old"], proposal["new"]), ("authorization_code", "0FOFUAZ", "F0FUAZ"))
+
+    def test_accepting_fixes_the_erp_matches_and_survives_a_reupload(self):
+        case = self._case("F0FUAZ")
+        outcome = accept_suggestion(case, self.user)
+        self.assertTrue(outcome["matched"])
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        change = ErpTransactionChange.objects.get(cross_match_result=case)
+        self.assertEqual(change.source, ErpTransactionChange.SOURCE_SUGGESTION)
+        self.assertEqual(load_suggestion(case)["proposed_change"]["status"], "accepted")
+        with self.assertRaises(CorrectionError):
+            accept_suggestion(case, self.user)  # already used
+
+        commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+
+    def test_amount_suggestion_and_rejecting_leaves_the_erp_alone(self):
+        case = self._case("007626")
+        proposal = open_proposal(case)
+        self.assertEqual((proposal["field"], proposal["old"], proposal["new"]), ("amount", "113700.00", "115204.00"))
+
+        reject_suggestion(case, self.user, "El voucher físico dice 113.700")
+        case.refresh_from_db()
+        self.assertEqual(case.management_status.code, "REJECTED")
+        self.assertEqual(case.erp_transaction.amount, Decimal("113700.00"))
+        self.assertFalse(ErpTransactionChange.objects.exists())
+        self.assertIsNone(open_proposal(case))
+        self.assertIn("Sugerencia rechazada", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
+
+        # Rejected stays open: it can still be fixed by hand (Opción B)
+        outcome = edit_row(case.erp_transaction, {"amount": "115204"}, self.user, match=case)
+        self.assertTrue(outcome["matched"])
+
+    def test_accepting_after_the_row_changed_is_refused(self):
+        case = self._case("007626")
+        row = case.erp_transaction
+        row.amount = Decimal("114000")
+        row.save()
+        with self.assertRaises(CorrectionError):
+            accept_suggestion(case, self.user)
+
+    def test_inbox_buttons_and_counters(self):
+        self.client.force_login(self.user)
+        case = self._case("F0FUAZ")
+        page = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(page, "Correcciones sugeridas en el ERP")
+        self.assertContains(page, f'data-suggestion-case="{case.id}"')
+        self.assertContains(page, reverse("exception_suggestion_accept", args=[case.id]))
+
+        other = self._case("007626")
+        response = self.client.post(reverse("exception_suggestion_reject", args=[other.id]), {"return_query": "moneda=clp"}, follow=True)
+        self.assertContains(response, "sugerencia rechazada")
+        self.assertContains(response, "Rechazada")  # still listed with the open cases
+
+        response = self.client.post(reverse("exception_suggestion_accept", args=[case.id]), {"return_query": "moneda=clp"}, follow=True)
+        self.assertContains(response, "Corregido en ERP")
+
+
+
+class PreviewCorrectionTests(TestCase):
+    """Step 2: a suggested correction is accepted (and may be adjusted) before the closing is saved."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.preview = calculate_clp_preview(**build_clp_files())
+
+    def _tbk_index(self, bucket, code):
+        return _by_code(self.preview, bucket)[code]["tbk_index"]
+
+    def test_the_preview_already_names_the_row_field_and_value(self):
+        proposal = _by_code(self.preview, "orphan_vouchers")["F0FUAZ"]["suggestion"]["proposed_change"]
+        self.assertEqual((proposal["field"], proposal["old"], proposal["new"]), ("authorization_code", "0FOFUAZ", "F0FUAZ"))
+        self.assertIsNotNone(proposal["erp_index"])
+
+    def test_applying_moves_the_voucher_to_matched_and_saving_writes_the_erp(self):
+        outcome = apply_preview_correction(self.preview, "CLP", self._tbk_index("orphan_vouchers", "F0FUAZ"), "")
+        self.assertTrue(outcome["matched"])
+        self.assertIn("F0FUAZ", _by_code(self.preview, "matched_vouchers"))
+        self.assertNotIn("F0FUAZ", _by_code(self.preview, "orphan_vouchers"))
+        self.assertEqual(self.preview["counts"]["matched"], 5)
+        with self.assertRaises(PreviewCorrectionError):
+            apply_preview_correction(self.preview, "CLP", self._tbk_index("matched_vouchers", "F0FUAZ"), "")
+
+        process = commit_clp_preview_to_database(self.user, self.preview)
+        case = process.cross_match_results.get(authorization_code="F0FUAZ")
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        row = case.erp_transaction
+        self.assertEqual(row.authorization_code, "F0FUAZ")
+        self.assertEqual(row.source_key, erp_source_key(  # fingerprint of the ORIGINAL Excel value
+            "CLP", row.document_number, row.invoice_number, "0FOFUAZ", row.amount, row.transaction_date, row.transaction_time))
+        change = ErpTransactionChange.objects.get(erp_transaction=row)
+        self.assertEqual((change.source, change.old_value, change.new_value), ("SUGGESTION", "0FOFUAZ", "F0FUAZ"))
+        self.assertIn("No está en el ERP → Cuadrado", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
+        erp_count = ErpTransaction.all_objects.count()
+
+        commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        case.refresh_from_db()
+        self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        self.assertEqual(ErpTransaction.all_objects.count(), erp_count)
+
+    def test_the_accountant_can_adjust_the_suggested_value(self):
+        idx = self._tbk_index("discrepancy_vouchers", "007626")
+        with self.assertRaises(PreviewCorrectionError):
+            apply_preview_correction(self.preview, "CLP", idx, "abc")
+        outcome = apply_preview_correction(self.preview, "CLP", idx, "115000")  # 204 within the ±1.000 tolerance
+        self.assertTrue(outcome["matched"])
+        process = commit_clp_preview_to_database(self.user, self.preview)
+        self.assertEqual(process.cross_match_results.get(authorization_code="007626").erp_transaction.amount, Decimal("115000.00"))
+
+    def test_preview_endpoint(self):
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["clp_reconciliation_preview"] = self.preview
+        session.save()
+        url = reverse("clp_preview_correction")
+        idx = self._tbk_index("orphan_vouchers", "F0FUAZ")
+        response = self.client.post(url, data={"tbk_index": idx, "value": "F0FUAZ"}, content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["matched"])
+        again = self.client.post(url, data={"tbk_index": idx, "value": "F0FUAZ"}, content_type="application/json")
+        self.assertEqual(again.status_code, 400)
+        page = self.client.get(reverse("clp_preview"))
+        self.assertContains(page, "aceptada en este paso")
+
+
+class SuggestionPanelTests(TestCase):
+    """The inbox lists the suggested ERP corrections above the table, with an editable value."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        self.client.force_login(self.user)
+
+    def test_panel_lists_open_suggestions_and_accepts_an_edited_value(self):
+        page = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(page, "Correcciones sugeridas en el ERP")
+        case = self.process.cross_match_results.get(authorization_code="007626")
+        self.assertContains(page, f'data-suggestion-case="{case.id}" data-suffix="p"')
+        cards = page.context["suggestion_cards"]["cases"]
+        self.assertEqual(cards[str(case.id)]["suggestion"]["proposed_change"]["new"], "115204.00")
+        self.assertEqual(cards[str(case.id)]["tbk_amount"], 115204.0)
+
+        self.client.post(reverse("exception_suggestion_accept", args=[case.id]), {"value": "115000", "return_query": "moneda=clp"})
+        case.refresh_from_db()
+        self.assertEqual(case.management_status.code, "RESOLVED_ERP_FIXED")
+        self.assertEqual(case.erp_transaction.amount, Decimal("115000.00"))
+        self.assertEqual(ErpTransactionChange.objects.get().reason, "Sugerencia aceptada con el valor ajustado")
+        self.assertNotContains(self.client.get(reverse("exceptions") + "?moneda=clp"), f'data-suggestion-case="{case.id}" data-suffix="p"')
+
+
+class SuggestionModalAjaxTests(TestCase):
+    """Pendientes: the suggestions window accepts and rejects without leaving it (JSON answers)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        self.client.force_login(self.user)
+        self.ajax = {"HTTP_X_REQUESTED_WITH": "XMLHttpRequest"}
+
+    def test_button_opens_the_window_and_decisions_answer_json(self):
+        page = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(page, 'data-bs-target="#inboxSuggestionModal"')
+        self.assertContains(page, "Ver Sugerencias Asistidas (2 casos)")
+
+        accept_case = self.process.cross_match_results.get(authorization_code="F0FUAZ")
+        response = self.client.post(reverse("exception_suggestion_accept", args=[accept_case.id]), {"value": "F0FUAZ"}, **self.ajax)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual((response.json()["status"], response.json()["matched"]), ("accepted", True))
+
+        reject_case = self.process.cross_match_results.get(authorization_code="007626")
+        response = self.client.post(reverse("exception_suggestion_reject", args=[reject_case.id]), {}, **self.ajax)
+        self.assertEqual(response.json()["status"], "rejected")
+
+        again = self.client.post(reverse("exception_suggestion_reject", args=[reject_case.id]), {}, **self.ajax)
+        self.assertEqual(again.status_code, 400)
+        self.assertIn("error", again.json())

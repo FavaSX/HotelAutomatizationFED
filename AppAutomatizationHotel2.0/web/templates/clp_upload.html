@@ -116,31 +116,19 @@
     <!-- Estado de Escaneo de Huellas -->
     <div id="expScanningSpinner" class="text-center py-5 d-none">
       <div class="spinner-border text-warning mb-3" role="status"></div>
-      <h6 class="fw-bold mb-1">Inspeccionando estructura interna de los archivos...</h6>
-      <p class="text-muted small mb-0">Leyendo encabezados, medio de pago Transbank y formato de columnas.</p>
+      <h6 class="fw-bold mb-0">Analizando archivos...</h6>
     </div>
 
     <!-- FASE 2: Tabla de Alineación Detectada y Confirmación -->
     <div id="expPhase2Alignment" class="d-none">
-      <div class="mb-3">
-        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1 rounded-pill mb-1">
-          <i class="bi bi-2-circle-fill me-1"></i> Verificación de Alineación y Confirmación
-        </span>
-        <h5 class="fw-bold mb-0">Revise y confirme la alineación de los archivos detectados</h5>
-        <p class="text-muted small mb-0">
-          Verifique que cada rol tenga asignado el archivo correcto. Si se equivocó en uno o le faltó alguno, puede usar el botón <strong>"Subir"</strong> de esa fila sin volver a cargar todo.
-        </p>
-      </div>
-
       <div id="alignmentSummaryAlert" class="alert rounded-4 mb-3 py-2 px-3 small"></div>
 
       <div class="table-responsive border rounded-4 mb-4">
         <table class="table table-hover align-middle mb-0">
           <thead class="alignment-thead">
             <tr class="text-uppercase text-muted">
-              <th class="ps-3 py-2">Rol Requerido por el Sistema</th>
-              <th class="py-2">Archivo Asignado (Elegir o Subir Individual)</th>
-              <th class="py-2">Evidencia / Huella Interna Detectada</th>
+              <th class="ps-3 py-2">Rol</th>
+              <th class="py-2">Archivo</th>
               <th class="text-center pe-3 py-2">Certeza</th>
             </tr>
           </thead>
@@ -148,22 +136,13 @@
         </table>
       </div>
 
-      <div class="d-flex flex-wrap justify-content-between align-items-center bg-light border rounded-4 p-3 gap-3">
-        <div class="d-flex align-items-center gap-2">
-          <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
-          <div>
-            <div class="fw-bold small">¿La alineación de los archivos es correcta?</div>
-            <div class="text-muted small">Al confirmar, los archivos se procesarán y se abrirá la previsualización en memoria.</div>
-          </div>
-        </div>
-        <div class="d-flex gap-2">
-          <button type="button" class="btn btn-outline-secondary rounded-pill px-4" onclick="resetExperimentalFiles()">
-            <i class="bi bi-arrow-repeat me-1"></i> Cambiar Todos los Archivos
-          </button>
-          <button type="button" id="btnConfirmAlignment" class="btn btn-brand btn-lg rounded-pill px-5 shadow-sm" onclick="confirmAlignmentAndSubmit()">
-            <i class="bi bi-check2-circle me-2"></i> Confirmar Alineación y Procesar
-          </button>
-        </div>
+      <div class="d-flex flex-wrap justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" onclick="resetExperimentalFiles()">
+          <i class="bi bi-arrow-repeat me-1"></i> Cambiar archivos
+        </button>
+        <button type="button" id="btnConfirmAlignment" class="btn btn-brand rounded-pill px-4 shadow-sm" onclick="confirmAlignmentAndSubmit()">
+          <i class="bi bi-check2-circle me-1"></i> Confirmar y procesar
+        </button>
       </div>
     </div>
 
@@ -172,5 +151,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=7"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=8"></script>
 {% endblock %}

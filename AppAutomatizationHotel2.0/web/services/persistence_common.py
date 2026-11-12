@@ -23,6 +23,7 @@ from ..models import (
     TransbankTransaction,
 )
 from .column_detector import safe_date, safe_time
+from .erp_corrections import source_key_for_raw
 
 
 def to_decimal(value: Any) -> Decimal:
@@ -98,25 +99,36 @@ def sync_erp_transactions_by_currency(
     doc_field: str = "document_number",
 ) -> List[ErpTransaction]:
     """
-    Deduplicates and bulk-syncs ErpTransaction rows for a specific currency ('USD' or 'CLP')
-    using the natural key: (document_number, invoice_number, authorization_code, amount, date, time).
+    Deduplicates and bulk-syncs ErpTransaction rows for a specific currency ('USD' or 'CLP') by their
+    fingerprint (`source_key`): the natural key (document, invoice, authorization, amount, date, time) of
+    the ORIGINAL Excel row. A row the accountant corrected is still found, and is never overwritten by the
+    Excel values; a soft-deleted row is found too and stays deleted.
     """
-    incoming_docs = {e.get(doc_field) or e.get("account_code") or "" for e in erp_raw}
+    manual_rows = ErpTransaction.all_objects.in_bulk([e["manual_id"] for e in erp_raw if e.get("manual_id")])
+    incoming_keys = {source_key_for_raw(e, source_currency, doc_field) for e in erp_raw if not e.get("manual_id")}
     existing_qs = (
-        ErpTransaction.objects.filter(source_currency=source_currency, document_number__in=incoming_docs)
-        if incoming_docs
-        else ErpTransaction.objects.none()
+        ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=incoming_keys)
+        if incoming_keys
+        else ErpTransaction.all_objects.none()
     )
-    existing_map = {
-        (e.document_number or "", e.invoice_number or "", e.authorization_code or "", e.amount, e.transaction_date, e.transaction_time): e
-        for e in existing_qs
-    }
+    existing_map: Dict[str, ErpTransaction] = {}
+    for existing in existing_qs.order_by("id"):
+        existing_map.setdefault(existing.source_key, existing)  # oldest wins if old uploads left duplicates
 
     erp_models: List[ErpTransaction] = []
     new_erp: List[ErpTransaction] = []
     erp_to_update: List[ErpTransaction] = []
 
     for e_data in erp_raw:
+        manual_obj = manual_rows.get(e_data.get("manual_id"))
+        if manual_obj is not None:
+            # Hand-added row taking part in this upload's cross-match: it already exists, only its flag changes
+            if e_data.get("reconciled") and not manual_obj.reconciled:
+                manual_obj.reconciled = True
+                erp_to_update.append(manual_obj)
+            erp_models.append(manual_obj)
+            continue
+
         doc_val = e_data.get(doc_field) or e_data.get("account_code") or ""
         inv_val = e_data.get("invoice_number") or ""
         auth_val = e_data.get("authorization_code") or ""
@@ -125,7 +137,7 @@ def sync_erp_transactions_by_currency(
         time_val = safe_time(e_data.get("transaction_time"))
         rec_val = e_data.get("reconciled", False)
 
-        natural_key = (doc_val, inv_val, auth_val, amt_val, date_val, time_val)
+        natural_key = source_key_for_raw(e_data, source_currency, doc_field)
         existing_obj = existing_map.get(natural_key)
         if existing_obj is not None:
             if rec_val and not existing_obj.reconciled:
@@ -152,6 +164,8 @@ def sync_erp_transactions_by_currency(
             amount=amt_val,
             source_currency=e_data.get("source_currency", source_currency),
             reconciled=rec_val,
+            origin=ErpTransaction.ORIGIN_EXCEL,
+            source_key=natural_key,
         )
         existing_map[natural_key] = new_obj
         new_erp.append(new_obj)
@@ -262,7 +276,7 @@ def upsert_cross_match_and_audit_logs(
         prev_sys_result = existing_match.system_result
         prev_status = existing_match.management_status
         if sys_result == "MATCHED":
-            new_status = accepted_status
+            new_status = prev_status if prev_sys_result == "MATCHED" and prev_status else accepted_status
         elif not existing_match.management_status_id or prev_sys_result == "MATCHED":
             new_status = default_mgmt_status
         else:

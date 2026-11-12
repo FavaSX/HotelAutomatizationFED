@@ -4,6 +4,7 @@
 {% block page_title %}Hotel Plaza San Francisco | Previsualización USD{% endblock %}
 
 {% block content %}
+{% include "partials/erp_corrections_notice.html" %}
 <!-- Header -->
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
   <div class="min-w-0">
@@ -649,8 +650,11 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>document.body.dataset.previewCorrectionUrl = "{% url 'usd_preview_correction' %}"; document.body.dataset.previewCurrency = "USD";</script>
 <script src="{% static 'js/usd_preview.js' %}?v=32"></script>
-<script src="{% static 'js/usd_suggestions.js' %}?v=7"></script>
+<script src="{% static 'js/suggestion_apply.js' %}?v=3"></script>
+<script src="{% static 'js/suggestion_card.js' %}?v=7"></script>
+<script src="{% static 'js/usd_suggestions.js' %}?v=9"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab
   document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {

@@ -4,6 +4,7 @@
 {% block module_subtitle %}Módulo Pesos (CLP){% endblock %}
 
 {% block content %}
+{% include "partials/erp_corrections_notice.html" %}
 <!-- Header -->
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
   <div class="min-w-0">
@@ -468,6 +469,7 @@
                 <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
                   <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Sugerencia ({{ item.suggestion.confidence }})</span>
                   <span class="small fw-semibold">{{ item.suggestion.headline }}</span>
+                  {% if item.suggestion.proposed_change %}<span class="small font-mono {% if item.suggestion.proposed_change.status %}text-success{% else %}text-primary{% endif %}"><i class="bi bi-{% if item.suggestion.proposed_change.status %}check2-circle{% else %}magic{% endif %} me-1"></i>{{ item.suggestion.proposed_change.label }}{% if item.suggestion.proposed_change.status %} · aplicada{% endif %}</span>{% endif %}
                 </div>
                 {% else %}
                 <div class="suggestion-empty mt-1"><i class="bi bi-slash-circle me-1"></i>Sin sugerencia secundaria detectada en Borderó.</div>
@@ -530,6 +532,7 @@
                 <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
                   <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Sugerencia ({{ item.suggestion.confidence }})</span>
                   <span class="small fw-semibold">{{ item.suggestion.headline }}</span>
+                  {% if item.suggestion.proposed_change %}<span class="small font-mono {% if item.suggestion.proposed_change.status %}text-success{% else %}text-primary{% endif %}"><i class="bi bi-{% if item.suggestion.proposed_change.status %}check2-circle{% else %}magic{% endif %} me-1"></i>{{ item.suggestion.proposed_change.label }}{% if item.suggestion.proposed_change.status %} · aplicada{% endif %}</span>{% endif %}
                 </div>
                 {% else %}
                 <div class="suggestion-empty mt-1"><i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en Borderó ERP.</div>
@@ -599,6 +602,7 @@
                 <div class="mt-1 d-flex flex-wrap align-items-center gap-2">
                   <span class="reason-chip reason-emerald"><i class="bi bi-stars"></i> Sugerencia ({{ item.suggestion.confidence }})</span>
                   <span class="small fw-semibold">{{ item.suggestion.headline }}</span>
+                  {% if item.suggestion.proposed_change %}<span class="small font-mono {% if item.suggestion.proposed_change.status %}text-success{% else %}text-primary{% endif %}"><i class="bi bi-{% if item.suggestion.proposed_change.status %}check2-circle{% else %}magic{% endif %} me-1"></i>{{ item.suggestion.proposed_change.label }}{% if item.suggestion.proposed_change.status %} · aplicada{% endif %}</span>{% endif %}
                 </div>
                 {% else %}
                 <div class="suggestion-empty mt-1"><i class="bi bi-slash-circle me-1"></i>Sin coincidencias en Borderó histórico.</div>
@@ -642,8 +646,11 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>document.body.dataset.previewCorrectionUrl = "{% url 'clp_preview_correction' %}"; document.body.dataset.previewCurrency = "CLP";</script>
 <script src="{% static 'js/usd_preview.js' %}?v=32"></script>
-<script src="{% static 'js/clp_preview.js' %}?v=9"></script>
+<script src="{% static 'js/suggestion_apply.js' %}?v=3"></script>
+<script src="{% static 'js/suggestion_card.js' %}?v=7"></script>
+<script src="{% static 'js/clp_preview.js' %}?v=11"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab
   document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {

@@ -18,6 +18,8 @@ from ..models import (
     TransbankTransaction,
 )
 from .column_detector import safe_date
+from .preview_corrections import apply_pending_corrections, original_erp_rows
+from .suggestion_actions import with_proposed_change
 from .persistence_common import (
     get_model_at,
     sync_bank_statement_movements,
@@ -140,7 +142,7 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         # 3. Bordero rows (natural key: cuenta + factura + código + monto + fecha + hora)
         erp_models = sync_erp_transactions_by_currency(
             process,
-            preview.get("erp_transactions", []),
+            original_erp_rows(preview, "CLP"),
             lambda code: card_types.get(code or ""),
             source_currency="CLP",
             doc_field="account_code",
@@ -173,7 +175,7 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
             for v_dict in preview.get(bucket, []):
                 sys_result = v_dict["system_result"]
                 default_status = accepted_status if sys_result == "MATCHED" else pending_status
-                suggestion = v_dict.get("suggestion")
+                suggestion = with_proposed_change("CLP", v_dict, v_dict.get("suggestion"), erp_models)
                 observation = v_dict.get("observation", "")
                 if suggestion:
                     observation = f"{observation} | Sugerencia: {suggestion['headline']}"
@@ -218,4 +220,6 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
                 prepared_entries.append((tbk_obj, match_fields, default_status))
 
         upsert_cross_match_and_audit_logs(user, tbk_models, prepared_entries, accepted_status)
+        # 7. Corrections the accountant accepted in step 2: written to the ERP with history and re-cross
+        apply_pending_corrections(preview, erp_models, tbk_models, user)
         return process

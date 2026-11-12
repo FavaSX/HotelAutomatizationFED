@@ -648,7 +648,7 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
             continue
         if (op_idx is not None and op_idx in claimed_op_indices) or (erp_idx is not None and erp_idx in claimed_erp_indices):
             continue
-        orphan_vouchers[orph_idx]["suggestion"] = suggestion_payload
+        orphan_vouchers[orph_idx]["suggestion"] = {**suggestion_payload, "erp_index": erp_idx}
         assigned_orphans.add(orph_idx)
         if op_idx is not None:
             claimed_op_indices.add(op_idx)
@@ -696,4 +696,6 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
         "orphans_without": len(orphan_vouchers) - orph_with,
         "orphans_total": len(orphan_vouchers),
     }
+    from .suggestion_actions import attach_preview_proposals
+    attach_preview_proposals(preview_data, "USD", "document_number")
     return preview_data

@@ -165,10 +165,9 @@ function renderAlignmentTable(data) {
             <span class="badge ${role.badge_class}">${role.badge}</span>
             <span class="fw-bold text-dark">${role.role_label}</span>
           </div>
-          <small class="text-muted d-block mt-1">Soporta turnos y múltiples archivos</small>
         </td>
         <td class="py-3">
-          <div class="d-flex align-items-center gap-2 mb-2">
+          <div class="d-flex align-items-center gap-2">
             <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
               ${optionsHtml}
             </select>
@@ -177,12 +176,10 @@ function renderAlignmentTable(data) {
               <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
             </label>
           </div>
-          <div id="extraErpContainer" class="p-2 bg-light border rounded-3">
+          <small class="text-muted d-block mt-1" id="evidence_${role.role_key}">${role.evidence}</small>
+          <div id="extraErpContainer" class="mt-2">
             <!-- Rendered by renderExtraErpWidgets() -->
           </div>
-        </td>
-        <td class="py-3 text-muted align-top" id="evidence_${role.role_key}">
-          <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
         </td>
         <td class="text-center pe-3 py-3 align-top" id="confidence_${role.role_key}">
           ${badgeHtml}
@@ -196,10 +193,9 @@ function renderAlignmentTable(data) {
             <span class="badge ${role.badge_class}">${role.badge}</span>
             <span class="fw-bold text-dark">${role.role_label}</span>
           </div>
-          <small class="text-muted d-block mt-1">Soporta 1 consolidado o varios archivos</small>
         </td>
         <td class="py-3">
-          <div class="d-flex align-items-center gap-2 mb-2">
+          <div class="d-flex align-items-center gap-2">
             <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
               ${optionsHtml}
             </select>
@@ -208,12 +204,10 @@ function renderAlignmentTable(data) {
               <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
             </label>
           </div>
-          <div id="extraTbkContainer" class="p-2 bg-light border rounded-3">
+          <small class="text-muted d-block mt-1" id="evidence_${role.role_key}">${role.evidence}</small>
+          <div id="extraTbkContainer" class="mt-2">
             <!-- Rendered by renderExtraTbkWidgets() -->
           </div>
-        </td>
-        <td class="py-3 text-muted align-top" id="evidence_${role.role_key}">
-          <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
         </td>
         <td class="text-center pe-3 py-3 align-top" id="confidence_${role.role_key}">
           ${badgeHtml}
@@ -237,9 +231,7 @@ function renderAlignmentTable(data) {
               <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
             </label>
           </div>
-        </td>
-        <td class="py-3 text-muted" id="evidence_${role.role_key}">
-          <i class="bi bi-cpu me-1 text-primary"></i> ${role.evidence}
+          <small class="text-muted d-block mt-1" id="evidence_${role.role_key}">${role.evidence}</small>
         </td>
         <td class="text-center pe-3 py-3" id="confidence_${role.role_key}">
           ${badgeHtml}
@@ -262,61 +254,69 @@ function renderAlignmentTable(data) {
   validateCurrentAlignmentSelection();
 }
 
-function renderExtraErpWidgets() {
-  const container = document.getElementById('extraErpContainer');
+function getAssignedPrimaryIndices() {
+  return new Set(
+    Array.from(document.querySelectorAll('.role-file-select'))
+      .filter(sel => sel.value !== '')
+      .map(sel => parseInt(sel.value, 10))
+  );
+}
+
+function renderExtraFilesWidget({ containerId, indices, label, iconClass, removeFn, addFn, uploadFn }) {
+  const container = document.getElementById(containerId);
   if (!container || !latestDetectionReport) return;
 
-  const primaryErpSelect = document.getElementById('select_erp');
-  const primaryIdx = primaryErpSelect && primaryErpSelect.value !== '' ? parseInt(primaryErpSelect.value, 10) : null;
-
-  let chipsHtml = '';
-  let extraRowsTotal = 0;
-  extraErpIndices.forEach(idx => {
+  const chipsHtml = Array.from(indices).map(idx => {
     const f = latestDetectionReport.inspected_files[idx];
-    if (f) {
-      extraRowsTotal += (f.row_count || 0);
-      chipsHtml += `
-        <span class="badge bg-white text-dark border px-2 py-1 d-inline-flex align-items-center gap-1 shadow-sm">
-          <i class="bi bi-file-earmark-excel text-success"></i>
-          <span>${f.file_name} (${f.row_count} filas)</span>
-          <a href="javascript:void(0)" class="text-danger ms-1 text-decoration-none fw-bold" onclick="removeExtraErpFile(${idx})" title="Quitar">&times;</a>
-        </span>
-      `;
-    }
-  });
+    if (!f) return '';
+    return `
+      <span class="badge bg-body-secondary text-body border px-2 py-1 d-inline-flex align-items-center gap-1">
+        <i class="bi bi-file-earmark-excel ${iconClass}"></i>
+        <span>${f.file_name} (${f.row_count} filas)</span>
+        <a href="javascript:void(0)" class="text-danger ms-1 text-decoration-none fw-bold" onclick="${removeFn}(${idx})" title="Quitar">&times;</a>
+      </span>
+    `;
+  }).join('');
 
-  // Available candidate files to add as extra ERP (must have > 0 rows and not be primary or already added)
-  const availableCandidates = latestDetectionReport.inspected_files.filter(f => 
-    f.file_index !== primaryIdx && !extraErpIndices.has(f.file_index) && (f.row_count || 0) > 0
+  // Only files with rows that no role is using yet can be added as extras.
+  const assigned = getAssignedPrimaryIndices();
+  const candidates = latestDetectionReport.inspected_files.filter(f =>
+    !assigned.has(f.file_index) &&
+    !extraErpIndices.has(f.file_index) &&
+    !extraTbkIndices.has(f.file_index) &&
+    (f.row_count || 0) > 0
   );
-
-  let addSelectOptions = '<option value="">+ Agregar archivo ERP del lote...</option>';
-  availableCandidates.forEach(f => {
-    addSelectOptions += `<option value="${f.file_index}">${f.file_name} (${f.row_count} filas)</option>`;
-  });
+  const optionsHtml = candidates.map(f =>
+    `<option value="${f.file_index}">${f.file_name} (${f.row_count} filas)</option>`
+  ).join('');
 
   container.innerHTML = `
-    <div class="d-flex align-items-center justify-content-between mb-1">
-      <small class="fw-bold text-secondary">
-        <i class="bi bi-layers text-primary me-1"></i>Archivos ERP Adicionales (${extraErpIndices.size})
-      </small>
-      ${extraRowsTotal > 0 ? `<small class="text-success fw-semibold">+ ${extraRowsTotal} filas adicionales</small>` : ''}
-    </div>
-    <div class="d-flex flex-wrap gap-1 align-items-center mb-2">
-      ${chipsHtml || '<small class="text-muted fst-italic">Ningún archivo ERP adicional asignado</small>'}
-    </div>
+    ${chipsHtml ? `<div class="d-flex flex-wrap gap-1 align-items-center mb-2">${chipsHtml}</div>` : ''}
     <div class="d-flex flex-wrap align-items-center gap-2">
-      ${availableCandidates.length > 0 ? `
-        <select class="form-select form-select-sm w-auto" style="max-width: 260px;" onchange="addExtraErpFileFromSelect(this)">
-          ${addSelectOptions}
+      ${candidates.length > 0 ? `
+        <select class="form-select form-select-sm w-auto" style="max-width: 260px;" onchange="${addFn}(this)">
+          <option value="">+ Agregar ${label} del lote</option>
+          ${optionsHtml}
         </select>
       ` : ''}
-      <label class="btn btn-outline-secondary btn-sm rounded-pill px-2 py-1 mb-0" style="font-size:0.75rem;" title="Subir otro archivo ERP (turno o histórico)">
-        <i class="bi bi-file-earmark-plus me-1 text-primary"></i>Subir otro ERP
-        <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadExtraErpFile(this)">
+      <label class="btn btn-outline-secondary btn-sm rounded-pill px-2 py-1 mb-0" style="font-size:0.75rem;">
+        <i class="bi bi-file-earmark-plus me-1 ${iconClass}"></i>Subir otro ${label}
+        <input type="file" class="d-none" accept=".xls,.xlsx" onchange="${uploadFn}(this)">
       </label>
     </div>
   `;
+}
+
+function renderExtraErpWidgets() {
+  renderExtraFilesWidget({
+    containerId: 'extraErpContainer',
+    indices: extraErpIndices,
+    label: 'ERP',
+    iconClass: 'text-primary',
+    removeFn: 'removeExtraErpFile',
+    addFn: 'addExtraErpFileFromSelect',
+    uploadFn: 'uploadExtraErpFile',
+  });
 }
 
 function removeExtraErpFile(fileIndex) {
@@ -331,6 +331,7 @@ function addExtraErpFileFromSelect(selectElem) {
   const idx = parseInt(selectElem.value, 10);
   extraErpIndices.add(idx);
   renderExtraErpWidgets();
+  renderExtraTbkWidgets();
   validateCurrentAlignmentSelection();
 }
 
@@ -362,6 +363,7 @@ async function uploadExtraErpFile(inputElem) {
 
     extraErpIndices.add(newFileIndex);
     renderExtraErpWidgets();
+    renderExtraTbkWidgets();
     validateCurrentAlignmentSelection();
   } catch (err) {
     alert('Error al subir el archivo ERP adicional: ' + err);
@@ -369,63 +371,20 @@ async function uploadExtraErpFile(inputElem) {
 }
 
 function renderExtraTbkWidgets() {
-  const container = document.getElementById('extraTbkContainer');
-  if (!container || !latestDetectionReport) return;
-
-  const primaryTbkSelect = document.getElementById('select_tbk');
-  const primaryIdx = primaryTbkSelect && primaryTbkSelect.value !== '' ? parseInt(primaryTbkSelect.value, 10) : null;
-
-  let chipsHtml = '';
-  let extraRowsTotal = 0;
-  extraTbkIndices.forEach(idx => {
-    const f = latestDetectionReport.inspected_files[idx];
-    if (f) {
-      extraRowsTotal += (f.row_count || 0);
-      chipsHtml += `
-        <span class="badge bg-white text-dark border px-2 py-1 d-inline-flex align-items-center gap-1 shadow-sm">
-          <i class="bi bi-file-earmark-excel text-info"></i>
-          <span>${f.file_name} (${f.row_count} filas)</span>
-          <a href="javascript:void(0)" class="text-danger ms-1 text-decoration-none fw-bold" onclick="removeExtraTbkFile(${idx})" title="Quitar">&times;</a>
-        </span>
-      `;
-    }
+  renderExtraFilesWidget({
+    containerId: 'extraTbkContainer',
+    indices: extraTbkIndices,
+    label: 'TBK',
+    iconClass: 'text-info',
+    removeFn: 'removeExtraTbkFile',
+    addFn: 'addExtraTbkFileFromSelect',
+    uploadFn: 'uploadExtraTbkFile',
   });
-
-  const availableCandidates = latestDetectionReport.inspected_files.filter(f => 
-    f.file_index !== primaryIdx && !extraTbkIndices.has(f.file_index) && !extraErpIndices.has(f.file_index) && (f.row_count || 0) > 0
-  );
-
-  let addSelectOptions = '<option value="">+ Agregar archivo Transbank del lote...</option>';
-  availableCandidates.forEach(f => {
-    addSelectOptions += `<option value="${f.file_index}">${f.file_name} (${f.row_count} filas)</option>`;
-  });
-
-  container.innerHTML = `
-    <div class="d-flex align-items-center justify-content-between mb-1">
-      <small class="fw-bold text-secondary">
-        <i class="bi bi-collection text-info me-1"></i>Archivos Transbank Adicionales (${extraTbkIndices.size})
-      </small>
-      ${extraRowsTotal > 0 ? `<small class="text-info fw-semibold">+ ${extraRowsTotal} filas adicionales</small>` : ''}
-    </div>
-    <div class="d-flex flex-wrap gap-1 align-items-center mb-2">
-      ${chipsHtml || '<small class="text-muted fst-italic">Ningún archivo Transbank adicional asignado</small>'}
-    </div>
-    <div class="d-flex flex-wrap align-items-center gap-2">
-      ${availableCandidates.length > 0 ? `
-        <select class="form-select form-select-sm w-auto" style="max-width: 260px;" onchange="addExtraTbkFileFromSelect(this)">
-          ${addSelectOptions}
-        </select>
-      ` : ''}
-      <label class="btn btn-outline-secondary btn-sm rounded-pill px-2 py-1 mb-0" style="font-size:0.75rem;" title="Subir otro archivo Transbank (Crédito, Débito o Prepago)">
-        <i class="bi bi-file-earmark-plus me-1 text-info"></i>Subir otro TBK
-        <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadExtraTbkFile(this)">
-      </label>
-    </div>
-  `;
 }
 
 function removeExtraTbkFile(fileIndex) {
   extraTbkIndices.delete(fileIndex);
+  renderExtraErpWidgets();
   renderExtraTbkWidgets();
   validateCurrentAlignmentSelection();
 }
@@ -434,6 +393,7 @@ function addExtraTbkFileFromSelect(selectElem) {
   if (!selectElem.value) return;
   const idx = parseInt(selectElem.value, 10);
   extraTbkIndices.add(idx);
+  renderExtraErpWidgets();
   renderExtraTbkWidgets();
   validateCurrentAlignmentSelection();
 }
@@ -465,6 +425,7 @@ async function uploadExtraTbkFile(inputElem) {
     latestDetectionReport.inspected_files.push(inspected);
 
     extraTbkIndices.add(newFileIndex);
+    renderExtraErpWidgets();
     renderExtraTbkWidgets();
     validateCurrentAlignmentSelection();
   } catch (err) {
@@ -480,7 +441,7 @@ async function uploadSingleFileForRole(roleKey, inputElem) {
 
   const evidenceCell = document.getElementById('evidence_' + roleKey);
   if (evidenceCell) {
-    evidenceCell.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1"></span>Analizando archivo subido...</span>';
+    evidenceCell.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1"></span>Analizando...</span>';
   }
 
   const formData = new FormData();
@@ -539,12 +500,12 @@ function onManualAlignmentChange() {
       extraErpIndices.delete(fileIdx);
       extraTbkIndices.delete(fileIdx);
       const fileInfo = latestDetectionReport.inspected_files[fileIdx];
-      evidenceCell.innerHTML = `<i class="bi bi-cpu me-1 text-primary"></i> ${fileInfo.evidence}`;
+      evidenceCell.innerHTML = `${fileInfo.evidence}`;
       confidenceCell.innerHTML = getConfidenceBadgeHtml(
         (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') ? 'HIGH' : 'MANUAL'
       );
     } else {
-      evidenceCell.innerHTML = '<span class="text-danger">Seleccione un archivo para este rol.</span>';
+      evidenceCell.innerHTML = '<span class="text-danger">Sin archivo</span>';
       confidenceCell.innerHTML = getConfidenceBadgeHtml('MISSING');
     }
   });
@@ -563,32 +524,20 @@ function validateCurrentAlignmentSelection() {
   const required = getRequiredFileCount();
 
   if (chosenIndices.length === required && uniqueIndices.size === required) {
-    const extraCount = extraErpIndices.size;
-    let extraNotes = [];
-    if (extraErpIndices.size > 0) {
-      extraNotes.push(`<div class="mt-1 text-dark"><i class="bi bi-layers-half text-primary me-1"></i><strong>Archivos ERP adicionales:</strong> ${Array.from(extraErpIndices).map(idx => latestDetectionReport.inspected_files[idx]?.file_name).filter(Boolean).join(', ')}</div>`);
-    }
-    if (extraTbkIndices.size > 0) {
-      extraNotes.push(`<div class="mt-1 text-dark"><i class="bi bi-collection text-info me-1"></i><strong>Archivos Transbank adicionales (Crédito/Débito/Prepago):</strong> ${Array.from(extraTbkIndices).map(idx => latestDetectionReport.inspected_files[idx]?.file_name).filter(Boolean).join(', ')}</div>`);
-    }
-    const extraNote = extraNotes.join('');
     alertBox.className = 'alert alert-success rounded-4 mb-3 py-2 px-3 small d-flex align-items-center justify-content-between';
     alertBox.innerHTML = `
-      <div>
-        <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡${required} de ${required} roles alineados sin conflictos!</strong> Revise la tabla y confirme para iniciar el cruce financiero.</div>
-        ${extraNote}
-      </div>
-      <span class="badge bg-success rounded-pill">${bulkUploadedFiles.length} archivo(s) cargado(s)</span>
+      <div><i class="bi bi-check-circle-fill me-2"></i><strong>¡${required} de ${required} roles alineados sin conflictos!</strong></div>
+      <span class="badge bg-success rounded-pill">${bulkUploadedFiles.length} archivo(s)</span>
     `;
     confirmBtn.disabled = false;
   } else if (chosenIndices.length === required && uniqueIndices.size < required) {
     alertBox.className = 'alert alert-warning rounded-4 mb-3 py-2 px-3 small';
-    alertBox.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Atención:</strong> Ha asignado el mismo archivo en más de un rol principal. Por favor asigne archivos distintos para cada rol.`;
+    alertBox.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Mismo archivo asignado a más de un rol.</strong>`;
     confirmBtn.disabled = true;
   } else {
     const missingCount = required - chosenIndices.length;
     alertBox.className = 'alert alert-danger rounded-4 mb-3 py-2 px-3 small';
-    alertBox.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i><strong>Faltan ${missingCount} archivo(s) por alinear</strong> (se cargaron ${bulkUploadedFiles.length} archivo(s)). Seleccione los faltantes o vuelva a cargar el lote.`;
+    alertBox.innerHTML = `<i class="bi bi-x-circle-fill me-2"></i><strong>Faltan ${missingCount} archivo(s) por alinear.</strong>`;
     confirmBtn.disabled = true;
   }
 }
