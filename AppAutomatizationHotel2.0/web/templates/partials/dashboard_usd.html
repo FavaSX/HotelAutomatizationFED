@@ -222,6 +222,7 @@
           <h2 class="panel-title">Cierres recientes</h2>
           <p class="panel-sub">{{ usd.process_count }} cierre{{ usd.process_count|pluralize }} en dólares guardado{{ usd.process_count|pluralize }}</p>
         </div>
+        <a href="{% url 'closings_list' %}?moneda=USD" class="small fw-semibold text-decoration-none text-nowrap">Ver todos <i class="bi bi-arrow-right"></i></a>
       </header>
       <ul class="list-unstyled mb-0">
         {% for p in usd.recent_processes %}
@@ -240,9 +241,14 @@
               {% endif %}
             </div>
           </div>
-          <a href="{% url 'usd_export_committed' p.id %}" class="btn-icon" title="Descargar reporte Excel" aria-label="Descargar reporte del cierre #{{ p.id }}">
-            <i class="bi bi-download"></i>
-          </a>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0">
+            <a href="{% url 'closing_detail' p.id %}" class="btn-icon" title="Ver tablas del cierre" aria-label="Ver tablas del cierre #{{ p.id }}">
+              <i class="bi bi-table"></i>
+            </a>
+            <a href="{% url 'usd_export_committed' p.id %}" class="btn-icon" title="Descargar reporte Excel" aria-label="Descargar reporte del cierre #{{ p.id }}">
+              <i class="bi bi-download"></i>
+            </a>
+          </div>
         </li>
         {% endfor %}
       </ul>

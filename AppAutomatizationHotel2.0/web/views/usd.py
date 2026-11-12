@@ -18,6 +18,7 @@ from ..services import (
     detect_and_align_usd_files,
     enrich_preview_with_suggestions,
 )
+from ..services.tables_viewer import build_preview_source_tables_context
 from .common import (
     handle_preview_correction,
     USD_SESSION_KEY,
@@ -136,6 +137,7 @@ def usd_preview_view(request):
         "all_cashiers": all_cashiers,
         "tolerance": preview.get("tolerance", 0.0),
         "suggestion_counts": preview.get("suggestion_counts", {}),
+        "source_tables": build_preview_source_tables_context(preview, "USD"),
     }
     return render(request, "usd_preview.html", context)
 

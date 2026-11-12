@@ -1,0 +1,79 @@
+{% load currency_filters %}
+<section class="card card-executive">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4 text-nowrap">Cuenta</th>
+          <th class="text-nowrap">Documento</th>
+          <th class="text-nowrap">N° Reserva</th>
+          <th class="text-nowrap">Habitación</th>
+          <th class="text-nowrap">Tipo</th>
+          <th class="text-nowrap">Huésped</th>
+          <th class="text-nowrap">Cód. Autorización</th>
+          <th class="text-nowrap">Factura</th>
+          <th class="text-nowrap">Cód. Pago</th>
+          <th class="text-nowrap">Tarjeta</th>
+          <th class="text-nowrap">Fecha</th>
+          <th class="text-nowrap">Hora</th>
+          <th class="text-nowrap">Cajero</th>
+          <th class="text-end text-nowrap">Monto (CLP)</th>
+          <th class="text-nowrap">Moneda</th>
+          {% if consolidated %}<th class="text-nowrap">Cierre</th>{% endif %}
+          <th class="text-nowrap">Origen</th>
+          <th class="pe-4 text-nowrap">Cruce con Transbank</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in erp_rows %}
+        <tr{% if row.has_modifications %} class="erp-row-modified js-erp-history-row" data-history-key="{{ row.history_key }}" title="Fila modificada: clic para ver cómo era antes"{% endif %}>
+          <td class="ps-4 font-mono fw-semibold text-nowrap">{{ row.display_account }}</td>
+          <td class="font-mono text-nowrap">{{ row.display_document }}</td>
+          <td class="font-mono small text-nowrap">{{ row.reservation_number|default:"—" }}</td>
+          <td class="font-mono small text-nowrap">{{ row.room_number|default:"—" }}</td>
+          <td class="small text-nowrap">{{ row.room_type|default:"—" }}</td>
+          <td class="small">{{ row.guest_name|default:"—" }}</td>
+          <td class="font-mono text-nowrap">{{ row.authorization_code|default:"—" }}</td>
+          <td class="font-mono small text-nowrap">{{ row.invoice_number|default:"—" }}</td>
+          <td class="small text-nowrap">
+            {% if row.payment_code %}<span class="badge bg-secondary-subtle text-secondary-emphasis">{{ row.payment_code }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="small text-nowrap">{{ row.card_type.name|default:"—" }}</td>
+          <td class="small text-nowrap">{{ row.transaction_date|date:"d/m/Y"|default:"—" }}</td>
+          <td class="small text-muted text-nowrap">{{ row.transaction_time|time:"H:i"|default:"—" }}</td>
+          <td class="small font-mono text-nowrap">{{ row.cashier_username|default:"—" }}</td>
+          <td class="text-end fw-semibold text-nowrap">${{ row.amount|num_clp }}</td>
+          <td class="small text-nowrap">
+            <span class="status-chip {% if row.source_cur == 'USD' %}status-neutral{% else %}status-success{% endif %}">{{ row.source_cur|default:"—" }}</span>
+          </td>
+          {% if consolidated %}
+          <td class="small text-nowrap">
+            <a href="{% url 'closing_detail' row.process_id %}?vista=erp" class="text-decoration-none font-mono">#{{ row.process_id }}</a>
+          </td>
+          {% endif %}
+          <td class="small">
+            <div class="d-flex flex-wrap align-items-center gap-1">
+              <span class="status-chip status-neutral">{{ row.get_origin_display }}</span>
+              {% if row.has_modifications %}
+              <button type="button"
+                      class="status-chip status-warning erp-modified-chip js-erp-history-trigger"
+                      data-history-key="{{ row.history_key }}"
+                      title="Ver qué cambió y cómo era antes">
+                <i class="bi bi-clock-history"></i>Modificada{% if row.modifications_count > 1 %} ({{ row.modifications_count }}){% endif %}
+              </button>
+              {% endif %}
+            </div>
+          </td>
+          <td class="pe-4">
+            <span class="status-chip {{ row.link_tone }}">{{ row.link_label }}</span>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{% if consolidated %}18{% else %}17{% endif %}" class="text-center py-4 text-muted">No hay filas del Borderó ERP para esos filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/db_pagination_bar.html" with page=page query_string=query_string aria_label="Paginación de movimientos ERP" %}
+</section>
+{% include "partials/tables/_erp_history_modal.html" %}

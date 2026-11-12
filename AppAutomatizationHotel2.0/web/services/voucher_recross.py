@@ -234,9 +234,22 @@ def recross_voucher(match: CrossMatchResult) -> Dict[str, Any]:
     for field_name, value in outcome["fields"].items():
         setattr(match, field_name, value)
     match.system_result = outcome["system_result"]
+    tbk = match.transbank_transaction
     if outcome["system_result"] == "MATCHED":
         for row in outcome["linked_rows"]:
             if not row.reconciled:
                 row.reconciled = True
                 row.save(update_fields=["reconciled"])
+        if not tbk.reconciled:
+            tbk.reconciled = True
+            tbk.save(update_fields=["reconciled"])
+    elif tbk.reconciled:
+        other_matched = (
+            CrossMatchResult.objects.filter(transbank_transaction=tbk, system_result="MATCHED")
+            .exclude(pk=match.pk)
+            .exists()
+        )
+        if not other_matched:
+            tbk.reconciled = False
+            tbk.save(update_fields=["reconciled"])
     return {**outcome, "previous_result": previous}

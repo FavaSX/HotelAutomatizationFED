@@ -443,3 +443,73 @@ class AuditResolutionLog(models.Model):
 
     def __str__(self):
         return f"Log #{self.id} on Match #{self.cross_match_result_id} by {self.user.username}"
+
+
+# ==========================================
+# 5. USER MANAGEMENT AND LIFECYCLE AUDIT
+# ==========================================
+
+class UserAccountStatus(models.Model):
+    """
+    Soft-delete and lifecycle metadata for Django's built-in User accounts.
+    Users are never physically deleted so protected foreign keys and audit history remain intact.
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='account_status')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_user_statuses'
+    )
+    is_soft_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_user_statuses'
+    )
+    delete_reason = models.CharField(max_length=255, blank=True, default='')
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restored_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='restored_user_statuses'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_account_status'
+        verbose_name = 'User Account Status'
+        verbose_name_plural = 'User Account Statuses'
+
+    def __str__(self):
+        state = 'Soft-deleted' if self.is_soft_deleted else 'Active'
+        return f"{self.user.username} ({state})"
+
+
+class UserAuditLog(models.Model):
+    """Immutable audit trail for user creation, updates, password resets, soft deletes and restorations."""
+
+    ACTION_CREATED = 'CREATED'
+    ACTION_UPDATED = 'UPDATED'
+    ACTION_PASSWORD_RESET = 'PASSWORD_RESET'
+    ACTION_SOFT_DELETED = 'SOFT_DELETED'
+    ACTION_RESTORED = 'RESTORED'
+    ACTION_CHOICES = [
+        (ACTION_CREATED, 'Usuario creado'),
+        (ACTION_UPDATED, 'Datos / rol actualizado'),
+        (ACTION_PASSWORD_RESET, 'Contraseña restablecida'),
+        (ACTION_SOFT_DELETED, 'Eliminado (soft delete)'),
+        (ACTION_RESTORED, 'Usuario reactivado'),
+    ]
+
+    target_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='management_logs')
+    actor = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='performed_user_management_logs'
+    )
+    action = models.CharField(max_length=25, choices=ACTION_CHOICES)
+    details = models.CharField(max_length=500, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'user_audit_log'
+        ordering = ['-created_at', '-id']
+        verbose_name = 'User Audit Log'
+        verbose_name_plural = 'User Audit Logs'
+
+    def __str__(self):
+        return f"{self.action} on {self.target_user.username} by {self.actor.username if self.actor_id else 'system'}"

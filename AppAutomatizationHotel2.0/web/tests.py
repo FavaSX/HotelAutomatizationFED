@@ -19,6 +19,8 @@ from .models import (
     ReconciliationProcess,
     SystemConfiguration,
     TransbankTransaction,
+    UserAccountStatus,
+    UserAuditLog,
 )
 from .services import (
     calculate_clp_preview,
@@ -306,11 +308,13 @@ class ToleranceSettingsTests(TestCase):
         data = {"usd_rounding_tolerance": "0.50", "clp_rounding_tolerance": "700", **overrides}
         return self.client.post(reverse("settings"), data)
 
-    def test_only_superuser_can_access(self):
+    def test_standard_user_can_access_and_update_tolerances(self):
         self.client.force_login(self.auditor)
-        self.assertRedirects(self.client.get(reverse("settings")), reverse("dashboard"))
-        self._post()
-        self.assertEqual(SystemConfiguration.get_solo().clp_rounding_tolerance, Decimal("1000"))
+        self.assertEqual(self.client.get(reverse("settings")).status_code, 200)
+        self.assertRedirects(self._post(clp_rounding_tolerance="850"), reverse("settings"))
+        config = SystemConfiguration.get_solo()
+        self.assertEqual(config.clp_rounding_tolerance, Decimal("850"))
+        self.assertEqual(config.updated_by, self.auditor)
 
     def test_superuser_updates_tolerances(self):
         self.client.force_login(self.admin)
@@ -1378,3 +1382,672 @@ class SuggestionModalAjaxTests(TestCase):
         again = self.client.post(reverse("exception_suggestion_reject", args=[reject_case.id]), {}, **self.ajax)
         self.assertEqual(again.status_code, 400)
         self.assertIn("error", again.json())
+
+
+class ReadOnlyTableVisualizationPanelsTests(TestCase):
+    """Covers all 6 read-only table panels in preview, saved closing detail, and audit trail."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("auditor_tablas", password="clave-de-prueba-123")
+        self.client.force_login(self.user)
+
+        usd_files = _build_usd_files()
+        self.usd_process = commit_usd_preview_to_database(self.user, calculate_usd_preview(**usd_files))
+        self.clp_process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        # Add an unlinked ERP row so "Solo en ERP (sin TBK)" has a concrete example to filter and display
+        ErpTransaction.objects.create(
+            process=self.clp_process,
+            account_code="1799999",
+            document_number="999001",
+            reservation_number="RES4297830",
+            room_number="1001",
+            room_type="SE1K",
+            guest_name="ANA PEREZ",
+            authorization_code="999001",
+            amount=Decimal("42500.00"),
+            source_currency="CLP",
+            reconciled=False,
+            origin=ErpTransaction.ORIGIN_EXCEL,
+        )
+
+    def test_all_stored_erp_and_transbank_columns_rendered(self):
+        from .services.tables_viewer import build_preview_source_tables_context
+
+        # Consultas -> Borderó ERP consolidado y por cierre: muestran TODAS las columnas (incluidas Habitación y Huésped)
+        erp_cons = self.client.get(reverse("consolidated_erp"))
+        self.assertEqual(erp_cons.status_code, 200)
+        for col in (
+            "Cuenta", "Documento", "N° Reserva", "Habitación", "Tipo", "Huésped",
+            "Cód. Autorización", "Factura", "Cód. Pago", "Tarjeta", "Fecha",
+            "Hora", "Cajero", "Monto (CLP)", "Moneda", "Cierre", "Origen",
+            "Cruce con Transbank",
+        ):
+            self.assertContains(erp_cons, col)
+        self.assertContains(erp_cons, "RES4297830")
+        self.assertContains(erp_cons, "1001")
+        self.assertContains(erp_cons, "SE1K")
+        self.assertContains(erp_cons, "ANA PEREZ")
+
+        by_res = self.client.get(reverse("consolidated_erp"), {"q": "RES4297830"})
+        self.assertEqual(by_res.context["kpis"]["total"], 1)
+        by_room = self.client.get(reverse("consolidated_erp"), {"q": "1001"})
+        self.assertEqual(by_room.context["kpis"]["total"], 1)
+        by_room_type = self.client.get(reverse("consolidated_erp"), {"q": "SE1K"})
+        self.assertEqual(by_room_type.context["kpis"]["total"], 1)
+        by_guest = self.client.get(reverse("consolidated_erp"), {"q": "ANA PEREZ"})
+        self.assertEqual(by_guest.context["kpis"]["total"], 1)
+
+        erp_closing = self.client.get(reverse("closing_detail", args=[self.clp_process.id]), {"vista": "erp"})
+        self.assertEqual(erp_closing.status_code, 200)
+        for col in ("N° Reserva", "Habitación", "Tipo", "Huésped", "Cód. Pago", "Tarjeta", "Hora", "Moneda"):
+            self.assertContains(erp_closing, col)
+        self.assertContains(erp_closing, "RES4297830")
+        self.assertContains(erp_closing, "1001")
+        self.assertContains(erp_closing, "SE1K")
+        self.assertContains(erp_closing, "ANA PEREZ")
+
+        tbk_cons = self.client.get(reverse("consolidated_transbank"))
+        self.assertEqual(tbk_cons.status_code, 200)
+        for col in (
+            "Cód. Autorización", "Modalidad", "Tarjeta", "Fecha Venta",
+            "Tarjeta Enmascarada", "Cód. Comercio", "Comercio / Local",
+            "Boleta", "TID", "Tipo Cuota", "N° Cuota", "Moneda", "Cierre",
+            "Venta", "Comisión TBK", "IVA Com.", "Abono Neto", "Estado",
+        ):
+            self.assertContains(tbk_cons, col)
+
+        tbk_closing = self.client.get(reverse("closing_detail", args=[self.clp_process.id]), {"vista": "transbank"})
+        self.assertEqual(tbk_closing.status_code, 200)
+        for col in (
+            "Modalidad", "Tarjeta", "Cód. Comercio", "Comercio / Local",
+            "Boleta", "TID", "Tipo Cuota", "N° Cuota", "Moneda",
+        ):
+            self.assertContains(tbk_closing, col)
+
+        # Conciliación (preview + Resultados del Cruce): mantienen Cuenta/Documento y NO exponen Habitación ni Huésped
+        cruce_closing = self.client.get(reverse("closing_detail", args=[self.clp_process.id]), {"vista": "cruce"})
+        self.assertNotContains(cruce_closing, "Habitación")
+        self.assertNotContains(cruce_closing, "Huésped")
+
+        usd_src = build_preview_source_tables_context(calculate_usd_preview(**_build_usd_files()), "USD")
+        erp_sample = usd_src["payload"]["erp"][0]
+        for key in ("reservation_number", "room_type", "payment_code", "card_code", "transaction_time", "source_currency"):
+            self.assertIn(key, erp_sample)
+        self.assertNotIn("room_number", erp_sample)
+        self.assertNotIn("guest_name", erp_sample)
+        self.assertEqual(erp_sample["source_currency"], "USD")
+        tbk_sample = usd_src["payload"]["tbk"][0]
+        for key in (
+            "modality_label", "card_code", "merchant_code", "merchant_location_name",
+            "receipt_number", "transaction_identifier", "installment_type",
+            "installment_number", "currency",
+        ):
+            self.assertIn(key, tbk_sample)
+        self.assertEqual(tbk_sample["currency"], "USD")
+
+    def test_requires_login_and_blocks_mutations(self):
+        erp_url = reverse("consolidated_erp")
+        protected_urls = (
+            erp_url,
+            reverse("consolidated_transbank"),
+            reverse("consolidated_bank"),
+            reverse("consolidated_operator"),
+            reverse("consolidated_matches"),
+            reverse("closings_list"),
+            reverse("closing_detail", args=[self.usd_process.id]),
+            reverse("audit_trail"),
+        )
+        self.client.logout()
+        for url in protected_urls:
+            self.assertEqual(self.client.get(url).status_code, 302)
+
+        self.client.force_login(self.user)
+        for url in protected_urls:
+            self.assertEqual(self.client.post(url, {}).status_code, 405)
+            self.assertEqual(self.client.delete(url).status_code, 405)
+            html = self.client.get(url)
+            self.assertEqual(html.status_code, 200)
+            self.assertContains(html, "Consultas")
+            self.assertNotContains(html, "Solo lectura")
+            self.assertNotContains(html, "solo lectura")
+            self.assertNotContains(html, "Solo visualización")
+            self.assertNotContains(html, "solo visualización")
+            self.assertNotContains(html, 'method="post"')
+            if url == erp_url:
+                self.assertContains(html, "Huésped")
+                self.assertContains(html, "Habitación")
+            else:
+                self.assertNotContains(html, "Huésped")
+                self.assertNotContains(html, "Habitación")
+
+    def test_saved_closing_six_tabs_and_filters(self):
+        # Panel 1: Directory & Dashboard link
+        directory = self.client.get(reverse("closings_list"), {"moneda": "USD"})
+        self.assertContains(directory, f"#{self.usd_process.id}")
+        self.assertNotContains(directory, self.clp_process.accounting_period)
+
+        # Panel 1 (resumen & cruce)
+        resumen = self.client.get(reverse("closing_detail", args=[self.usd_process.id]), {"vista": "resumen"})
+        self.assertContains(resumen, "Cuadratura contable guardada")
+        self.assertContains(resumen, "TARJETAS ERP USD.xlsx")
+
+        cruce = self.client.get(
+            reverse("closing_detail", args=[self.usd_process.id]),
+            {"vista": "cruce", "q": "1715800"},
+        )
+        self.assertContains(cruce, "1715800")
+        self.assertContains(cruce, "334455")
+        self.assertNotContains(cruce, "JANE SMITH")
+
+        # Panel 2: Borderó ERP including rows absent from Transbank ("Solo en ERP (sin TBK)")
+        erp_solo = self.client.get(
+            reverse("closing_detail", args=[self.clp_process.id]),
+            {"vista": "erp", "cruce": "solo_erp"},
+        )
+        self.assertContains(erp_solo, "1799999")
+        self.assertContains(erp_solo, "Solo en ERP (sin TBK)")
+
+        # Panel 3: Cartola Bancaria
+        cartola = self.client.get(
+            reverse("closing_detail", args=[self.usd_process.id]),
+            {"vista": "cartola", "tipo": "cuadrados"},
+        )
+        self.assertContains(cartola, "Abono cuadrado")
+        self.assertContains(cartola, "Abono Divisas Transbank")
+
+        # Panel 4: Posición por Clientes (USD only)
+        operadoras_all = self.client.get(
+            reverse("closing_detail", args=[self.usd_process.id]),
+            {"vista": "operadoras"},
+        )
+        self.assertContains(operadoras_all, "1715625")
+        self.assertContains(operadoras_all, "999888")
+        operadoras_unused = self.client.get(
+            reverse("closing_detail", args=[self.usd_process.id]),
+            {"vista": "operadoras", "cruce": "sin_usar"},
+        )
+        self.assertContains(operadoras_unused, "999888")
+        self.assertNotContains(operadoras_unused, "1715625")
+
+        # Panel 6: Transbank Detallado
+        tbk_tab = self.client.get(
+            reverse("closing_detail", args=[self.clp_process.id]),
+            {"vista": "transbank"},
+        )
+        self.assertEqual(tbk_tab.status_code, 200)
+        self.assertContains(tbk_tab, "007626")
+
+    def test_audit_trail_shows_erp_changes_and_resolutions_read_only(self):
+        fix_case = self.clp_process.cross_match_results.get(authorization_code="007626")
+        self.client.post(
+            reverse("exception_suggestion_accept", args=[fix_case.id]),
+            {"value": "115204", "return_query": "moneda=clp"},
+        )
+        orphan_case = self.usd_process.cross_match_results.get(authorization_code="888999")
+        self.client.post(
+            reverse("exception_resolve", args=[orphan_case.id]),
+            {"status": "RESOLVED_ADJUSTMENT", "comment": "Validado con tesorería", "return_query": "moneda=usd"},
+        )
+
+        erp_audit = self.client.get(reverse("audit_trail"), {"vista": "erp", "moneda": "CLP"})
+        self.assertEqual(erp_audit.status_code, 200)
+        self.assertContains(erp_audit, "115.204")
+        self.assertContains(erp_audit, "1786853")
+        self.assertNotContains(erp_audit, "Huésped")
+        self.assertNotContains(erp_audit, "Habitación")
+
+        res_audit = self.client.get(reverse("audit_trail"), {"vista": "resoluciones", "moneda": "USD"})
+        self.assertEqual(res_audit.status_code, 200)
+        self.assertContains(res_audit, "888999")
+        self.assertContains(res_audit, "Ajuste contable registrado")
+        self.assertContains(res_audit, "Validado con tesorería")
+
+    def test_preview_source_tables_render_sanitized_in_usd_and_clp(self):
+        usd_preview = calculate_usd_preview(**_build_usd_files())
+        session = self.client.session
+        session["usd_reconciliation_preview"] = usd_preview
+        session["clp_reconciliation_preview"] = calculate_clp_preview(**build_clp_files())
+        session.save()
+
+        usd_resp = self.client.get(reverse("usd_preview"))
+        self.assertContains(usd_resp, 'id="sourceTablesCard"')
+        self.assertContains(usd_resp, 'id="jsonSourceTablesData"')
+        self.assertContains(usd_resp, "Posición por Clientes")
+        self.assertContains(usd_resp, "1715625")
+        self.assertNotContains(usd_resp, "JOHN DOE")
+        self.assertNotContains(usd_resp, "JANE SMITH")
+        self.assertNotContains(usd_resp, "MARIO RUIZ")
+        self.assertNotContains(usd_resp, "Huésped")
+        self.assertNotContains(usd_resp, "Habitación")
+        self.assertNotContains(usd_resp, "Solo visualización")
+
+        clp_resp = self.client.get(reverse("clp_preview"))
+        self.assertContains(clp_resp, 'id="sourceTablesCard"')
+        self.assertContains(clp_resp, "Borderó ERP")
+        self.assertContains(clp_resp, "Cartola Bancaria")
+        self.assertContains(clp_resp, "Transbank Detallado")
+        self.assertNotContains(clp_resp, "Huésped")
+        self.assertNotContains(clp_resp, "Habitación")
+        self.assertNotContains(clp_resp, "Solo visualización")
+
+    def test_consolidated_tables_combine_all_closings_and_filter_cleanly(self):
+        # Consolidated Borderó ERP shows rows from BOTH USD and CLP closings together
+        erp_all = self.client.get(reverse("consolidated_erp"))
+        self.assertEqual(erp_all.status_code, 200)
+        self.assertContains(erp_all, "1715625")  # USD ERP row
+        self.assertContains(erp_all, "1786853")  # CLP ERP row
+        self.assertContains(erp_all, "1799999")  # CLP unlinked ERP row
+        self.assertContains(erp_all, "JOHN DOE")
+        self.assertContains(erp_all, "602")
+
+        erp_solo = self.client.get(reverse("consolidated_erp"), {"cruce": "solo_erp", "moneda": "CLP"})
+        self.assertContains(erp_solo, "1799999")
+        self.assertNotContains(erp_solo, "1715625")
+
+        # Consolidated Transbank shows BOTH USD and CLP TBK vouchers together
+        tbk_all = self.client.get(reverse("consolidated_transbank"))
+        self.assertEqual(tbk_all.status_code, 200)
+        self.assertContains(tbk_all, "888999")  # USD Transbank row
+        self.assertContains(tbk_all, "007626")  # CLP Transbank row
+        self.assertContains(tbk_all, f"#{self.usd_process.id}")
+        self.assertContains(tbk_all, f"#{self.clp_process.id}")
+
+        tbk_usd = self.client.get(reverse("consolidated_transbank"), {"moneda": "USD"})
+        self.assertContains(tbk_usd, "888999")
+        self.assertNotContains(tbk_usd, "007626")
+
+        # Consolidated Cartola, Posición por Clientes & Resultados del Cruce
+        bank_all = self.client.get(reverse("consolidated_bank"))
+        self.assertContains(bank_all, "Abono Divisas Transbank")
+
+        op_all = self.client.get(reverse("consolidated_operator"), {"cruce": "sin_usar"})
+        self.assertContains(op_all, "999888")
+        self.assertNotContains(op_all, "1715625")
+
+        cruce_all = self.client.get(reverse("consolidated_matches"))
+        self.assertContains(cruce_all, "334455")
+        self.assertContains(cruce_all, "007626")
+        self.assertNotContains(cruce_all, "JOHN DOE")
+        self.assertNotContains(cruce_all, "JANE SMITH")
+
+    def test_accepting_suggestion_or_resolving_exception_updates_transbank_status(self):
+        fix_case = self.clp_process.cross_match_results.get(authorization_code="007626")
+        orphan_case = self.usd_process.cross_match_results.get(authorization_code="888999")
+        self.assertFalse(fix_case.transbank_transaction.reconciled)
+        self.assertFalse(orphan_case.transbank_transaction.reconciled)
+
+        before_pending = self.client.get(reverse("consolidated_transbank"), {"estado": "pendiente"})
+        self.assertContains(before_pending, "007626")
+        self.assertContains(before_pending, "888999")
+
+        # 1) Accepting a suggestion syncs TransbankTransaction.reconciled=True and shows Conciliado
+        self.client.post(
+            reverse("exception_suggestion_accept", args=[fix_case.id]),
+            {"value": "115204", "return_query": "moneda=clp"},
+        )
+        fix_case.transbank_transaction.refresh_from_db()
+        self.assertTrue(fix_case.transbank_transaction.reconciled)
+
+        conciliado_resp = self.client.get(reverse("consolidated_transbank"), {"estado": "conciliado"})
+        self.assertContains(conciliado_resp, "007626")
+        self.assertContains(conciliado_resp, "Conciliado")
+        pending_after_accept = self.client.get(reverse("consolidated_transbank"), {"estado": "pendiente"})
+        self.assertNotContains(pending_after_accept, "007626")
+
+        closing_conciliado = self.client.get(
+            reverse("closing_detail", args=[self.clp_process.id]),
+            {"vista": "transbank", "estado": "conciliado"},
+        )
+        self.assertContains(closing_conciliado, "007626")
+
+        # Legacy pre-fix rows (CrossMatchResult=MATCHED while tbk.reconciled=False) also show as Conciliado
+        tbk_clp = fix_case.transbank_transaction
+        tbk_clp.reconciled = False
+        tbk_clp.save(update_fields=["reconciled"])
+        legacy_conciliado = self.client.get(reverse("consolidated_transbank"), {"estado": "conciliado"})
+        self.assertContains(legacy_conciliado, "007626")
+        legacy_pending = self.client.get(reverse("consolidated_transbank"), {"estado": "pendiente"})
+        self.assertNotContains(legacy_pending, "007626")
+
+        # 2) Manually resolving an exception moves Transbank status from Pendiente -> Resuelto
+        self.client.post(
+            reverse("exception_resolve", args=[orphan_case.id]),
+            {"status": "RESOLVED_ADJUSTMENT", "comment": "Ajuste aprobado", "return_query": "moneda=usd"},
+        )
+        resuelto_resp = self.client.get(reverse("consolidated_transbank"), {"estado": "resuelto"})
+        self.assertContains(resuelto_resp, "888999")
+        self.assertContains(resuelto_resp, "Resuelto")
+        self.assertContains(resuelto_resp, "Ajuste contable registrado")
+        pending_after_resolve = self.client.get(reverse("consolidated_transbank"), {"estado": "pendiente"})
+        self.assertNotContains(pending_after_resolve, "888999")
+
+        closing_resuelto = self.client.get(
+            reverse("closing_detail", args=[self.usd_process.id]),
+            {"vista": "transbank", "estado": "resuelto"},
+        )
+        self.assertContains(closing_resuelto, "888999")
+
+        # 3) Reopening a resolved exception restores Pendiente
+        self.client.post(
+            reverse("exception_reopen", args=[orphan_case.id]),
+            {"comment": "Reapertura de prueba", "return_query": "moneda=usd"},
+        )
+        reopened_pending = self.client.get(reverse("consolidated_transbank"), {"estado": "pendiente"})
+        self.assertContains(reopened_pending, "888999")
+        reopened_resuelto = self.client.get(reverse("consolidated_transbank"), {"estado": "resuelto"})
+        self.assertNotContains(reopened_resuelto, "888999")
+
+    def test_modified_erp_rows_show_badge_and_before_history_in_tables_and_preview(self):
+        import json as _json
+        import re as _re
+
+        fix_case = self.clp_process.cross_match_results.get(authorization_code="007626")
+        erp_row = fix_case.erp_transaction
+        orig_doc = erp_row.document_number
+
+        # Before any modification, no history trigger renders on consolidated ERP or cruce
+        before_erp = self.client.get(reverse("consolidated_erp"))
+        self.assertNotContains(before_erp, "js-erp-history-trigger")
+        before_mod_filter = self.client.get(reverse("consolidated_erp"), {"origen": "MODIFIED"})
+        self.assertNotContains(before_mod_filter, orig_doc)
+
+        # Modify twice: accept suggestion on amount, then manually adjust document_number
+        self.client.post(
+            reverse("exception_suggestion_accept", args=[fix_case.id]),
+            {"value": "115204", "return_query": "moneda=clp"},
+        )
+        self.client.post(
+            reverse("exception_erp_edit", args=[fix_case.id, erp_row.id]),
+            {
+                "amount": "115204",
+                "authorization_code": "007626",
+                "document_number": "1786900",
+                "reason": "Ajuste documento contable",
+                "return_query": "moneda=clp",
+            },
+        )
+
+        # Consolidated Borderó ERP & filter origen=MODIFIED
+        after_erp = self.client.get(reverse("consolidated_erp"))
+        self.assertContains(after_erp, "js-erp-history-trigger")
+        self.assertContains(after_erp, "Modificada (3)")
+        self.assertContains(after_erp, 'id="erpHistoryModal"')
+        self.assertContains(after_erp, 'id="jsonErpHistoryData"')
+
+        m = _re.search(
+            r'<script id="jsonErpHistoryData" type="application/json">(.*?)</script>',
+            after_erp.content.decode("utf-8"),
+            _re.DOTALL,
+        )
+        self.assertIsNotNone(m)
+        history_payload = _json.loads(m.group(1))
+        row_hist = history_payload[str(erp_row.id)]
+        self.assertIn("room_number", row_hist["current_summary"])
+        self.assertIn("guest_name", row_hist["current_summary"])
+        self.assertEqual(row_hist["changes_count"], 3)
+        self.assertEqual(row_hist["before_summary"]["account"], orig_doc)
+        self.assertEqual(row_hist["before_summary"]["document"], orig_doc)
+        self.assertEqual(row_hist["before_summary"]["auth_code"], "7626")
+        self.assertEqual(row_hist["before_summary"]["amount"], "$113.700")
+        self.assertEqual(row_hist["current_summary"]["account"], "1786900")
+        self.assertEqual(row_hist["current_summary"]["document"], "1786900")
+        self.assertEqual(row_hist["current_summary"]["auth_code"], "007626")
+        self.assertEqual(row_hist["current_summary"]["amount"], "$115.204")
+        self.assertEqual(len(row_hist["diff_fields"]), 3)
+
+        only_mod = self.client.get(reverse("consolidated_erp"), {"origen": "MODIFIED"})
+        self.assertContains(only_mod, "1786900")
+        self.assertNotContains(only_mod, "1799999")
+
+        # Per-closing Borderó ERP tab
+        closing_erp = self.client.get(reverse("closing_detail", args=[self.clp_process.id]), {"vista": "erp"})
+        self.assertContains(closing_erp, "Modificada (3)")
+        self.assertContains(closing_erp, 'id="erpHistoryModal"')
+
+        # Resultados del Cruce (consolidated & per-closing) also surface the modified ERP indicator
+        cruce_cons = self.client.get(reverse("consolidated_matches"))
+        self.assertContains(cruce_cons, "ERP modificado (3)")
+        self.assertContains(cruce_cons, 'id="jsonErpHistoryData"')
+        closing_cruce = self.client.get(reverse("closing_detail", args=[self.clp_process.id]), {"vista": "cruce"})
+        self.assertContains(closing_cruce, "ERP modificado (3)")
+
+        # Step 2 preview: in-memory accepted suggestion shows is_modified + before value immediately
+        clp_preview = calculate_clp_preview(**build_clp_files())
+        f0_tbk_idx = next(v["tbk_index"] for v in clp_preview["orphan_vouchers"] if v["authorization_code"] == "F0FUAZ")
+        apply_preview_correction(clp_preview, "CLP", f0_tbk_idx, "")
+        session = self.client.session
+        session["clp_reconciliation_preview"] = clp_preview
+        session.save()
+
+        preview_resp = self.client.get(reverse("clp_preview"))
+        self.assertContains(preview_resp, 'id="erpHistoryModal"')
+        pm = _re.search(
+            r'<script type="application/json" id="jsonSourceTablesData">(.*?)</script>',
+            preview_resp.content.decode("utf-8"),
+            _re.DOTALL,
+        )
+        self.assertIsNotNone(pm)
+        src_payload = _json.loads(pm.group(1))
+        mod_preview_rows = [r for r in src_payload["erp"] if r.get("is_modified")]
+        self.assertGreaterEqual(len(mod_preview_rows), 2)
+        db_inherited = next(r for r in mod_preview_rows if r["authorization_code"] == "007626")
+        self.assertNotIn("room_number", db_inherited["history"]["current_summary"])
+        self.assertNotIn("guest_name", db_inherited["history"]["current_summary"])
+        self.assertEqual(db_inherited["history"]["before_summary"]["amount"], "$113.700")
+        self.assertEqual(db_inherited["history"]["current_summary"]["amount"], "$115.204")
+        in_memory_row = next(r for r in mod_preview_rows if r["authorization_code"] == "F0FUAZ")
+        self.assertEqual(in_memory_row["history"]["diff_fields"][0]["before"], "0FOFUAZ")
+        self.assertEqual(in_memory_row["history"]["diff_fields"][0]["after"], "F0FUAZ")
+
+
+class UserManagementTests(TestCase):
+    """Covers superadmin-only user lifecycle management and parity of non-user-management permissions."""
+
+    def setUp(self):
+        self.superadmin = User.objects.create_superuser("super_hotel", password="ClaveFuerte!2026")
+        self.standard = User.objects.create_user(
+            "auditor_std",
+            first_name="Ana",
+            last_name="Contadora",
+            email="ana@hotel.cl",
+            password="ClaveFuerte!2026",
+        )
+
+    def test_non_superadmin_is_blocked_from_user_management_only(self):
+        # Anonymous users redirect to login
+        self.assertRedirects(
+            self.client.get(reverse("users_manage")),
+            f"{reverse('login')}?next={reverse('users_manage')}",
+        )
+
+        # Standard user has access to general app + Configuración + Vaciar BD Pruebas,
+        # and only Gestión de Usuarios (+ Admin DB) is restricted to superadmin
+        self.client.force_login(self.standard)
+        dash = self.client.get(reverse("dashboard"))
+        self.assertEqual(dash.status_code, 200)
+        self.assertContains(dash, reverse("settings"))
+        self.assertNotContains(dash, reverse("users_manage"))
+        self.assertNotContains(dash, "Base de Datos (Admin)")
+        self.assertEqual(self.client.get(reverse("settings")).status_code, 200)
+
+        upload_clp = self.client.get(reverse("clp_upload"))
+        self.assertContains(upload_clp, "Vaciar BD Pruebas")
+        self.assertRedirects(self.client.post(reverse("clear_test_db"), {"next": "clp_upload"}), reverse("clp_upload"))
+
+        self.assertRedirects(self.client.get(reverse("users_manage")), reverse("dashboard"))
+        self.assertRedirects(
+            self.client.post(
+                reverse("users_manage"),
+                {
+                    "username": "no_debe_crearse",
+                    "role": "STANDARD",
+                    "password": "OtraClave!2026",
+                    "confirm_password": "OtraClave!2026",
+                },
+            ),
+            reverse("dashboard"),
+        )
+        self.assertRedirects(
+            self.client.post(reverse("user_edit", args=[self.superadmin.id]), {"role": "STANDARD"}),
+            reverse("dashboard"),
+        )
+        self.assertRedirects(
+            self.client.post(reverse("user_soft_delete", args=[self.superadmin.id]), {"reason": "x"}),
+            reverse("dashboard"),
+        )
+        self.assertRedirects(
+            self.client.post(reverse("user_restore", args=[self.superadmin.id])),
+            reverse("dashboard"),
+        )
+        self.assertFalse(User.objects.filter(username="no_debe_crearse").exists())
+        self.superadmin.refresh_from_db()
+        self.assertTrue(self.superadmin.is_active)
+
+    def test_superadmin_creates_edits_soft_deletes_and_restores_users(self):
+        self.client.force_login(self.superadmin)
+        page = self.client.get(reverse("users_manage"))
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, reverse("users_manage"))
+        self.assertContains(page, "Base de Datos (Admin)")
+        self.assertContains(page, "auditor_std")
+
+        # 1) Create a new standard user and another superadmin
+        resp = self.client.post(
+            reverse("users_manage"),
+            {
+                "username": "jperez",
+                "first_name": "Juan",
+                "last_name": "Pérez",
+                "email": "jperez@hotel.cl",
+                "role": "STANDARD",
+                "password": "ClaveSegura!2026",
+                "confirm_password": "ClaveSegura!2026",
+            },
+        )
+        self.assertRedirects(resp, reverse("users_manage"))
+        created = User.objects.get(username="jperez")
+        self.assertTrue(created.is_active)
+        self.assertFalse(created.is_superuser)
+        self.assertFalse(created.is_staff)
+        self.assertTrue(created.account_status)
+        self.assertFalse(created.account_status.is_soft_deleted)
+        self.assertEqual(created.account_status.created_by, self.superadmin)
+        self.assertTrue(
+            UserAuditLog.objects.filter(target_user=created, action=UserAuditLog.ACTION_CREATED, actor=self.superadmin).exists()
+        )
+
+        # 2) Edit profile + reset password -> user logs in with new password
+        edit_resp = self.client.post(
+            reverse("user_edit", args=[created.id]),
+            {
+                "first_name": "Juan Carlos",
+                "last_name": "Pérez",
+                "email": "jcperez@hotel.cl",
+                "role": "STANDARD",
+                "new_password": "NuevaClave!9876",
+                "confirm_new_password": "NuevaClave!9876",
+            },
+        )
+        self.assertRedirects(edit_resp, reverse("users_manage"))
+        created.refresh_from_db()
+        self.assertEqual(created.first_name, "Juan Carlos")
+        self.assertEqual(created.email, "jcperez@hotel.cl")
+        self.assertTrue(created.check_password("NuevaClave!9876"))
+        self.assertTrue(UserAuditLog.objects.filter(target_user=created, action=UserAuditLog.ACTION_UPDATED).exists())
+        self.assertTrue(UserAuditLog.objects.filter(target_user=created, action=UserAuditLog.ACTION_PASSWORD_RESET).exists())
+
+        # Validation failure re-renders with modal flag instead of creating user
+        bad_resp = self.client.post(
+            reverse("users_manage"),
+            {
+                "username": "malclave",
+                "first_name": "Mal",
+                "last_name": "Clave",
+                "email": "mal@hotel.cl",
+                "role": "STANDARD",
+                "password": "ClaveSegura!2026",
+                "confirm_password": "OtraClave!2026",
+            },
+        )
+        self.assertEqual(bad_resp.status_code, 200)
+        self.assertContains(bad_resp, 'data-open-create="1"')
+        self.assertFalse(User.objects.filter(username="malclave").exists())
+
+        # Create a ReconciliationProcess owned by `created` to prove soft delete preserves FK history
+        proc = ReconciliationProcess.objects.create(user=created, process_currency="CLP")
+
+        # 3) Active session exists for `created`; soft delete blocks login and invalidates session
+        std_client = self.client.__class__()
+        std_client.force_login(created)
+        self.assertEqual(std_client.get(reverse("dashboard")).status_code, 200)
+
+        del_resp = self.client.post(
+            reverse("user_soft_delete", args=[created.id]),
+            {"reason": "Término de contrato"},
+        )
+        self.assertRedirects(del_resp, reverse("users_manage"))
+        created.refresh_from_db()
+        status_obj = UserAccountStatus.objects.get(user=created)
+        self.assertFalse(created.is_active)
+        self.assertTrue(status_obj.is_soft_deleted)
+        self.assertEqual(status_obj.deleted_by, self.superadmin)
+        self.assertIsNotNone(status_obj.deleted_at)
+        self.assertEqual(status_obj.delete_reason, "Término de contrato")
+        self.assertTrue(ReconciliationProcess.objects.filter(pk=proc.pk, user=created).exists())
+        self.assertTrue(UserAuditLog.objects.filter(target_user=created, action=UserAuditLog.ACTION_SOFT_DELETED).exists())
+        # Existing session of the soft-deleted user was invalidated immediately
+        self.assertEqual(std_client.get(reverse("dashboard")).status_code, 302)
+
+        # Login attempt fails while soft-deleted
+        guest_client = self.client.__class__()
+        guest_client.post(reverse("login"), {"username": "jperez", "password": "NuevaClave!9876"})
+        self.assertEqual(guest_client.get(reverse("dashboard")).status_code, 302)
+
+        # Filters work cleanly in superadmin UI
+        deleted_only = self.client.get(reverse("users_manage"), {"estado": "DELETED", "q": "jperez"})
+        self.assertIn(created, list(deleted_only.context["user_rows"]))
+        self.assertContains(deleted_only, "Eliminado (Soft delete)")
+        self.assertContains(deleted_only, "Término de contrato")
+        self.assertContains(deleted_only, reverse("user_restore", args=[created.id]))
+        active_only = self.client.get(reverse("users_manage"), {"estado": "ACTIVE"})
+        self.assertNotIn(created, list(active_only.context["user_rows"]))
+        self.assertNotContains(active_only, reverse("user_restore", args=[created.id]))
+
+        # 4) Guardrails: cannot delete self or demote last active superadmin
+        self.client.post(reverse("user_soft_delete", args=[self.superadmin.id]), {"reason": "auto"})
+        self.superadmin.refresh_from_db()
+        self.assertTrue(self.superadmin.is_active)
+        self.client.post(reverse("user_edit", args=[self.superadmin.id]), {"role": "STANDARD"})
+        self.superadmin.refresh_from_db()
+        self.assertTrue(self.superadmin.is_superuser)
+
+        # 5) Restore soft-deleted user and promote to superadmin -> login & /usuarios/ access work
+        res_resp = self.client.post(
+            reverse("user_restore", args=[created.id]),
+            {"reason": "Reingreso aprobado"},
+        )
+        self.assertRedirects(res_resp, reverse("users_manage"))
+        created.refresh_from_db()
+        status_obj.refresh_from_db()
+        self.assertTrue(created.is_active)
+        self.assertFalse(status_obj.is_soft_deleted)
+        self.assertEqual(status_obj.restored_by, self.superadmin)
+        self.assertIsNotNone(status_obj.restored_at)
+        self.assertTrue(UserAuditLog.objects.filter(target_user=created, action=UserAuditLog.ACTION_RESTORED).exists())
+
+        self.client.post(
+            reverse("user_edit", args=[created.id]),
+            {
+                "first_name": "Juan Carlos",
+                "last_name": "Pérez",
+                "email": "jcperez@hotel.cl",
+                "role": "SUPERADMIN",
+            },
+        )
+        created.refresh_from_db()
+        self.assertTrue(created.is_superuser)
+        self.assertTrue(created.is_staff)
+
+        guest_client.post(reverse("login"), {"username": "jperez", "password": "NuevaClave!9876"})
+        self.assertEqual(guest_client.get(reverse("dashboard")).status_code, 200)
+        self.assertEqual(guest_client.get(reverse("users_manage")).status_code, 200)

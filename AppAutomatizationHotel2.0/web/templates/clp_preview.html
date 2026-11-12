@@ -621,6 +621,8 @@
   </div>
 </div>
 
+{% include "partials/preview_source_tables.html" %}
+
 <!-- JSON payloads for the Level 2 suggestions modal -->
 <script type="application/json" id="jsonClpDiscrepanciesData">{{ discrepancy_vouchers|to_json|safe }}</script>
 <script type="application/json" id="jsonClpOrphansData">{{ orphan_vouchers|to_json|safe }}</script>
@@ -651,6 +653,7 @@
 <script src="{% static 'js/suggestion_apply.js' %}?v=3"></script>
 <script src="{% static 'js/suggestion_card.js' %}?v=7"></script>
 <script src="{% static 'js/clp_preview.js' %}?v=11"></script>
+<script src="{% static 'js/source_tables_viewer.js' %}?v=3"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab
   document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {

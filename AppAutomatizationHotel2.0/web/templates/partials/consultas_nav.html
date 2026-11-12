@@ -1,0 +1,34 @@
+<div class="card card-executive p-2 mb-3">
+  <div class="segmented flex-wrap" role="navigation" aria-label="Vistas de consultas">
+    <a href="{% url 'consolidated_erp' %}"
+       class="segmented-item {% if active_nav == 'erp' %}active{% endif %}">
+      <i class="bi bi-building"></i>Borderó ERP
+      <span class="segmented-count">{{ nav_counts.erp }}</span>
+    </a>
+    <a href="{% url 'consolidated_transbank' %}"
+       class="segmented-item {% if active_nav == 'transbank' %}active{% endif %}">
+      <i class="bi bi-receipt"></i>Transbank Detallado
+      <span class="segmented-count">{{ nav_counts.transbank }}</span>
+    </a>
+    <a href="{% url 'consolidated_bank' %}"
+       class="segmented-item {% if active_nav == 'cartola' %}active{% endif %}">
+      <i class="bi bi-bank"></i>Cartola Bancaria
+      <span class="segmented-count">{{ nav_counts.bank }}</span>
+    </a>
+    <a href="{% url 'consolidated_operator' %}"
+       class="segmented-item {% if active_nav == 'operadoras' %}active{% endif %}">
+      <i class="bi bi-credit-card"></i>Posición por Clientes
+      <span class="segmented-count">{{ nav_counts.operadoras }}</span>
+    </a>
+    <a href="{% url 'consolidated_matches' %}"
+       class="segmented-item {% if active_nav == 'cruces' %}active{% endif %}">
+      <i class="bi bi-arrow-left-right"></i>Resultados del Cruce
+      <span class="segmented-count">{{ nav_counts.cruces }}</span>
+    </a>
+    <a href="{% url 'closings_list' %}"
+       class="segmented-item {% if active_nav == 'cierres' %}active{% endif %}">
+      <i class="bi bi-folder2-open"></i>Por Cierre
+      <span class="segmented-count">{{ nav_counts.cierres }}</span>
+    </a>
+  </div>
+</div>
