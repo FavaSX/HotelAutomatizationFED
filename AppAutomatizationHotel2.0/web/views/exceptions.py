@@ -1,6 +1,5 @@
 """Pendientes inbox: the accountant reviews, resolves and reopens exceptions."""
 
-import json
 from urllib.parse import urlencode
 
 from django.shortcuts import get_object_or_404, render, redirect
@@ -22,6 +21,7 @@ from ..services.erp_editing import (
     CorrectionError,
     add_row,
     candidate_rows,
+    candidate_rows_by_match,
     default_payment_code,
     display_value,
     edit_row,
@@ -71,7 +71,15 @@ def _filtered_exceptions(params):
     fixed_in_erp = CrossMatchResult.objects.filter(erp_changes__isnull=False).values("id")
     qs = (
         CrossMatchResult.objects.filter(~Q(system_result="MATCHED") | Q(id__in=fixed_in_erp))
-        .select_related("process", "card_type", "management_status", "resolved_by", "transbank_transaction")
+        .select_related(
+            "process",
+            "card_type",
+            "management_status",
+            "resolved_by",
+            "transbank_transaction",
+            "erp_transaction",
+            "card_operator_transaction",
+        )
         .order_by("process__execution_date", "-transbank_amount")
     )
     state = params.get("estado") or "pendientes"
@@ -99,8 +107,12 @@ def _filtered_exceptions(params):
     query = (params.get("q") or "").strip()
     if query:
         qs = qs.filter(
-            Q(authorization_code__icontains=query) | Q(document_number__icontains=query)
-            | Q(room_number__icontains=query) | Q(guest_name__icontains=query)
+            Q(authorization_code__icontains=query)
+            | Q(account_code__icontains=query)
+            | Q(document_number__icontains=query)
+            | Q(erp_transaction__account_code__icontains=query)
+            | Q(erp_transaction__authorization_code__icontains=query)
+            | Q(card_operator_transaction__document_number__icontains=query)
         )
     return qs, state
 
@@ -133,6 +145,7 @@ def _decorate_exception(item, today):
 def exceptions_view(request):
     """Exceptions of every saved closing of one currency (Dólares / Pesos tabs), filterable, with their history."""
     pending_counts = _pending_count_by_currency()
+    request._pending_exceptions_count = pending_counts["usd"] + pending_counts["clp"]
     params, currency = _inbox_params(request, pending_counts)
     qs, state = _filtered_exceptions(params)
     page = Paginator(qs, EXCEPTIONS_PAGE_SIZE).get_page(params.get("page"))
@@ -149,10 +162,13 @@ def exceptions_view(request):
         change.new_display = display_value(change.field_name, change.new_value, currency_of)
         changes.setdefault(change.cross_match_result_id, []).append(change)
     choices = {cur: payment_code_choices(cur) for cur in ("CLP", "USD")}
+    candidates_map = candidate_rows_by_match(
+        [item for item in rows if item.is_pending and item.transbank_transaction_id is not None]
+    )
     for item in rows:
         item.history = _history_with_reasons(logs.get(item.id, []), changes.get(item.id, []))
         item.erp_changes_list = changes.get(item.id, [])
-        _add_correction_context(item, choices[item.process.process_currency])
+        _add_correction_context(item, choices[item.process.process_currency], candidates_map.get(item.id))
 
     suggestion_items, suggestion_total = _suggestion_panel(currency, today)
     totals = qs.aggregate(count=Count("id"), amount=Sum("transbank_amount"), oldest=Min("process__execution_date"))
@@ -278,14 +294,14 @@ def _history_with_reasons(logs, changes):
     return logs
 
 
-def _add_correction_context(item, choices):
+def _add_correction_context(item, choices, preloaded_candidates=None):
     """ERP rows to fix and the prefilled "add row" values for the "Corregir el ERP" panel of an open case."""
     item.can_correct = item.is_pending and item.transbank_transaction_id is not None
     item.payment_choices = choices
     item.erp_rows = []
     if not item.can_correct:
         return
-    item.erp_rows = candidate_rows(item)
+    item.erp_rows = preloaded_candidates if preloaded_candidates is not None else candidate_rows(item)
     tbk = item.transbank_transaction
     if item.is_clp:
         amount = tbk.original_sale_amount
@@ -296,7 +312,7 @@ def _add_correction_context(item, choices):
         "amount": amount,
         "authorization_code": item.authorization_code,
         "transaction_date": item.sale_date,
-        "payment_code": default_payment_code(item),
+        "payment_code": default_payment_code(item, choices=choices),
         "document_number": "",
         # Valor as the Bordero writes a payment: negative, no thousands separator
         "bordero_amount": "" if amount is None else f"-{amount:.2f}".removesuffix(".00"),

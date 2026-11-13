@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .column_detector import normalize_text, safe_date
+from .excel_parsers import read_excel_or_html_df
 
 
 USD_REQUIRED_ROLES: List[Dict[str, str]] = [
@@ -67,16 +68,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(0)
 
-        dataframe = None
-        try:
-            dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
-        except Exception:
-            try:
-                tables = pd.read_html(io.BytesIO(raw_bytes))
-                if tables:
-                    dataframe = tables[0]
-            except Exception:
-                pass
+        dataframe = read_excel_or_html_df(io.BytesIO(raw_bytes), header=None)
 
         if dataframe is None or len(dataframe) == 0:
             return _build_result(None, "LOW", "Archivo vacío sin registros (0 filas)")
@@ -265,16 +257,7 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
         if hasattr(uploaded_file, "seek"):
             uploaded_file.seek(0)
 
-        dataframe = None
-        try:
-            dataframe = pd.read_excel(io.BytesIO(raw_bytes), header=None)
-        except Exception:
-            try:
-                tables = pd.read_html(io.BytesIO(raw_bytes))
-                if tables:
-                    dataframe = tables[0]
-            except Exception:
-                pass
+        dataframe = read_excel_or_html_df(io.BytesIO(raw_bytes), header=None)
 
         if dataframe is None or len(dataframe) == 0:
             result.update(detected_role=None, confidence="LOW", row_count=0, evidence="Archivo vacío sin registros (0 filas)")

@@ -13,6 +13,8 @@ from .models import (
     CardOperatorTransaction,
     CrossMatchResult,
     AuditResolutionLog,
+    UserAccountStatus,
+    UserAuditLog,
 )
 
 
@@ -38,7 +40,7 @@ class SystemConfigurationAdmin(admin.ModelAdmin):
 
 @admin.register(ReconciliationProcess)
 class ReconciliationProcessAdmin(admin.ModelAdmin):
-    list_display = ('id', 'process_currency', 'accounting_period', 'user', 'execution_date', 'daily_dollar_rate', 'tolerance_applied')
+    list_display = ('id', 'process_currency', 'accounting_period', 'user', 'execution_date', 'tolerance_applied')
     list_filter = ('process_currency', 'execution_date')
     search_fields = ('accounting_period', 'user__username')
 
@@ -64,9 +66,9 @@ class ReconciliationSummaryAdmin(admin.ModelAdmin):
 
 @admin.register(ErpTransaction)
 class ErpTransactionAdmin(admin.ModelAdmin):
-    list_display = ('process', 'card_type', 'document_number', 'authorization_code', 'amount', 'room_number', 'guest_name', 'cashier_username', 'reconciled', 'origin', 'is_deleted')
+    list_display = ('process', 'card_type', 'account_code', 'document_number', 'authorization_code', 'amount', 'cashier_username', 'reconciled', 'origin', 'is_deleted')
     list_filter = ('reconciled', 'origin', 'is_deleted', 'card_type', 'cashier_username')
-    search_fields = ('authorization_code', 'document_number', 'guest_name', 'room_number', 'cashier_username')
+    search_fields = ('authorization_code', 'account_code', 'document_number', 'cashier_username')
     readonly_fields = ('source_key',)
 
     def get_queryset(self, request):
@@ -78,7 +80,7 @@ class ErpTransactionAdmin(admin.ModelAdmin):
 class ErpTransactionChangeAdmin(admin.ModelAdmin):
     list_display = ('created_at', 'erp_transaction', 'field_name', 'old_value', 'new_value', 'user', 'source')
     list_filter = ('source', 'field_name')
-    search_fields = ('erp_transaction__document_number', 'erp_transaction__authorization_code', 'reason')
+    search_fields = ('erp_transaction__account_code', 'erp_transaction__document_number', 'erp_transaction__authorization_code', 'reason')
 
 
 @admin.register(TransbankTransaction)
@@ -97,12 +99,26 @@ class CardOperatorTransactionAdmin(admin.ModelAdmin):
 
 @admin.register(CrossMatchResult)
 class CrossMatchResultAdmin(admin.ModelAdmin):
-    list_display = ('process', 'card_type', 'authorization_code', 'system_result', 'difference_usd', 'difference_clp', 'room_number', 'guest_name', 'cashier_username', 'management_status')
+    list_display = ('process', 'card_type', 'authorization_code', 'account_code', 'document_number', 'system_result', 'difference_usd', 'difference_clp', 'cashier_username', 'management_status')
     list_filter = ('system_result', 'management_status', 'card_type', 'merchant_location_name')
-    search_fields = ('authorization_code', 'document_number', 'guest_name', 'room_number', 'cashier_username')
+    search_fields = ('authorization_code', 'account_code', 'document_number', 'cashier_username')
 
 
 @admin.register(AuditResolutionLog)
 class AuditResolutionLogAdmin(admin.ModelAdmin):
     list_display = ('cross_match_result', 'user', 'previous_status', 'new_status', 'created_at')
     list_filter = ('new_status', 'created_at')
+
+
+@admin.register(UserAccountStatus)
+class UserAccountStatusAdmin(admin.ModelAdmin):
+    list_display = ('user', 'is_soft_deleted', 'deleted_at', 'deleted_by', 'delete_reason', 'restored_at', 'restored_by')
+    list_filter = ('is_soft_deleted',)
+    search_fields = ('user__username', 'delete_reason')
+
+
+@admin.register(UserAuditLog)
+class UserAuditLogAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'target_user', 'action', 'actor', 'details')
+    list_filter = ('action', 'created_at')
+    search_fields = ('target_user__username', 'actor__username', 'details')

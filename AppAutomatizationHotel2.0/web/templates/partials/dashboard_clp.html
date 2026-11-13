@@ -192,6 +192,7 @@
           <thead>
             <tr>
               <th>Voucher</th>
+              <th class="d-none d-md-table-cell">Cuenta / Documento</th>
               <th>Tipo</th>
               <th class="text-end">Monto</th>
             </tr>
@@ -204,6 +205,14 @@
                 <div class="text-muted small">
                   {% if e.modality_label %}{{ e.modality_label }} · {% endif %}{{ e.card_type.name }}{% if e.sale_date %} · <span class="text-nowrap">{{ e.sale_date|date:"d/m/Y" }}</span>{% endif %}
                 </div>
+              </td>
+              <td class="d-none d-md-table-cell small font-mono">
+                {% if e.display_account_code or e.display_document_number %}
+                {% if e.display_account_code %}<div><span class="text-muted">Cta:</span> {{ e.display_account_code }}</div>{% endif %}
+                {% if e.display_document_number %}<div class="text-muted text-truncate" style="max-width: 190px;" title="{{ e.display_document_number }}">Doc: {{ e.display_document_number }}</div>{% endif %}
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
               </td>
               <td>
                 <span class="status-chip {% if e.system_result == 'OUT_OF_PERIOD' %}status-neutral{% elif e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}" title="{{ e.action }}">
@@ -232,6 +241,7 @@
           <h2 class="panel-title">Cierres recientes</h2>
           <p class="panel-sub">{{ clp.process_count }} cierre{{ clp.process_count|pluralize }} en pesos guardado{{ clp.process_count|pluralize }}</p>
         </div>
+        <a href="{% url 'closings_list' %}?moneda=CLP" class="small fw-semibold text-decoration-none text-nowrap">Ver todos <i class="bi bi-arrow-right"></i></a>
       </header>
       <ul class="list-unstyled mb-0">
         {% for p in clp.recent_processes %}
@@ -252,9 +262,14 @@
               {% endif %}
             </div>
           </div>
-          <a href="{% url 'clp_export_committed' p.id %}" class="btn-icon" title="Descargar reporte Excel" aria-label="Descargar reporte del cierre #{{ p.id }}">
-            <i class="bi bi-download"></i>
-          </a>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0">
+            <a href="{% url 'closing_detail' p.id %}" class="btn-icon" title="Ver tablas del cierre" aria-label="Ver tablas del cierre #{{ p.id }}">
+              <i class="bi bi-table"></i>
+            </a>
+            <a href="{% url 'clp_export_committed' p.id %}" class="btn-icon" title="Descargar reporte Excel" aria-label="Descargar reporte del cierre #{{ p.id }}">
+              <i class="bi bi-download"></i>
+            </a>
+          </div>
         </li>
         {% endfor %}
       </ul>

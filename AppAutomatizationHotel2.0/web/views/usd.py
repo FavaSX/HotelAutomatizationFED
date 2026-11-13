@@ -18,6 +18,7 @@ from ..services import (
     detect_and_align_usd_files,
     enrich_preview_with_suggestions,
 )
+from ..services.tables_viewer import build_preview_source_tables_context
 from .common import (
     handle_preview_correction,
     USD_SESSION_KEY,
@@ -51,7 +52,14 @@ def usd_upload_view(request):
 
         extra_erp_files = request.FILES.getlist("usd_extra_erp_files")
         try:
-            request.session[USD_SESSION_KEY] = calculate_usd_preview(**files, extra_erp_files=extra_erp_files)
+            preview = calculate_usd_preview(**files, extra_erp_files=extra_erp_files)
+            request.session[USD_SESSION_KEY] = preview
+            failed_extras = preview.get("failed_extra_erp_files") or []
+            if failed_extras:
+                messages.warning(
+                    request,
+                    f"No se pudieron leer algunos archivos ERP adicionales: {', '.join(failed_extras)}.",
+                )
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("usd_preview")
         except Exception as error:
@@ -71,12 +79,19 @@ def usd_preview_view(request):
         messages.warning(request, "No hay ningún proceso preliminar en memoria. Por favor cargue los archivos.")
         return redirect("usd_upload")
 
+    stale_tokens = ("doc #", "hab.", "habitación", "huésped")
     needs_enrichment = (
         "suggestion_counts" not in preview
         or any(
             v.get("suggestion") and (
                 "action" not in v.get("suggestion", {})
-                or "Doc #" in v.get("suggestion", {}).get("headline", "")
+                or any(
+                    tok in " ".join(
+                        str(v.get("suggestion", {}).get(k, "") or "").lower()
+                        for k in ("headline", "action", "manual_check_note")
+                    )
+                    for tok in stale_tokens
+                )
             )
             for v in preview.get("discrepancy_vouchers", []) + preview.get("orphan_vouchers", [])
         )
@@ -126,9 +141,9 @@ def usd_preview_view(request):
         "orphan_vouchers": preview.get("orphan_vouchers", []),
         "counts": counts,
         "cashiers": all_cashiers,
-        "all_cashiers": all_cashiers,
         "tolerance": preview.get("tolerance", 0.0),
         "suggestion_counts": preview.get("suggestion_counts", {}),
+        "source_tables": build_preview_source_tables_context(preview, "USD"),
     }
     return render(request, "usd_preview.html", context)
 

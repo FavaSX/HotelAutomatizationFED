@@ -1,0 +1,31 @@
+{% load static %}
+{% if erp_history_map %}
+{{ erp_history_map|json_script:"jsonErpHistoryData" }}
+{% endif %}
+
+<div class="modal fade" id="erpHistoryModal" tabindex="-1" aria-labelledby="erpHistoryModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold">
+            <i class="bi bi-clock-history fs-5"></i>
+          </div>
+          <div>
+            <h5 class="modal-title fw-bold mb-0" id="erpHistoryModalTitle">Modificación en Borderó ERP</h5>
+            <div class="small opacity-75" id="erpHistoryModalSubtitle"></div>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+
+      <div class="modal-body p-4" id="erpHistoryModalBody"></div>
+
+      <div class="modal-footer border-top px-4 py-2 bg-body-tertiary">
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{% static 'js/erp_history_modal.js' %}?v=3" defer></script>

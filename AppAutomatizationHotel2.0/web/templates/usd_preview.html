@@ -221,7 +221,7 @@
     <div class="search-field">
       <i class="bi bi-search"></i>
       <input type="text" id="voucherSearchInput" class="form-control form-control-sm"
-             placeholder="Buscar voucher, documento, cajero, tarjeta…"
+             placeholder="Buscar voucher, cuenta, documento, cajero, tarjeta…"
              oninput="applyVoucherFilters()" aria-label="Buscar vouchers">
       <button type="button" id="btnClearVoucherSearch" class="search-clear d-none" onclick="clearVoucherSearch()" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">
         <i class="bi bi-x-circle-fill"></i>
@@ -279,8 +279,8 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4" style="min-width: 285px;">Cruce de Vouchers (TBK ⇄ ERP)</th>
-              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ Pos. Clientes)</th>
+              <th class="ps-4" style="min-width: 340px;">Cruce Vouchers (TBK ⇄ Doc. ERP)</th>
+              <th style="min-width: 330px;">Cruce Cuenta ERP ⇄ Doc. Pos. Clientes</th>
               <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
@@ -310,36 +310,38 @@
                 data-diff="{{ item.difference_usd|unlocalize }}"
                 data-clp="{{ item.erp_amount_clp|unlocalize }}">
               <td class="ps-4">
-                <div class="voucher-dual-pill" title="Voucher Transbank coincide exactamente con Voucher ERP Hotel">
+                <div class="voucher-dual-pill" title="Código autorización Transbank coincide con Documento (Col. J) en ERP Hotel">
                   <span class="voucher-dual-tbk">
                     <small class="text-muted fw-bold">TBK:</small>
                     <span class="font-monospace fw-bold">{{ item.authorization_code }}</span>
                   </span>
                   <span class="voucher-dual-equal">=</span>
                   <span class="voucher-dual-erp">
-                    <small class="fw-bold">ERP:</small>
+                    <small class="fw-bold">Doc ERP:</small>
                     <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
                     <i class="bi bi-check2 voucher-check"></i>
                   </span>
                 </div>
               </td>
               <td>
-                {% if item.document_number %}
-                <div class="doc-dual-pill" title="Documento ERP coincide exactamente con Documento en Posición por Clientes">
+                {% with erp_account=item.account_code|default:item.document_number %}
+                {% if erp_account %}
+                <div class="doc-dual-pill" title="Cuenta ERP (Col. D) coincide con Documento (Col. C) en Posición por Clientes">
                   <span class="doc-dual-erp">
-                    <small class="text-muted fw-bold">ERP:</small>
-                    <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                    <small class="text-muted fw-bold">Cta ERP:</small>
+                    <span class="font-monospace fw-bold">{{ erp_account }}</span>
                   </span>
                   <span class="doc-dual-equal">=</span>
                   <span class="doc-dual-op">
-                    <small class="fw-bold">PC:</small>
-                    <span class="font-monospace fw-bold">{{ item.operator_document_number|default:item.document_number }}</span>
+                    <small class="fw-bold">Doc PC:</small>
+                    <span class="font-monospace fw-bold">{{ item.operator_document_number|default:erp_account }}</span>
                     <i class="bi bi-check2 doc-check"></i>
                   </span>
                 </div>
                 {% else %}
                 <span class="text-muted small">—</span>
                 {% endif %}
+                {% endwith %}
               </td>
               <td class="small text-nowrap text-muted"><i class="bi bi-calendar3 me-1"></i>{{ item.sale_date|default:"—" }}</td>
               <td><span class="badge bg-light text-dark border">{{ item.cashier_username }}</span></td>
@@ -427,8 +429,8 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4" style="min-width: 285px;">Cruce de Vouchers (TBK ⇄ ERP)</th>
-              <th style="min-width: 280px;">Cruce Documentos (ERP ⇄ Pos. Clientes)</th>
+              <th class="ps-4" style="min-width: 340px;">Cruce Vouchers (TBK ⇄ Doc. ERP)</th>
+              <th style="min-width: 330px;">Cruce Cuenta ERP ⇄ Doc. Pos. Clientes</th>
               <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
@@ -458,57 +460,59 @@
                 data-diff="{{ item.difference_usd|unlocalize }}"
                 data-clp="{{ item.erp_amount_clp|unlocalize }}">
               <td class="ps-4">
-                <div class="voucher-dual-pill" title="Voucher Transbank coincide con Voucher ERP Hotel">
+                <div class="voucher-dual-pill" title="Código autorización Transbank coincide con Documento (Col. J) en ERP Hotel">
                   <span class="voucher-dual-tbk">
                     <small class="text-muted fw-bold">TBK:</small>
                     <span class="font-monospace fw-bold">{{ item.authorization_code }}</span>
                   </span>
                   <span class="voucher-dual-equal">=</span>
                   <span class="voucher-dual-erp">
-                    <small class="fw-bold">ERP:</small>
+                    <small class="fw-bold">Doc ERP:</small>
                     <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
                     <i class="bi bi-check2 voucher-check"></i>
                   </span>
                 </div>
               </td>
               <td>
-                {% if item.operator_amount_usd > 0 and item.document_number %}
-                  {% if item.document_number == item.operator_document_number %}
-                  <div class="doc-dual-pill" title="Documento ERP coincide con Documento en Posición por Clientes">
+                {% with erp_account=item.account_code|default:item.document_number %}
+                {% if item.operator_document_number and erp_account %}
+                  {% if erp_account == item.operator_document_number %}
+                  <div class="doc-dual-pill" title="Cuenta ERP (Col. D) coincide con Documento (Col. C) en Posición por Clientes">
                     <span class="doc-dual-erp">
-                      <small class="text-muted fw-bold">ERP:</small>
-                      <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                      <small class="text-muted fw-bold">Cta ERP:</small>
+                      <span class="font-monospace fw-bold">{{ erp_account }}</span>
                     </span>
                     <span class="doc-dual-equal">=</span>
                     <span class="doc-dual-op">
-                      <small class="fw-bold">PC:</small>
-                      <span class="font-monospace fw-bold">{{ item.operator_document_number|default:item.document_number }}</span>
+                      <small class="fw-bold">Doc PC:</small>
+                      <span class="font-monospace fw-bold">{{ item.operator_document_number }}</span>
                       <i class="bi bi-check2 doc-check"></i>
                     </span>
                   </div>
                   {% else %}
-                  <div class="doc-dual-pill" title="Documento ERP difiere del Documento en Posición por Clientes">
+                  <div class="doc-dual-pill" title="Cuenta ERP (Col. D) difiere del Documento en Posición por Clientes">
                     <span class="doc-dual-erp">
-                      <small class="text-muted fw-bold">ERP:</small>
-                      <span class="font-monospace fw-bold">{{ item.document_number }}</span>
+                      <small class="text-muted fw-bold">Cta ERP:</small>
+                      <span class="font-monospace fw-bold">{{ erp_account }}</span>
                     </span>
                     <span class="doc-dual-equal doc-dual-diff">≠</span>
                     <span class="doc-dual-op doc-dual-op-diff">
-                      <small class="fw-bold">PC:</small>
+                      <small class="fw-bold">Doc PC:</small>
                       <span class="font-monospace fw-bold">{{ item.operator_document_number }}</span>
                     </span>
                   </div>
                   {% endif %}
-                {% elif item.document_number %}
-                <div class="d-inline-flex align-items-center gap-1.5" title="Documento ERP no hallado en archivo Posición por Clientes">
-                  <span class="badge bg-light text-dark border font-monospace px-2 py-1">ERP: {{ item.document_number }}</span>
-                  <span class="badge bg-danger-subtle text-danger border border-danger-subtle small px-1.5 py-0.5">
+                {% elif erp_account %}
+                <div class="d-inline-flex align-items-center gap-2 flex-wrap" title="Cuenta ERP no hallada en archivo Posición por Clientes">
+                  <span class="badge bg-light text-dark border font-monospace px-2 py-1">Cta ERP: {{ erp_account }}</span>
+                  <span class="badge bg-danger-subtle text-danger border border-danger-subtle small px-2 py-1">
                     <i class="bi bi-x-circle me-1"></i>Sin Pos. Cliente
                   </span>
                 </div>
                 {% else %}
                 <span class="text-muted small">—</span>
                 {% endif %}
+                {% endwith %}
               </td>
               <td class="small text-nowrap text-muted"><i class="bi bi-calendar3 me-1"></i>{{ item.sale_date|default:"—" }}</td>
               <td><span class="badge bg-light text-dark border">{{ item.cashier_username }}</span></td>
@@ -622,6 +626,8 @@
   </div>
 </section>
 
+{% include "partials/preview_source_tables.html" %}
+
 <!-- JSON Data payloads for Level 2 Suggestions Modal -->
 <script type="application/json" id="jsonDiscrepanciesData">{{ discrepancy_vouchers|to_json|safe }}</script>
 <script type="application/json" id="jsonOrphansData">{{ orphan_vouchers|to_json|safe }}</script>
@@ -649,8 +655,9 @@
 <script>document.body.dataset.previewCorrectionUrl = "{% url 'usd_preview_correction' %}"; document.body.dataset.previewCurrency = "USD";</script>
 <script src="{% static 'js/usd_preview.js' %}?v=32"></script>
 <script src="{% static 'js/suggestion_apply.js' %}?v=3"></script>
-<script src="{% static 'js/suggestion_card.js' %}?v=6"></script>
-<script src="{% static 'js/usd_suggestions.js' %}?v=8"></script>
+<script src="{% static 'js/suggestion_card.js' %}?v=7"></script>
+<script src="{% static 'js/usd_suggestions.js' %}?v=9"></script>
+<script src="{% static 'js/source_tables_viewer.js' %}?v=5"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab
   document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {

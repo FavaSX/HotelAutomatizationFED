@@ -1,0 +1,123 @@
+{% load currency_filters %}
+<section class="card card-executive">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4">Cruce Vouchers (TBK &#8644; Doc. ERP)</th>
+          {% if consolidated and filters.moneda == "ALL" %}
+          <th>Cuenta / Doc. Pos. Clientes</th>
+          {% elif filters.moneda == "USD" or is_usd %}
+          <th>Cruce Cuenta ERP &#8644; Doc. Pos. Clientes</th>
+          {% else %}
+          <th>Cuenta / Documento ERP</th>
+          {% endif %}
+          <th>Fecha</th>
+          <th>Cajero</th>
+          <th>Tarjeta</th>
+          {% if consolidated and filters.moneda == "ALL" %}
+          <th class="text-end">Monto TBK</th>
+          <th class="text-end">Monto Comp.</th>
+          <th class="text-end">Diferencia</th>
+          {% elif filters.moneda == "USD" or is_usd %}
+          <th class="text-end">Monto TBK</th>
+          <th class="text-end">Monto Pos. Clientes</th>
+          <th class="text-end">Dif. USD</th>
+          {% else %}
+          <th class="text-end">Monto TBK</th>
+          <th class="text-end">Monto Borderó</th>
+          <th class="text-end">Diferencia</th>
+          {% endif %}
+          {% if consolidated %}<th>Cierre</th>{% endif %}
+          <th>Resultado</th>
+          <th class="pe-4">Gestión</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in cruce_rows %}
+        <tr{% if item.has_erp_modifications %} class="erp-row-modified js-erp-history-row" data-history-key="{{ item.erp_history_key }}" title="Fila ERP modificada: clic para ver cómo era antes"{% endif %}>
+          <td class="ps-4">
+            {% if item.display_erp_document %}
+            <div class="voucher-dual-pill">
+              <span class="voucher-dual-tbk"><small>TBK:</small> {{ item.authorization_code|default:"—" }}</span>
+              <span class="voucher-dual-equal">=</span>
+              <span class="voucher-dual-erp"><small>Doc ERP:</small> {{ item.display_erp_document }}<span class="voucher-check">&#10003;</span></span>
+            </div>
+            {% else %}
+            <span class="font-mono fw-semibold">{{ item.authorization_code|default:"—" }}</span>
+            {% endif %}
+          </td>
+          {% if item.row_is_usd %}
+          <td>
+            {% with acc=item.display_account_code op=item.display_operator_document %}
+            {% if acc and op %}
+            <div class="doc-dual-pill">
+              <span class="doc-dual-erp"><small>Cta ERP:</small> {{ acc }}</span>
+              <span class="doc-dual-equal {% if acc != op %}doc-dual-diff{% endif %}">{% if acc == op %}={% else %}&#8800;{% endif %}</span>
+              <span class="doc-dual-op {% if acc != op %}doc-dual-op-diff{% endif %}"><small>Doc PC:</small> {{ op }}{% if acc == op %}<span class="doc-check">&#10003;</span>{% endif %}</span>
+            </div>
+            {% elif acc %}
+            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1 font-mono">Cta ERP: {{ acc }} · Sin Pos. Cliente</span>
+            {% else %}
+            <span class="text-muted small">—</span>
+            {% endif %}
+            {% endwith %}
+          </td>
+          {% else %}
+          <td class="small font-mono">
+            {% if item.display_account_code or item.display_erp_document %}
+            <div>{% if item.display_account_code %}<span class="text-muted">Cta:</span> <strong>{{ item.display_account_code }}</strong>{% endif %}</div>
+            <div class="text-muted">{% if item.display_erp_document %}Doc: {{ item.display_erp_document }}{% endif %}</div>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          {% endif %}
+          <td class="small text-nowrap">{{ item.sale_date|date:"d/m/Y"|default:"—" }}</td>
+          <td class="small font-mono">{{ item.cashier_username|default:"—" }}</td>
+          <td class="small"><span class="badge bg-dark">{{ item.card_type.name }}</span></td>
+          {% if item.row_is_usd %}
+          <td class="text-end fw-semibold text-nowrap">US$ {{ item.transbank_amount|num_usd }}</td>
+          <td class="text-end text-nowrap">US$ {{ item.operator_amount_usd|num_usd }}</td>
+          <td class="text-end fw-semibold text-nowrap {% if item.difference_usd %}text-danger{% endif %}">US$ {{ item.difference_usd|num_usd }}</td>
+          {% else %}
+          <td class="text-end fw-semibold text-nowrap">${{ item.transbank_amount|num_clp }}</td>
+          <td class="text-end text-nowrap">${{ item.erp_amount_clp|num_clp }}</td>
+          <td class="text-end fw-semibold text-nowrap {% if item.difference_clp %}text-danger{% endif %}">${{ item.difference_clp|num_clp }}</td>
+          {% endif %}
+          {% if consolidated %}
+          <td class="small text-nowrap">
+            <span class="status-chip {% if item.row_is_usd %}status-neutral{% else %}status-success{% endif %}">{{ item.process.process_currency }}</span>
+            <a href="{% url 'closing_detail' item.process_id %}?vista=cruce" class="ms-1 text-decoration-none font-mono">#{{ item.process_id }}</a>
+          </td>
+          {% endif %}
+          <td>
+            <div class="d-flex flex-wrap align-items-center gap-1">
+              <span class="status-chip {{ item.result_tone }}" title="{{ item.system_observation|default:'' }}">{{ item.result_label }}</span>
+              {% if item.has_erp_modifications %}
+              <button type="button"
+                      class="status-chip status-warning erp-modified-chip js-erp-history-trigger"
+                      data-history-key="{{ item.erp_history_key }}"
+                      title="Fila ERP modificada: clic para ver cómo era antes">
+                <i class="bi bi-clock-history"></i>ERP modificado{% if item.erp_modifications_count > 1 %} ({{ item.erp_modifications_count }}){% endif %}
+              </button>
+              {% endif %}
+            </div>
+          </td>
+          <td class="pe-4 small">
+            {% if item.management_status %}
+            <span class="text-muted">{{ item.management_status.display_name }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{% if consolidated %}11{% else %}10{% endif %}" class="text-center py-4 text-muted">No hay resultados del cruce para esos filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/db_pagination_bar.html" with page=page query_string=query_string aria_label="Paginación de resultados del cruce" %}
+</section>
+{% include "partials/tables/_erp_history_modal.html" %}

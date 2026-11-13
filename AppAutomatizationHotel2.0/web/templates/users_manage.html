@@ -1,0 +1,499 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}Hotel Plaza San Francisco | Gestión de Usuarios{% endblock %}
+
+{% block content %}
+<div id="usersManageConfig"
+     data-open-create="{% if open_create_modal %}1{% else %}0{% endif %}"
+     data-open-edit="{% if edit_target %}1{% else %}0{% endif %}"></div>
+
+<!-- Header -->
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <span class="badge rounded-pill px-3 py-1 badge-brand-pill">
+        <i class="bi bi-shield-lock me-1"></i> Solo superadmin
+      </span>
+    </div>
+    <h1 class="h3 fw-bold mb-1">Gestión de Usuarios</h1>
+    <p class="text-muted small mb-0">
+      Agrega cuentas, administra roles o contraseñas y aplica eliminación lógica (soft delete) conservando el historial de conciliaciones y auditoría.
+    </p>
+  </div>
+  <button type="button"
+          class="btn btn-primary rounded-pill px-4 fw-semibold"
+          data-bs-toggle="modal"
+          data-bs-target="#createUserModal">
+    <i class="bi bi-person-plus-fill me-2"></i>Agregar Usuario
+  </button>
+</div>
+
+<!-- KPIs -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Total usuarios</div>
+      <div class="stat-value">{{ kpis.total }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Activos</div>
+      <div class="stat-value text-success">{{ kpis.active }}</div>
+      <div class="text-muted small">{{ kpis.standard }} estándar · {{ kpis.superadmins }} superadmin(s)</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Eliminados (Soft delete)</div>
+      <div class="stat-value {% if kpis.deleted %}text-danger{% endif %}">{{ kpis.deleted }}</div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="card card-executive p-3 h-100">
+      <div class="kpi-label">Superadmins activos</div>
+      <div class="stat-value text-primary">{{ kpis.superadmins }}</div>
+      <div class="text-muted small">Mínimo requerido: 1</div>
+    </div>
+  </div>
+</div>
+
+<!-- Filters (GET) -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="u-estado">Estado</label>
+      <select id="u-estado" name="estado" class="form-select form-select-sm">
+        <option value="ALL" {% if filters.estado == "ALL" %}selected{% endif %}>Todos</option>
+        <option value="ACTIVE" {% if filters.estado == "ACTIVE" %}selected{% endif %}>Solo activos</option>
+        <option value="DELETED" {% if filters.estado == "DELETED" %}selected{% endif %}>Eliminados (Soft delete)</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="u-rol">Rol</label>
+      <select id="u-rol" name="rol" class="form-select form-select-sm">
+        <option value="ALL" {% if filters.rol == "ALL" %}selected{% endif %}>Todos</option>
+        <option value="SUPERADMIN" {% if filters.rol == "SUPERADMIN" %}selected{% endif %}>Superadmin</option>
+        <option value="STANDARD" {% if filters.rol == "STANDARD" %}selected{% endif %}>Usuario estándar</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-5">
+      <label class="form-label small fw-semibold mb-1" for="u-q">Buscar</label>
+      <input id="u-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Usuario, nombre, apellido o correo…">
+    </div>
+    <div class="col-12 col-md-auto ms-auto d-flex gap-2 justify-content-end">
+      <a href="{% url 'users_manage' %}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold">
+        <i class="bi bi-funnel me-1"></i>Filtrar
+      </button>
+    </div>
+  </div>
+</form>
+
+<!-- Users Table -->
+<section class="card card-executive mb-4">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4">Usuario</th>
+          <th>Nombre completo</th>
+          <th>Correo</th>
+          <th>Rol</th>
+          <th>Estado / Soft delete</th>
+          <th>Acceso y alta</th>
+          <th class="pe-4 text-end">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in user_rows %}
+        <tr{% if u.is_deleted_state %} class="opacity-75"{% endif %}>
+          <td class="ps-4">
+            <div class="d-flex align-items-center gap-2">
+              <span class="font-mono fw-semibold {% if u.is_deleted_state %}text-decoration-line-through text-muted{% endif %}">{{ u.username }}</span>
+              {% if u.id == request.user.id %}
+              <span class="badge bg-primary-subtle text-primary-emphasis rounded-pill">Tú</span>
+              {% endif %}
+            </div>
+          </td>
+          <td class="small">{{ u.full_display_name }}</td>
+          <td class="small font-mono">{{ u.email|default:"—" }}</td>
+          <td class="small text-nowrap">
+            <span class="status-chip {% if u.is_superuser %}status-warning{% else %}status-neutral{% endif %}">
+              {% if u.is_superuser %}<i class="bi bi-shield-check"></i>{% else %}<i class="bi bi-person"></i>{% endif %}
+              {{ u.managed_role_label }}
+            </span>
+          </td>
+          <td class="small">
+            {% if u.is_active %}
+            <span class="status-chip status-success">Activo</span>
+            {% if u.lifecycle_status and u.lifecycle_status.restored_at %}
+            <div class="text-muted mt-1" style="font-size: 0.72rem;">
+              Reactivado {{ u.lifecycle_status.restored_at|date:"d/m/Y H:i" }}{% if u.lifecycle_status.restored_by %} por {{ u.lifecycle_status.restored_by.username }}{% endif %}
+            </div>
+            {% endif %}
+            {% else %}
+            <span class="status-chip status-danger">Eliminado (Soft delete)</span>
+            {% if u.lifecycle_status %}
+            <div class="text-muted mt-1" style="font-size: 0.72rem;">
+              {% if u.lifecycle_status.deleted_at %}{{ u.lifecycle_status.deleted_at|date:"d/m/Y H:i" }}{% endif %}{% if u.lifecycle_status.deleted_by %} por <strong>{{ u.lifecycle_status.deleted_by.username }}</strong>{% endif %}
+              {% if u.lifecycle_status.delete_reason %} · Motivo: {{ u.lifecycle_status.delete_reason }}{% endif %}
+            </div>
+            {% endif %}
+            {% endif %}
+          </td>
+          <td class="small text-muted">
+            <div class="text-nowrap">Último acceso: {{ u.last_login|date:"d/m/Y H:i"|default:"Nunca" }}</div>
+            <div class="text-nowrap">Alta: {{ u.date_joined|date:"d/m/Y H:i" }}</div>
+          </td>
+          <td class="pe-4 text-end text-nowrap">
+            <div class="d-inline-flex gap-1">
+              <button type="button"
+                      class="btn btn-outline-secondary btn-sm rounded-pill px-3 js-edit-user-btn"
+                      data-edit-url="{% url 'user_edit' u.id %}"
+                      data-username="{{ u.username }}"
+                      data-first-name="{{ u.first_name|default:'' }}"
+                      data-last-name="{{ u.last_name|default:'' }}"
+                      data-email="{{ u.email|default:'' }}"
+                      data-role="{{ u.managed_role }}"
+                      data-is-self="{% if u.id == request.user.id %}1{% else %}0{% endif %}">
+                <i class="bi bi-pencil-square me-1"></i>Editar
+              </button>
+              {% if u.is_active %}
+              {% if u.id != request.user.id %}
+              <button type="button"
+                      class="btn btn-outline-danger btn-sm rounded-pill px-3 js-soft-delete-user-btn"
+                      data-delete-url="{% url 'user_soft_delete' u.id %}"
+                      data-username="{{ u.username }}"
+                      data-is-superuser="{% if u.is_superuser %}1{% else %}0{% endif %}">
+                <i class="bi bi-person-dash me-1"></i>Eliminar
+              </button>
+              {% endif %}
+              {% else %}
+              <button type="button"
+                      class="btn btn-outline-success btn-sm rounded-pill px-3 js-restore-user-btn"
+                      data-restore-url="{% url 'user_restore' u.id %}"
+                      data-username="{{ u.username }}">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Reactivar
+              </button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" class="text-center py-5 text-muted">No hay usuarios que coincidan con esos filtros.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- User Management Audit Trail -->
+<section class="card card-executive">
+  <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+    <div>
+      <h2 class="h6 fw-bold mb-0"><i class="bi bi-journal-check me-2 text-primary"></i>Historial de Movimientos de Usuarios</h2>
+      <small class="text-muted">Registro de altas, ediciones, cambios de contraseña, eliminaciones lógicas y reactivaciones.</small>
+    </div>
+    <span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill">Últimos {{ recent_logs|length }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4">Fecha</th>
+          <th>Realizado por</th>
+          <th>Usuario afectado</th>
+          <th>Acción</th>
+          <th class="pe-4">Detalle</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in recent_logs %}
+        <tr>
+          <td class="ps-4 small text-nowrap">{{ log.created_at|date:"d/m/Y H:i" }}</td>
+          <td class="small font-mono">{% if log.actor %}{{ log.actor.username }}{% else %}Sistema{% endif %}</td>
+          <td class="small font-mono fw-semibold">{{ log.target_user.username }}</td>
+          <td class="small text-nowrap">
+            <span class="status-chip {% if log.action == 'SOFT_DELETED' %}status-danger{% elif log.action == 'CREATED' or log.action == 'RESTORED' %}status-success{% else %}status-neutral{% endif %}">
+              {{ log.get_action_display }}
+            </span>
+          </td>
+          <td class="pe-4 small text-muted">{{ log.details|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="text-center py-4 text-muted small">Aún no hay eventos registrados en la gestión de usuarios.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Modal 1: Create User -->
+<div class="modal fade" id="createUserModal" tabindex="-1" aria-labelledby="createUserModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold">
+            <i class="bi bi-person-plus fs-5"></i>
+          </div>
+          <div>
+            <h5 class="modal-title fw-bold mb-0" id="createUserModalTitle">Agregar Nuevo Usuario</h5>
+            <small class="opacity-75">Acceso inmediato al sistema de conciliación</small>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+
+      <form method="post" action="{% url 'users_manage' %}" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="filter_estado" value="{{ filters.estado }}">
+        <input type="hidden" name="filter_rol" value="{{ filters.rol }}">
+        <input type="hidden" name="filter_q" value="{{ filters.q }}">
+
+        <div class="modal-body p-4">
+          {% if create_form.non_field_errors %}
+          <div class="alert alert-danger small py-2">{{ create_form.non_field_errors|join:" " }}</div>
+          {% endif %}
+
+          <div class="row g-3">
+            <div class="col-12 col-sm-7">
+              <label for="{{ create_form.username.id_for_label }}" class="form-label small fw-semibold">{{ create_form.username.label }}</label>
+              {{ create_form.username }}
+              {% for err in create_form.username.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-5">
+              <label for="{{ create_form.role.id_for_label }}" class="form-label small fw-semibold">{{ create_form.role.label }}</label>
+              {{ create_form.role }}
+              {% for err in create_form.role.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-6">
+              <label for="{{ create_form.first_name.id_for_label }}" class="form-label small fw-semibold">{{ create_form.first_name.label }}</label>
+              {{ create_form.first_name }}
+              {% for err in create_form.first_name.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-6">
+              <label for="{{ create_form.last_name.id_for_label }}" class="form-label small fw-semibold">{{ create_form.last_name.label }}</label>
+              {{ create_form.last_name }}
+              {% for err in create_form.last_name.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12">
+              <label for="{{ create_form.email.id_for_label }}" class="form-label small fw-semibold">{{ create_form.email.label }}</label>
+              {{ create_form.email }}
+              {% for err in create_form.email.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-6">
+              <label for="{{ create_form.password.id_for_label }}" class="form-label small fw-semibold">{{ create_form.password.label }}</label>
+              {{ create_form.password }}
+              {% for err in create_form.password.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-6">
+              <label for="{{ create_form.confirm_password.id_for_label }}" class="form-label small fw-semibold">{{ create_form.confirm_password.label }}</label>
+              {{ create_form.confirm_password }}
+              {% for err in create_form.confirm_password.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+          </div>
+          <div class="alert alert-light border small text-muted mt-3 mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            El usuario estándar accede a todo el sistema (incluyendo Configuración de tolerancias), excepto Gestión de Usuarios y Base de Datos (/admin/).
+          </div>
+        </div>
+
+        <div class="modal-footer border-top px-4 py-3">
+          <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary btn-sm rounded-pill px-4 fw-semibold">
+            <i class="bi bi-check2 me-1"></i>Crear Usuario
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal 2: Edit User / Reset Password -->
+<div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold">
+            <i class="bi bi-person-gear fs-5"></i>
+          </div>
+          <div>
+            <h5 class="modal-title fw-bold mb-0" id="editUserModalTitle">
+              Editar Usuario · <span id="editUserNameLabel" class="font-mono">{% if edit_target %}{{ edit_target.username }}{% endif %}</span>
+            </h5>
+            <small class="opacity-75">Actualiza datos, rol o restablece la contraseña</small>
+          </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+
+      <form method="post" id="editUserForm" action="{% if edit_target %}{% url 'user_edit' edit_target.id %}{% endif %}" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="filter_estado" value="{{ filters.estado }}">
+        <input type="hidden" name="filter_rol" value="{{ filters.rol }}">
+        <input type="hidden" name="filter_q" value="{{ filters.q }}">
+
+        <div class="modal-body p-4">
+          {% if edit_form.non_field_errors %}
+          <div class="alert alert-danger small py-2">{{ edit_form.non_field_errors|join:" " }}</div>
+          {% endif %}
+
+          <div class="row g-3">
+            <div class="col-12 col-sm-6">
+              <label for="{{ edit_form.first_name.id_for_label }}" class="form-label small fw-semibold">{{ edit_form.first_name.label }}</label>
+              {{ edit_form.first_name }}
+              {% for err in edit_form.first_name.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-6">
+              <label for="{{ edit_form.last_name.id_for_label }}" class="form-label small fw-semibold">{{ edit_form.last_name.label }}</label>
+              {{ edit_form.last_name }}
+              {% for err in edit_form.last_name.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-7">
+              <label for="{{ edit_form.email.id_for_label }}" class="form-label small fw-semibold">{{ edit_form.email.label }}</label>
+              {{ edit_form.email }}
+              {% for err in edit_form.email.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-5">
+              <label for="{{ edit_form.role.id_for_label }}" class="form-label small fw-semibold">{{ edit_form.role.label }}</label>
+              {{ edit_form.role }}
+              {% for err in edit_form.role.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+              <div id="editSelfRoleHint" class="text-muted mt-1 d-none" style="font-size: 0.72rem;">
+                No puedes quitarte el rol superadmin a ti mismo.
+              </div>
+            </div>
+            <div class="col-12">
+              <hr class="my-1">
+              <div class="small fw-semibold text-muted">Restablecer contraseña (opcional)</div>
+            </div>
+            <div class="col-12 col-sm-6">
+              <label for="{{ edit_form.new_password.id_for_label }}" class="form-label small fw-semibold">{{ edit_form.new_password.label }}</label>
+              {{ edit_form.new_password }}
+              {% for err in edit_form.new_password.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+            <div class="col-12 col-sm-6">
+              <label for="{{ edit_form.confirm_new_password.id_for_label }}" class="form-label small fw-semibold">{{ edit_form.confirm_new_password.label }}</label>
+              {{ edit_form.confirm_new_password }}
+              {% for err in edit_form.confirm_new_password.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer border-top px-4 py-3">
+          <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary btn-sm rounded-pill px-4 fw-semibold">
+            <i class="bi bi-save me-1"></i>Guardar cambios
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal 3: Soft Delete User -->
+<div class="modal fade" id="softDeleteUserModal" tabindex="-1" aria-labelledby="softDeleteModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <div class="modal-header border-0 pb-0 pt-4 px-4">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center modal-icon-danger">
+            <i class="bi bi-person-dash fs-4"></i>
+          </div>
+          <div>
+            <h5 class="modal-title fw-bold mb-0" id="softDeleteModalTitle">Eliminar usuario (Soft delete)</h5>
+            <small class="text-muted">Cuenta: <span id="softDeleteUserNameLabel" class="font-mono fw-semibold"></span></small>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+
+      <form method="post" id="softDeleteUserForm" action="">
+        {% csrf_token %}
+        <input type="hidden" name="filter_estado" value="{{ filters.estado }}">
+        <input type="hidden" name="filter_rol" value="{{ filters.rol }}">
+        <input type="hidden" name="filter_q" value="{{ filters.q }}">
+
+        <div class="modal-body px-4 py-3">
+          <p class="small text-muted mb-3">
+            El usuario quedará inactivo (<code class="small">is_active = False</code>) y no podrá iniciar sesión, cerrando sus sesiones activas.
+            Sus conciliaciones y registros de auditoría se conservarán intactos y podrás reactivarlo cuando lo necesites.
+          </p>
+          <label for="softDeleteReasonInput" class="form-label small fw-semibold">Motivo (opcional)</label>
+          <input type="text"
+                 id="softDeleteReasonInput"
+                 name="reason"
+                 maxlength="255"
+                 class="form-control form-control-sm"
+                 placeholder="Ej. Término de funciones, cambio de equipo…">
+        </div>
+
+        <div class="modal-footer border-0 bg-body-tertiary px-4 py-3 d-flex justify-content-end gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-danger btn-sm rounded-pill px-4 fw-semibold">
+            <i class="bi bi-person-dash me-1"></i>Confirmar eliminación
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal 4: Restore Soft-Deleted User -->
+<div class="modal fade" id="restoreUserModal" tabindex="-1" aria-labelledby="restoreModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+      <div class="modal-header border-0 pb-0 pt-4 px-4">
+        <div class="d-flex align-items-center gap-3">
+          <div class="rounded-circle bg-success-subtle text-success d-flex align-items-center justify-content-center modal-icon-danger">
+            <i class="bi bi-person-check fs-4"></i>
+          </div>
+          <div>
+            <h5 class="modal-title fw-bold mb-0" id="restoreModalTitle">Reactivar usuario</h5>
+            <small class="text-muted">Cuenta: <span id="restoreUserNameLabel" class="font-mono fw-semibold"></span></small>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+
+      <form method="post" id="restoreUserForm" action="">
+        {% csrf_token %}
+        <input type="hidden" name="filter_estado" value="{{ filters.estado }}">
+        <input type="hidden" name="filter_rol" value="{{ filters.rol }}">
+        <input type="hidden" name="filter_q" value="{{ filters.q }}">
+
+        <div class="modal-body px-4 py-3">
+          <p class="small text-muted mb-3">
+            Se habilitará nuevamente el acceso del usuario conservando su rol e historial previo.
+          </p>
+          <label for="restoreReasonInput" class="form-label small fw-semibold">Nota de reactivación (opcional)</label>
+          <input type="text"
+                 id="restoreReasonInput"
+                 name="reason"
+                 maxlength="255"
+                 class="form-control form-control-sm"
+                 placeholder="Ej. Reincorporación al área contable…">
+        </div>
+
+        <div class="modal-footer border-0 bg-body-tertiary px-4 py-3 d-flex justify-content-end gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-success btn-sm rounded-pill px-4 fw-semibold">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Confirmar reactivación
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/users_manage.js' %}?v=1"></script>
+{% endblock %}

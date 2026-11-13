@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load currency_filters l10n static %}
 
-{% block module_subtitle %}Pendientes{% endblock %}
+{% block page_title %}Hotel Plaza San Francisco | Pendientes{% endblock %}
 
 {% block content %}
 <!-- Header -->
@@ -108,7 +108,7 @@
     </div>
     <div class="col-12 col-md-6 col-xl-3">
       <label class="form-label small fw-semibold mb-1" for="f-q">Buscar</label>
-      <input id="f-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Voucher, documento, hab., huésped">
+      <input id="f-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Voucher, cuenta, documento">
     </div>
     <div class="col-12 col-md-3 col-xl-12 d-flex gap-2 justify-content-end">
       <a href="{% url 'exceptions' %}?moneda={{ currency }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
@@ -178,7 +178,7 @@
         <tr>
           <th>Voucher</th>
           <th>Tipo</th>
-          <th class="d-none d-lg-table-cell">Huésped / Cajero</th>
+          <th class="d-none d-lg-table-cell">Cuenta / Doc. / Cajero</th>
           <th class="text-end">Monto</th>
           <th class="text-center">Días</th>
           <th>Estado</th>
@@ -198,8 +198,12 @@
             <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}">{{ e.type_label }}</span>
           </td>
           <td class="d-none d-lg-table-cell">
-            {% if e.guest_name and e.guest_name != "—" %}
-            <div class="text-truncate" style="max-width: 200px;">{{ e.guest_name }}{% if e.room_number and e.room_number != "—" %} · Hab. {{ e.room_number }}{% endif %}</div>
+            {% if e.display_account_code or e.display_document_number %}
+            <div class="small font-mono text-truncate" style="max-width: 240px;" title="Cta: {{ e.display_account_code|default:'—' }} · Doc: {{ e.display_document_number|default:'—' }}">
+              {% if e.display_account_code %}<span class="fw-semibold">Cta: {{ e.display_account_code }}</span>{% endif %}
+              {% if e.display_account_code and e.display_document_number %} · {% endif %}
+              {% if e.display_document_number %}<span class="text-muted">Doc: {{ e.display_document_number }}</span>{% endif %}
+            </div>
             {% endif %}
             <div class="text-muted small"><i class="bi bi-person me-1"></i>{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}Sin cajero{% endif %}</div>
           </td>
@@ -292,9 +296,9 @@
           </div>
 
           <dl class="exc-facts">
-            <div><dt>Cuenta ERP</dt><dd class="font-mono">{{ e.document_number|default:"—" }}</dd></div>
+            <div><dt>Cuenta (Col. D)</dt><dd class="font-mono">{{ e.display_account_code|default:"—" }}</dd></div>
+            <div><dt>Documento</dt><dd class="font-mono">{{ e.display_document_number|default:"—" }}</dd></div>
             <div><dt>Fecha venta</dt><dd>{{ e.sale_date|date:"d/m/Y"|default:"—" }}</dd></div>
-            <div><dt>Huésped</dt><dd>{% if e.guest_name and e.guest_name != "—" %}{{ e.guest_name }}{% if e.room_number and e.room_number != "—" %} <span class="text-muted fw-normal">· Hab. {{ e.room_number }}</span>{% endif %}{% else %}—{% endif %}</dd></div>
             <div><dt>Cajero</dt><dd>{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}<span class="text-muted fw-normal">Sin cajero</span>{% endif %}</dd></div>
             {% if not e.is_clp %}<div><dt>ERP (CLP)</dt><dd>$ {{ e.erp_amount_clp|num_clp }}</dd></div>{% endif %}
           </dl>
@@ -343,7 +347,7 @@
                 <div class="erp-row-head">
                   <div class="min-w-0">
                     <div class="erp-row-title">
-                      <span><span class="erp-row-key">Cuenta</span> <span class="font-mono">{{ row.document_number|default:"—" }}</span></span>
+                      <span><span class="erp-row-key">Cuenta</span> <span class="font-mono">{{ row.account_code|default:row.document_number|default:"—" }}</span></span>
                       <span class="erp-row-amount">$ {{ row.amount|num_clp }}</span>
                     </div>
                     <div class="erp-row-meta">
@@ -365,8 +369,8 @@
                     {% csrf_token %}
                     <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
                     <div class="col-6 col-md-4">
-                      <label class="form-label small mb-0" for="doc-{{ e.id }}-{{ row.id }}">Cuenta</label>
-                      <input id="doc-{{ e.id }}-{{ row.id }}" name="document_number" class="form-control form-control-sm font-mono" value="{{ row.document_number }}">
+                      <label class="form-label small mb-0" for="doc-{{ e.id }}-{{ row.id }}">Cuenta (Col. D)</label>
+                      <input id="doc-{{ e.id }}-{{ row.id }}" name="document_number" class="form-control form-control-sm font-mono" value="{{ row.account_code|default:row.document_number }}">
                     </div>
                     <div class="col-6 col-md-4">
                       <label class="form-label small mb-0" for="pay-{{ e.id }}-{{ row.id }}">Cod. Deb.</label>
@@ -398,29 +402,21 @@
                     </div>
                     <div class="collapse col-12" id="more-{{ e.id }}-{{ row.id }}">
                       <div class="row g-2">
-                        <div class="col-4">
-                          <label class="form-label small mb-0" for="room-{{ e.id }}-{{ row.id }}">Hab</label>
-                          <input id="room-{{ e.id }}-{{ row.id }}" name="room_number" class="form-control form-control-sm font-mono" maxlength="20" value="{{ row.room_number|default:'' }}">
-                        </div>
-                        <div class="col-4">
+                        <div class="col-6 col-md-3">
                           <label class="form-label small mb-0" for="rtype-{{ e.id }}-{{ row.id }}">Tipo Hab</label>
                           <input id="rtype-{{ e.id }}-{{ row.id }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20" value="{{ row.room_type|default:'' }}">
                         </div>
-                        <div class="col-4">
+                        <div class="col-6 col-md-3">
                           <label class="form-label small mb-0" for="res-{{ e.id }}-{{ row.id }}">Reserva</label>
                           <input id="res-{{ e.id }}-{{ row.id }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50" value="{{ row.reservation_number|default:'' }}">
                         </div>
-                        <div class="col-6 col-md-4">
+                        <div class="col-6 col-md-3">
                           <label class="form-label small mb-0" for="inv-{{ e.id }}-{{ row.id }}">Factura</label>
                           <input id="inv-{{ e.id }}-{{ row.id }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50" value="{{ row.invoice_number|default:'' }}">
                         </div>
-                        <div class="col-6 col-md-4">
+                        <div class="col-6 col-md-3">
                           <label class="form-label small mb-0" for="cash-{{ e.id }}-{{ row.id }}">Usuario</label>
                           <input id="cash-{{ e.id }}-{{ row.id }}" name="cashier_username" class="form-control form-control-sm font-mono text-uppercase" maxlength="50" value="{{ row.cashier_username|default:'' }}">
-                        </div>
-                        <div class="col-12 col-md-4">
-                          <label class="form-label small mb-0" for="guest-{{ e.id }}-{{ row.id }}">Designación</label>
-                          <input id="guest-{{ e.id }}-{{ row.id }}" name="guest_name" class="form-control form-control-sm text-uppercase" maxlength="150" value="{{ row.guest_name|default:'' }}">
                         </div>
                         <div class="col-12 exc-hint mb-0">Un campo opcional que dejes vacío se borra de la fila.</div>
                       </div>
@@ -457,20 +453,8 @@
               <form method="post" action="{% url 'exception_erp_add' e.id %}" class="row g-2 bordero-form">
                 {% csrf_token %}
                 <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
-                <div class="col-4">
-                  <label class="form-label small mb-0" for="nroom-{{ e.id }}">Hab</label>
-                  <input id="nroom-{{ e.id }}" name="room_number" class="form-control form-control-sm font-mono" maxlength="20" value="{% if e.room_number and e.room_number != '—' %}{{ e.room_number }}{% endif %}">
-                </div>
-                <div class="col-4">
-                  <label class="form-label small mb-0" for="nrtype-{{ e.id }}">Tipo Hab</label>
-                  <input id="nrtype-{{ e.id }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20">
-                </div>
-                <div class="col-4">
-                  <label class="form-label small mb-0" for="nres-{{ e.id }}">Reserva</label>
-                  <input id="nres-{{ e.id }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50">
-                </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="nacc-{{ e.id }}">Cuenta</label>
+                  <label class="form-label small mb-0" for="nacc-{{ e.id }}">Cuenta (Col. D)</label>
                   <input id="nacc-{{ e.id }}" name="account_code" class="form-control form-control-sm font-mono" maxlength="50">
                 </div>
                 <div class="col-6 col-md-4">
@@ -484,14 +468,10 @@
                   <input id="ndesc-{{ e.id }}" class="form-control form-control-sm" readonly tabindex="-1" title="Se completa según el Cod. Deb.">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="ninv-{{ e.id }}">Factura</label>
-                  <input id="ninv-{{ e.id }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50">
-                </div>
-                <div class="col-6 col-md-4">
                   <label class="form-label small mb-0" for="namt-{{ e.id }}">Valor <span class="text-danger" aria-hidden="true">*</span></label>
                   <input id="namt-{{ e.id }}" name="amount" class="form-control form-control-sm font-mono text-end" inputmode="decimal" required value="{{ e.new_row.bordero_amount }}" title="Como en el Borderó: los pagos van en negativo">
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-6 col-md-4">
                   <label class="form-label small mb-0" for="nauth-{{ e.id }}">Documento <span class="text-danger" aria-hidden="true">*</span></label>
                   <input id="nauth-{{ e.id }}" name="authorization_code" class="form-control form-control-sm font-mono" maxlength="50" required value="{{ e.new_row.authorization_code|default:'' }}" title="Código de autorización del voucher">
                 </div>
@@ -503,13 +483,21 @@
                   <label class="form-label small mb-0" for="ntime-{{ e.id }}">Hora</label>
                   <input id="ntime-{{ e.id }}" type="time" step="1" name="transaction_time" class="form-control form-control-sm">
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="ninv-{{ e.id }}">Factura</label>
+                  <input id="ninv-{{ e.id }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50">
+                </div>
+                <div class="col-6 col-md-4">
                   <label class="form-label small mb-0" for="ncash-{{ e.id }}">Usuario</label>
                   <input id="ncash-{{ e.id }}" name="cashier_username" class="form-control form-control-sm font-mono text-uppercase" maxlength="50">
                 </div>
-                <div class="col-12">
-                  <label class="form-label small mb-0" for="nguest-{{ e.id }}">Designación</label>
-                  <input id="nguest-{{ e.id }}" name="guest_name" class="form-control form-control-sm text-uppercase" maxlength="150">
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="nres-{{ e.id }}">Reserva</label>
+                  <input id="nres-{{ e.id }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50">
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="nrtype-{{ e.id }}">Tipo Hab</label>
+                  <input id="nrtype-{{ e.id }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20">
                 </div>
                 <div class="col-12 exc-form-footer">
                   <input name="reason" class="form-control form-control-sm" maxlength="500" placeholder="Motivo (opcional). Ej.: cajero no registró el pago" aria-label="Motivo">
@@ -596,6 +584,7 @@
   // "Agregar a mano": the Descripción column follows the chosen Cod. Deb.
   document.querySelectorAll(".js-erp-paycode").forEach((select) => {
     const target = document.getElementById(select.dataset.descTarget);
+    if (!target) return;
     const sync = () => { target.value = select.selectedOptions[0]?.dataset.desc || ""; };
     select.addEventListener("change", sync);
     sync();

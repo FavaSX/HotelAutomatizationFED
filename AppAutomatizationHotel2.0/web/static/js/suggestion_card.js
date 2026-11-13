@@ -26,24 +26,15 @@ const SC_RESULT_LABELS = {
   MATCHED: 'Cuadrado'
 };
 
-function scEsc(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+const scEsc = window.escapeHtmlStr;
 
 function scPresent(value) {
   const s = String(value ?? '').trim();
   return Boolean(s && !s.startsWith('—'));
 }
 
-function scClp(value) {
-  return '$' + Math.round(Number(value) || 0).toLocaleString('es-CL');
-}
-
-function scUsd(value) {
-  return 'US$ ' + (Number(value) || 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+const scClp = window.formatClpClient;
+const scUsd = window.formatUsdClient;
 
 function scNormCode(value) {
   return String(value ?? '').trim().toUpperCase().replace(/^0+/, '');
@@ -139,7 +130,7 @@ function scModelClp(v) {
       { label: 'Monto', values: [scClp(v.tbk_amount), erp.amount !== undefined ? scClp(erp.amount) : '—'], state: sameAmount ? 'ok' : 'diff', why: why.amount },
       { label: 'Fecha', values: [v.sale_date || '—', `${erp.transaction_date || '—'}${erp.transaction_time ? ' ' + erp.transaction_time : ''}`], state: sameDate ? 'ok' : (v.sale_date && erp.transaction_date ? 'diff' : ''), why: why.date },
       { label: 'Medio', values: [[v.modality_label, v.card_name].filter(Boolean).join(' · ') || '—', [erp.payment_code, erp.card_name].filter(Boolean).join(' · ') || '—'], state: sameMedium ? 'ok' : 'diff', why: why.medium },
-      { label: 'Detalle', values: [v.merchant_location || '—', `Cta ${erp.account_code || '—'}${scPresent(erp.invoice_number) ? ' · Fact ' + erp.invoice_number : ''}${erp.guest_name ? ' · ' + erp.guest_name : ''}`], state: '', why: why.detail }
+      { label: 'Detalle', values: [v.merchant_location || '—', `Cta ${erp.account_code || '—'}${scPresent(erp.invoice_number) ? ' · Fact ' + erp.invoice_number : ''}`], state: '', why: why.detail }
     ]
   };
 }
@@ -165,7 +156,7 @@ function scModelUsd(v) {
     ],
     rows: [
       { label: 'Código', values: [rAuth.tbk_value || v.authorization_code, rAuth.erp_value || '—', rAuth.op_value || '—'], state: tone(rAuth), why: why(rAuth, 'Mismo código', scCodeReason(sug) || 'Código distinto') },
-      { label: 'Documento', values: ['—', shortDoc(rDoc.erp_value), shortDoc(rDoc.op_value)], state: tone(rDoc), why: why(rDoc, 'Mismo documento en ERP y Operadora', 'Documento distinto', scDbReason(sug)) },
+      { label: 'Cuenta / Doc.', values: ['—', shortDoc(rDoc.erp_value), shortDoc(rDoc.op_value)], state: tone(rDoc), why: why(rDoc, 'Misma cuenta ERP y Doc. Pos. Clientes', 'Cuenta ERP y Doc. Pos. Clientes distintos', scDbReason(sug)) },
       { label: 'Monto US$', values: [rUsd.tbk_value || scUsd(v.gross_amount_usd), '—', rUsd.op_value || '—'], state: tone(rUsd), why: why(rUsd, 'Monto exacto en dólares', `Diferencia de ${scUsd(usdGap)}`) },
       { label: 'Saldo CLP', values: ['—', rClp.erp_value || '—', rClp.op_value || '—'], state: tone(rClp), why: why(rClp, 'Mismo saldo en pesos', 'Saldo en pesos distinto') },
       { label: 'Detalle', values: [rCtx.tbk_value || v.sale_date || '—', rCtx.erp_value || '—', rCtx.op_value || '—'], state: tone(rCtx), why: why(rCtx, 'Misma fecha', 'Fecha distinta', 'Para identificar la venta') }

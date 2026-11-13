@@ -75,15 +75,19 @@ def _write_summary_table(
 
 def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
     headers = [
-        "Fecha", "Cruce Voucher (TBK = ERP)", "Cruce Documento (ERP = Pos. Clientes)", "Cajero", "Tarjeta",
+        "Fecha", "Cruce Voucher (TBK ⇄ Doc. ERP)", "Cruce Cuenta ERP ⇄ Doc. Pos. Clientes", "Cajero", "Tarjeta",
         "Monto TBK USD", "Monto Pos. Clientes USD", "Diferencia USD", "Monto ERP CLP", "Diagnóstico",
     ]
     write_header_row(ws, 1, headers, fill=NAVY_FILL)
 
     for r_idx, v in enumerate((m for m in cross_matches if m.system_result == "MATCHED"), 2):
+        tbk_code = v.authorization_code or ""
+        erp_doc = v.display_erp_document or tbk_code
+        erp_acc = v.display_account_code
+        op_doc = v.display_operator_document or erp_acc
         ws.cell(row=r_idx, column=1, value=v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—")
-        ws.cell(row=r_idx, column=2, value=f"TBK: {v.authorization_code} = ERP: {v.authorization_code}" if v.authorization_code else "")
-        ws.cell(row=r_idx, column=3, value=f"ERP: {v.document_number} = PC: {v.document_number}" if v.document_number else "")
+        ws.cell(row=r_idx, column=2, value=f"TBK: {tbk_code} = Doc. ERP: {erp_doc}" if tbk_code else "")
+        ws.cell(row=r_idx, column=3, value=f"Cta. ERP: {erp_acc} = Doc. PC: {op_doc}" if erp_acc else "")
         ws.cell(row=r_idx, column=4, value=v.cashier_username or "")
         ws.cell(row=r_idx, column=5, value=v.card_type.name if v.card_type else "")
         ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = USD_FORMAT
@@ -95,16 +99,16 @@ def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]
 
 def _populate_discrepancies_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
     headers = [
-        "Autorización", "Documento", "Huésped", "Habitación", "Tarjeta",
+        "Autorización TBK", "Cuenta", "Documento Borderó", "Doc. Pos. Clientes", "Tarjeta",
         "Monto TBK USD", "Monto Pos. Clientes USD", "Diferencia USD", "Diagnóstico",
     ]
     write_header_row(ws, 1, headers, fill=GOLD_FILL)
 
     for r_idx, v in enumerate((m for m in cross_matches if m.system_result != "MATCHED"), 2):
         ws.cell(row=r_idx, column=1, value=v.authorization_code or "")
-        ws.cell(row=r_idx, column=2, value=v.document_number or "")
-        ws.cell(row=r_idx, column=3, value=v.guest_name or "")
-        ws.cell(row=r_idx, column=4, value=v.room_number or "")
+        ws.cell(row=r_idx, column=2, value=v.display_account_code or "")
+        ws.cell(row=r_idx, column=3, value=v.display_erp_document or "")
+        ws.cell(row=r_idx, column=4, value=v.display_operator_document or "")
         ws.cell(row=r_idx, column=5, value=v.card_type.name if v.card_type else "")
         ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = USD_FORMAT
         ws.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
@@ -115,7 +119,7 @@ def _populate_discrepancies_sheet(ws: Worksheet, cross_matches: List[CrossMatchR
 def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
     headers = [
         "#", "Voucher TBK", "Tipo Discrepancia", "Tarjeta", "Monto TBK (US$)", "Fecha POS",
-        "Cód. ERP Sugerido", "Doc. ERP", "Monto ERP (CLP)", "Cajero ERP", "Huésped / Habitación",
+        "Documento ERP", "Cuenta ERP", "Monto ERP (CLP)", "Cajero ERP",
         "Doc. Pos. Clientes", "Monto Pos. Clientes (US$)", "Saldo Pos. Clientes (CLP)", "Confianza",
         "Diagnóstico Sugerido", "Motivos Coincidencia", "Nota de Auditoría",
     ]
@@ -144,7 +148,6 @@ def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchRes
         r_doc = rows_comp[1] if len(rows_comp) > 1 else {}
         r_clp = rows_comp[3] if len(rows_comp) > 3 else {}
 
-        guest_str = f"{v.guest_name} (Hab. {v.room_number})" if v.guest_name and v.guest_name != "—" else "—"
         sale_date_str = v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—"
 
         ws.cell(row=curr_sug_row, column=1, value=sug_count).alignment = center_align
@@ -153,24 +156,23 @@ def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchRes
         ws.cell(row=curr_sug_row, column=4, value=v.card_type.name if v.card_type else "")
         ws.cell(row=curr_sug_row, column=5, value=float(v.transbank_amount)).number_format = USD_FORMAT
         ws.cell(row=curr_sug_row, column=6, value=sale_date_str).alignment = center_align
-        ws.cell(row=curr_sug_row, column=7, value=r_auth.get("erp_value", "—")).alignment = center_align
-        ws.cell(row=curr_sug_row, column=8, value=r_doc.get("erp_value", "—"))
+        ws.cell(row=curr_sug_row, column=7, value=r_auth.get("erp_value") or v.display_erp_document or "—").alignment = center_align
+        ws.cell(row=curr_sug_row, column=8, value=r_doc.get("erp_value") or v.display_account_code or "—")
         ws.cell(row=curr_sug_row, column=9, value=float(v.erp_amount_clp)).number_format = CLP_FORMAT
         ws.cell(row=curr_sug_row, column=10, value=sug.get("erp_cashier", v.cashier_username or "—"))
-        ws.cell(row=curr_sug_row, column=11, value=guest_str)
-        ws.cell(row=curr_sug_row, column=12, value=r_doc.get("op_value", "—"))
-        ws.cell(row=curr_sug_row, column=13, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
-        ws.cell(row=curr_sug_row, column=14, value=r_clp.get("op_value", ""))
+        ws.cell(row=curr_sug_row, column=11, value=r_doc.get("op_value") or v.display_operator_document or "—")
+        ws.cell(row=curr_sug_row, column=12, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
+        ws.cell(row=curr_sug_row, column=13, value=r_clp.get("op_value", ""))
 
-        c_conf = ws.cell(row=curr_sug_row, column=15, value=confidence)
+        c_conf = ws.cell(row=curr_sug_row, column=14, value=confidence)
         c_conf.alignment = center_align
         c_conf.font = Font(bold=True, color="059669" if confidence == "ALTA" else "D97706")
 
-        ws.cell(row=curr_sug_row, column=16, value=sug.get("headline", ""))
-        ws.cell(row=curr_sug_row, column=17, value=reasons_str)
-        ws.cell(row=curr_sug_row, column=18, value=sug.get("manual_check_note", ""))
+        ws.cell(row=curr_sug_row, column=15, value=sug.get("headline", ""))
+        ws.cell(row=curr_sug_row, column=16, value=reasons_str)
+        ws.cell(row=curr_sug_row, column=17, value=sug.get("manual_check_note", ""))
 
-        for col_i in range(1, 19):
+        for col_i in range(1, 18):
             ws.cell(row=curr_sug_row, column=col_i).border = THIN_BORDER
         curr_sug_row += 1
 
@@ -189,7 +191,9 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
     usd_summaries = list(process.summaries.filter(currency_table="USD").select_related("card_type"))
     clp_summaries = list(process.summaries.filter(currency_table="CLP").select_related("card_type"))
     bank_val = process.bank_validations.first()
-    cross_matches = list(process.cross_match_results.select_related("card_type"))
+    cross_matches = list(
+        process.cross_match_results.select_related("card_type", "erp_transaction", "card_operator_transaction")
+    )
 
     wb = openpyxl.Workbook()
     ws_summary = wb.active
@@ -265,8 +269,8 @@ def generate_exceptions_excel_bytes(exceptions: List[CrossMatchResult]) -> io.By
     ws = wb.active
     ws.title = "Excepciones"
     headers = [
-        "Cierre", "Moneda", "Voucher TBK", "Documento", "Fecha venta", "Tarjeta", "Tipo de excepción",
-        "Huésped", "Habitación", "Cajero", "Monto TBK", "Diferencia", "Días pendiente",
+        "Cierre", "Moneda", "Voucher TBK", "Cuenta", "Documento", "Fecha venta", "Tarjeta", "Tipo de excepción",
+        "Cajero", "Monto TBK", "Diferencia", "Días pendiente",
         "Estado", "Resuelto por", "Fecha resolución", "Acción sugerida",
     ]
     write_header_row(ws, 1, headers, fill=NAVY_FILL, center=True)
@@ -276,10 +280,11 @@ def generate_exceptions_excel_bytes(exceptions: List[CrossMatchResult]) -> io.By
         num_fmt = "$#,##0" if is_clp else "$#,##0.00"
         resolved_by = v.resolved_by.get_full_name() or v.resolved_by.username if v.resolved_by else ""
         values = [
-            v.process_id, v.process.process_currency, v.authorization_code or "", v.document_number or "",
+            v.process_id, v.process.process_currency, v.authorization_code or "",
+            v.display_account_code or "", v.display_document_number or "",
             v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "", v.card_type.name if v.card_type else "",
-            v.type_label, v.guest_name if v.guest_name != "—" else "", v.room_number if v.room_number != "—" else "",
-            v.cashier_username if v.cashier_username != "—" else "", float(v.transbank_amount),
+            v.type_label,
+            v.cashier_username if v.cashier_username and v.cashier_username != "—" else "", float(v.transbank_amount),
             float(v.difference_clp if is_clp else v.difference_usd), v.days_open,
             v.management_status.display_name if v.management_status else "Pendiente", resolved_by,
             _local_naive(v.resolution_date), v.action or (v.suggestion or {}).get("headline", ""),
@@ -287,15 +292,15 @@ def generate_exceptions_excel_bytes(exceptions: List[CrossMatchResult]) -> io.By
         for c_idx, value in enumerate(values, 1):
             cell = ws.cell(row=r_idx, column=c_idx, value=value)
             cell.border = THIN_BORDER
-            if c_idx in (11, 12):
+            if c_idx in (10, 11):
                 cell.number_format = num_fmt
-            if c_idx == 16 and value:
+            if c_idx == 15 and value:
                 cell.number_format = "dd/mm/yyyy hh:mm"
 
     if not exceptions:
         ws.cell(row=2, column=1, value="No hay excepciones con los filtros aplicados.")
 
-    for col_letter, width in zip("ABCDEFGHIJKLMNOPQ", (8, 8, 14, 14, 12, 16, 26, 26, 11, 14, 14, 12, 10, 30, 18, 16, 50)):
+    for col_letter, width in zip("ABCDEFGHIJKLMNOP", (8, 8, 14, 14, 22, 12, 16, 26, 14, 14, 14, 12, 10, 30, 18, 50)):
         ws.column_dimensions[col_letter].width = width
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions

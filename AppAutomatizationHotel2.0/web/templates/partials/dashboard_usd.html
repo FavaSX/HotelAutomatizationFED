@@ -175,7 +175,7 @@
           <thead>
             <tr>
               <th>Voucher</th>
-              <th class="d-none d-md-table-cell">Huésped</th>
+              <th class="d-none d-md-table-cell">Cuenta / Documento</th>
               <th>Tipo</th>
               <th class="text-end">Monto</th>
             </tr>
@@ -187,10 +187,10 @@
                 <div class="fw-semibold font-mono">{{ e.authorization_code }}</div>
                 <div class="text-muted small">{{ e.card_type.name }}{% if e.sale_date %} · <span class="text-nowrap">{{ e.sale_date|date:"d/m/Y" }}</span>{% endif %}</div>
               </td>
-              <td class="d-none d-md-table-cell">
-                {% if e.guest_name and e.guest_name != "—" %}
-                <div class="text-truncate" style="max-width: 180px;">{{ e.guest_name }}</div>
-                <div class="text-muted small">{% if e.room_number and e.room_number != "—" %}Hab. {{ e.room_number }}{% endif %}</div>
+              <td class="d-none d-md-table-cell small font-mono">
+                {% if e.display_account_code or e.display_document_number %}
+                {% if e.display_account_code %}<div><span class="text-muted">Cta:</span> {{ e.display_account_code }}</div>{% endif %}
+                {% if e.display_document_number %}<div class="text-muted text-truncate" style="max-width: 190px;" title="{{ e.display_document_number }}">Doc: {{ e.display_document_number }}</div>{% endif %}
                 {% else %}
                 <span class="text-muted">—</span>
                 {% endif %}
@@ -222,6 +222,7 @@
           <h2 class="panel-title">Cierres recientes</h2>
           <p class="panel-sub">{{ usd.process_count }} cierre{{ usd.process_count|pluralize }} en dólares guardado{{ usd.process_count|pluralize }}</p>
         </div>
+        <a href="{% url 'closings_list' %}?moneda=USD" class="small fw-semibold text-decoration-none text-nowrap">Ver todos <i class="bi bi-arrow-right"></i></a>
       </header>
       <ul class="list-unstyled mb-0">
         {% for p in usd.recent_processes %}
@@ -240,9 +241,14 @@
               {% endif %}
             </div>
           </div>
-          <a href="{% url 'usd_export_committed' p.id %}" class="btn-icon" title="Descargar reporte Excel" aria-label="Descargar reporte del cierre #{{ p.id }}">
-            <i class="bi bi-download"></i>
-          </a>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0">
+            <a href="{% url 'closing_detail' p.id %}" class="btn-icon" title="Ver tablas del cierre" aria-label="Ver tablas del cierre #{{ p.id }}">
+              <i class="bi bi-table"></i>
+            </a>
+            <a href="{% url 'usd_export_committed' p.id %}" class="btn-icon" title="Descargar reporte Excel" aria-label="Descargar reporte del cierre #{{ p.id }}">
+              <i class="bi bi-download"></i>
+            </a>
+          </div>
         </li>
         {% endfor %}
       </ul>

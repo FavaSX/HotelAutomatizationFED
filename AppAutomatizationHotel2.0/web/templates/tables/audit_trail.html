@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% load l10n %}
+
+{% block page_title %}Hotel Plaza San Francisco | Bitácora de Auditoría{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+  <div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+      <span class="badge rounded-pill px-3 py-1 badge-brand-pill">
+        <i class="bi bi-journal-text me-1"></i> Bitácora de Auditoría
+      </span>
+    </div>
+    <h1 class="h3 fw-bold mb-1">Historial de Cambios y Resoluciones</h1>
+    <p class="text-muted small mb-0">Registro inmutable de correcciones al Borderó ERP y resoluciones de excepciones hechas por los auditores.</p>
+  </div>
+
+  <div class="segmented" role="tablist" aria-label="Tipo de registro de auditoría">
+    <a href="{% url 'audit_trail' %}?vista=erp{% if filters.moneda != 'ALL' %}&moneda={{ filters.moneda }}{% endif %}"
+       class="segmented-item {% if vista == 'erp' %}active{% endif %}">
+      <i class="bi bi-pencil-square"></i>Correcciones ERP
+      <span class="segmented-count">{{ counts.erp }}</span>
+    </a>
+    <a href="{% url 'audit_trail' %}?vista=resoluciones{% if filters.moneda != 'ALL' %}&moneda={{ filters.moneda }}{% endif %}"
+       class="segmented-item {% if vista == 'resoluciones' %}active{% endif %}">
+      <i class="bi bi-check2-square"></i>Resoluciones de Excepciones
+      <span class="segmented-count">{{ counts.resoluciones }}</span>
+    </a>
+  </div>
+</div>
+
+<!-- Filters (GET only) -->
+<form method="get" class="card card-executive p-3 mb-3">
+  <input type="hidden" name="vista" value="{{ vista }}">
+  {% if request.GET.por_pagina %}<input type="hidden" name="por_pagina" value="{{ page.paginator.per_page|unlocalize }}">{% endif %}
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="a-moneda">Moneda</label>
+      <select id="a-moneda" name="moneda" class="form-select form-select-sm">
+        <option value="ALL" {% if filters.moneda == "ALL" %}selected{% endif %}>Todas</option>
+        <option value="USD" {% if filters.moneda == "USD" %}selected{% endif %}>Dólares (USD)</option>
+        <option value="CLP" {% if filters.moneda == "CLP" %}selected{% endif %}>Pesos (CLP)</option>
+      </select>
+    </div>
+    {% if vista == "erp" %}
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="a-fuente">Origen</label>
+      <select id="a-fuente" name="fuente" class="form-select form-select-sm">
+        <option value="">Todos</option>
+        <option value="SUGGESTION" {% if filters.fuente == "SUGGESTION" %}selected{% endif %}>Sugerencia aceptada</option>
+        <option value="MANUAL" {% if filters.fuente == "MANUAL" %}selected{% endif %}>Corrección manual</option>
+      </select>
+    </div>
+    {% endif %}
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="a-desde">Desde</label>
+      <input id="a-desde" type="date" name="desde" value="{{ filters.desde }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold mb-1" for="a-hasta">Hasta</label>
+      <input id="a-hasta" type="date" name="hasta" value="{{ filters.hasta }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-12 col-md-{% if vista == 'erp' %}2{% else %}4{% endif %}">
+      <label class="form-label small fw-semibold mb-1" for="a-q">Buscar</label>
+      <input id="a-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Auditor, voucher, cuenta, documento o motivo…">
+    </div>
+    <div class="col-12 col-md-2 d-flex gap-2 justify-content-end">
+      <a href="{% url 'audit_trail' %}?vista={{ vista }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
+      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
+    </div>
+  </div>
+</form>
+
+<section class="card card-executive">
+  {% if vista == "erp" %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4">Fecha / Auditor</th>
+          <th>Moneda / Cierre</th>
+          <th>Fila (Cuenta / Doc.)</th>
+          <th>Operación</th>
+          <th>Cambio (Anterior → Nuevo)</th>
+          <th>Origen</th>
+          <th class="pe-4">Motivo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td class="ps-4 small">
+            <div class="text-nowrap">{{ row.created_at|date:"d/m/Y H:i" }}</div>
+            <div class="text-muted"><i class="bi bi-person me-1"></i>{{ row.username }}</div>
+          </td>
+          <td class="small">
+            <span class="status-chip {% if row.currency == 'USD' %}status-neutral{% else %}status-success{% endif %}">{{ row.currency }}</span>
+            {% if row.process_id %}
+            <a href="{% url 'closing_detail' row.process_id %}?vista=erp" class="ms-1 text-decoration-none font-mono">#{{ row.process_id }}</a>
+            {% endif %}
+          </td>
+          <td class="small font-mono">
+            <div><span class="text-muted">Cta:</span> <strong>{{ row.account_code }}</strong></div>
+            <div class="text-muted">Doc: {{ row.document_number }}{% if row.auth_code != "—" and row.auth_code != row.document_number %} · Auth: {{ row.auth_code }}{% endif %}</div>
+          </td>
+          <td class="small fw-semibold">{{ row.field_label }}</td>
+          <td class="small font-mono">
+            <span class="text-muted text-decoration-line-through">{{ row.old_value }}</span>
+            <i class="bi bi-arrow-right mx-1 text-primary"></i>
+            <strong>{{ row.new_value }}</strong>
+          </td>
+          <td class="small">
+            <span class="status-chip {% if row.source == 'SUGGESTION' %}status-success{% else %}status-warning{% endif %}">
+              {{ row.source_label }}
+            </span>
+          </td>
+          <td class="pe-4 small text-muted">{{ row.reason }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center py-5 text-muted">No hay correcciones al Borderó ERP registradas para esos filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4">Fecha / Auditor</th>
+          <th>Cierre</th>
+          <th>Voucher / Tarjeta</th>
+          <th>Cuenta / Documento</th>
+          <th>Transición de estado</th>
+          <th class="pe-4">Comentario</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in rows %}
+        <tr>
+          <td class="ps-4 small">
+            <div class="text-nowrap">{{ log.created_at|date:"d/m/Y H:i" }}</div>
+            <div class="text-muted"><i class="bi bi-person me-1"></i>{{ log.user.get_full_name|default:log.user.username }}</div>
+          </td>
+          <td class="small">
+            {% with proc=log.cross_match_result.process %}
+            <span class="status-chip {% if proc.process_currency == 'USD' %}status-neutral{% else %}status-success{% endif %}">{{ proc.process_currency }}</span>
+            <a href="{% url 'closing_detail' proc.id %}?vista=cruce" class="ms-1 text-decoration-none font-mono">#{{ proc.id }}</a>
+            {% endwith %}
+          </td>
+          <td class="small">
+            <div class="fw-semibold font-mono">{{ log.cross_match_result.authorization_code|default:"—" }}</div>
+            <div class="text-muted">{{ log.cross_match_result.card_type.name }}</div>
+          </td>
+          <td class="small font-mono">
+            <div><span class="text-muted">Cta:</span> {{ log.cross_match_result.display_account_code|default:"—" }}</div>
+            <div class="text-muted">Doc: {{ log.cross_match_result.display_document_number|default:"—" }}</div>
+          </td>
+          <td class="small">
+            <span class="status-chip status-neutral">{{ log.previous_status.display_name|default:"—" }}</span>
+            <i class="bi bi-arrow-right mx-1 text-primary"></i>
+            <span class="status-chip status-success">{{ log.new_status.display_name }}</span>
+          </td>
+          <td class="pe-4 small text-muted">{{ log.comment|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center py-5 text-muted">No hay cambios de estado registrados para esos filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% include "partials/db_pagination_bar.html" with page=page query_string=query_string aria_label="Paginación de auditoría" %}
+</section>
+{% endblock %}

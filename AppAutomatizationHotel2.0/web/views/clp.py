@@ -15,6 +15,7 @@ from ..services import (
     generate_committed_clp_excel_bytes,
     detect_and_align_clp_files,
 )
+from ..services.tables_viewer import build_preview_source_tables_context
 from .common import (
     handle_preview_correction,
     CLP_SESSION_KEY,
@@ -24,15 +25,6 @@ from .common import (
     handle_discard_preview,
     handle_export_committed,
 )
-
-
-CLP_FILE_INPUTS = {
-    "erp_file": "clp_erp_file",
-    "bank_statement_file": "clp_bank_file",
-    "transbank_credit_file": "clp_tbk_credit_file",
-    "transbank_debit_file": "clp_tbk_debit_file",
-    "transbank_prepaid_file": "clp_tbk_prepaid_file",
-}
 
 
 @login_required(login_url="login")
@@ -72,12 +64,19 @@ def clp_upload_view(request):
             return redirect("clp_upload")
 
         try:
-            request.session[CLP_SESSION_KEY] = calculate_clp_preview(
+            preview = calculate_clp_preview(
                 erp_file=erp_file,
                 bank_statement_file=bank_file,
                 extra_erp_files=extra_erp_files,
                 tbk_files=tbk_files,
             )
+            request.session[CLP_SESSION_KEY] = preview
+            failed_extras = preview.get("failed_extra_erp_files") or []
+            if failed_extras:
+                messages.warning(
+                    request,
+                    f"No se pudieron leer algunos archivos ERP adicionales: {', '.join(failed_extras)}.",
+                )
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("clp_preview")
         except Exception as error:
@@ -107,13 +106,20 @@ def clp_preview_view(request):
         messages.warning(request, "No hay ningún proceso preliminar en memoria. Por favor cargue los archivos.")
         return redirect("clp_upload")
 
+    stale_tokens = ("doc #", "hab.", "habitación", "huésped")
     needs_enrichment = (
         "suggestion_counts" not in preview
         or any(
             v.get("suggestion") and (
                 "action" not in v.get("suggestion", {})
-                or "Doc #" in v.get("suggestion", {}).get("headline", "")
                 or v.get("suggestion", {}).get("headline", "").startswith("Posible registro")
+                or any(
+                    tok in " ".join(
+                        str(v.get("suggestion", {}).get(k, "") or "").lower()
+                        for k in ("headline", "action", "candidate_summary", "manual_check_note")
+                    )
+                    for tok in stale_tokens
+                )
             )
             for v in preview.get("discrepancy_vouchers", []) + preview.get("orphan_vouchers", []) + preview.get("out_of_period_vouchers", [])
         )
@@ -162,10 +168,10 @@ def clp_preview_view(request):
         "orphan_vouchers": preview.get("orphan_vouchers", []),
         "out_of_period_vouchers": preview.get("out_of_period_vouchers", []),
         "cashiers": all_cashiers,
-        "all_cashiers": all_cashiers,
         "counts": preview.get("counts", {}),
         "suggestion_counts": preview.get("suggestion_counts", {}),
         "all_banks_matched": all(b.get("is_matched") for b in active_banks),
+        "source_tables": build_preview_source_tables_context(preview, "CLP"),
     }
     return render(request, "clp_preview.html", context)
 
@@ -178,6 +184,7 @@ def clp_discard_view(request):
         session_key=CLP_SESSION_KEY,
         upload_url_name="clp_upload",
         info_message="La previsualización fue descartada. La base de datos no fue modificada.",
+        require_post=True,
     )
 
 

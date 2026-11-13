@@ -22,6 +22,7 @@ from .preview_corrections import apply_pending_corrections, original_erp_rows
 from .suggestion_actions import with_proposed_change
 from .persistence_common import (
     get_model_at,
+    sync_additional_erp_movements,
     sync_bank_statement_movements,
     sync_erp_transactions_by_currency,
     sync_transbank_transactions_for_process,
@@ -180,12 +181,20 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
                 if suggestion:
                     observation = f"{observation} | Sugerencia: {suggestion['headline']}"
                 tbk_obj = get_model_at(tbk_models, v_dict.get("tbk_index"))
+                acc_code = (v_dict.get("account_code") or "").strip()
+                if acc_code == "—":
+                    acc_code = ""
+                if not acc_code and suggestion and not suggestion.get("missing_code") and v_dict.get("erp_index") is None:
+                    acc_code = ((suggestion.get("erp_row") or {}).get("account_code") or "").strip()
+                    if acc_code == "—":
+                        acc_code = ""
                 match_fields = {
                     "process": process,
                     "card_type": _card(v_dict.get("card_code")),
                     "erp_transaction": get_model_at(erp_models, v_dict.get("erp_index")),
                     "card_operator_transaction": None,
                     "authorization_code": v_dict["authorization_code"],
+                    "account_code": acc_code,
                     "document_number": v_dict.get("erp_authorization_code") or (
                         suggestion["erp_row"]["authorization_code"]
                         if suggestion and not suggestion.get("missing_code") and v_dict.get("erp_index") is None
@@ -193,8 +202,8 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
                     ),
                     "sale_date": safe_date(v_dict.get("sale_date")),
                     "merchant_location_name": v_dict.get("merchant_location", ""),
-                    "guest_name": v_dict.get("guest_name", "—"),
-                    "room_number": v_dict.get("room_number", "—"),
+                    "guest_name": "—",
+                    "room_number": "—",
                     "cashier_username": v_dict.get("cashier_username", "—"),
                     "transbank_amount": to_decimal(v_dict.get("tbk_amount")),
                     "operator_amount_usd": Decimal("0"),
@@ -214,4 +223,5 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         upsert_cross_match_and_audit_logs(user, tbk_models, prepared_entries, accepted_status)
         # 7. Corrections the accountant accepted in step 2: written to the ERP with history and re-cross
         apply_pending_corrections(preview, erp_models, tbk_models, user)
+        sync_additional_erp_movements(process, preview.get("additional_erp_token"), card_types)
         return process

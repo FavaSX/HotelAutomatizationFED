@@ -7,9 +7,12 @@ Extracts, cleans, and indexes records in memory from:
   - Transbank CLP Settlements (Consolidated 'Todos los medios de pago' or Separate Modalities)
 """
 
+from collections import OrderedDict
 from datetime import date
 from decimal import Decimal
+import hashlib
 from typing import Any, Dict, List, Optional, Tuple
+import uuid
 import pandas as pd
 
 from ..models import (
@@ -18,6 +21,7 @@ from ..models import (
     ErpTransaction,
     CardOperatorTransaction,
 )
+from .erp_corrections import erp_source_key
 from .column_detector import (
     ERP_COLUMN_RULES,
     BANK_STATEMENT_COLUMN_RULES,
@@ -32,6 +36,24 @@ from .column_detector import (
     safe_time,
     safe_cell,
 )
+
+
+def read_excel_or_html_df(file_or_df: Any, header: Optional[int] = None) -> pd.DataFrame:
+    """Reads an Excel file (.xlsx, BIFF .xls, or HTML-table .xls) into a DataFrame with automatic fallback."""
+    if isinstance(file_or_df, pd.DataFrame):
+        return file_or_df
+    if hasattr(file_or_df, "seek"):
+        file_or_df.seek(0)
+    try:
+        return pd.read_excel(file_or_df, header=header)
+    except Exception:
+        if hasattr(file_or_df, "seek"):
+            file_or_df.seek(0)
+        try:
+            tables = pd.read_html(file_or_df)
+            return tables[0] if tables else pd.DataFrame()
+        except Exception:
+            return pd.DataFrame()
 
 
 # ==============================================================================
@@ -147,16 +169,22 @@ def parse_erp_transactions(
         raw_amount = safe_decimal(safe_cell(row, columns["amount"]))
         if raw_amount >= 0:
             continue
-        amount_value = abs(raw_amount)
+        amount_value = -raw_amount
         upper_desc = description.upper()
         card_code = (
-            "MC" if "MASTER" in upper_desc else
-            "VI" if "VISA" in upper_desc else
-            "AX" if "AMEX" in upper_desc else
-            "DI"
+            "MC" if "MASTER" in upper_desc or payment_code in ("MCUS$", "MUS$") else
+            "VI" if "VISA" in upper_desc or payment_code == "VUS$" else
+            "AX" if "AMEX" in upper_desc or "AMERICAN" in upper_desc or payment_code == "AUS$" else
+            "DI" if "DINER" in upper_desc or payment_code == "DUS$" else
+            ""
         )
+        if not card_code:
+            continue
         document_number = clean_code_string(safe_cell(row, columns["account_code"]))
         auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
+        invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"]))
+        if not invoice_number and columns["invoice_number"] - 1 > columns["payment_description"]:
+            invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"] - 1))
 
         erp_instance = ErpTransaction(
             card_type=card_types[card_code],
@@ -165,7 +193,8 @@ def parse_erp_transactions(
             reservation_number=clean_code_string(safe_cell(row, columns["reservation_number"])),
             account_code=document_number,
             payment_code=payment_code,
-            invoice_number=clean_code_string(safe_cell(row, columns["invoice_number"])),
+            payment_description=description[:100],
+            invoice_number=invoice_number,
             document_number=document_number,
             authorization_code=auth_code,
             transaction_date=safe_date(safe_cell(row, columns["transaction_date"])),
@@ -275,12 +304,6 @@ TBK_HEADER_AMOUNT_LABELS = {
     "iva de cobros por servicio (-)": "service_charges_vat",
     "total abono": "total_deposit",
 }
-TBK_HEADER_BELOW_LABELS = {
-    "empresa:": "company",
-    "cuenta corriente:": "bank_account",
-    "moneda:": "currency",
-    "medio de pago:": "payment_medium",
-}
 
 
 def classify_bordero_clp_payment(description: str):
@@ -323,7 +346,7 @@ def parse_bordero_clp_transactions(
 
         # The 'Factura' header sits one column to the right of its merged data cell.
         invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"]))
-        if not invoice_number:
+        if not invoice_number and columns["invoice_number"] - 1 > columns["payment_description"]:
             invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"] - 1))
 
         raw_auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
@@ -359,6 +382,160 @@ def parse_bordero_clp_transactions(
             rows_by_auth_code.setdefault(normalized_code, []).append(position)
 
     return rows, rows_by_auth_code
+
+
+_ADDITIONAL_ERP_CACHE: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
+_MAX_ADDITIONAL_ERP_CACHE_ENTRIES = 16
+
+
+def store_additional_erp_movements(rows: List[Dict[str, Any]]) -> str:
+    """Stores full-Bordero movements in an in-memory bounded LRU cache so session payload stays lightweight."""
+    if not rows:
+        return ""
+    token = uuid.uuid4().hex
+    _ADDITIONAL_ERP_CACHE[token] = rows
+    while len(_ADDITIONAL_ERP_CACHE) > _MAX_ADDITIONAL_ERP_CACHE_ENTRIES:
+        _ADDITIONAL_ERP_CACHE.popitem(last=False)
+    return token
+
+
+def get_additional_erp_movements(token: Optional[str]) -> List[Dict[str, Any]]:
+    """Retrieves cached full-Bordero movements by token without evicting them (supports idempotent re-commit)."""
+    if not token:
+        return []
+    return _ADDITIONAL_ERP_CACHE.get(token, [])
+
+
+def parse_all_bordero_movements(
+    erp_dataframe: pd.DataFrame,
+    source_file: str = "",
+) -> List[Dict[str, Any]]:
+    """
+    Parses ALL valid movement rows from a Hotel Bordero ("Cargos de Débitos y Créditos") DataFrame
+    regardless of currency or payment medium (USD cards, CLP cards, cash, room charges HOA, IVA,
+    restaurant/bar charges, tips, transfers, etc.), discarding only blank rows, repeated page
+    headers/footers, and subtotal/total summary lines.
+
+    Also handles the VHF BIFF5 fixed-width 1-column right shift that occurs when 'Valor' is a
+    1-digit number (e.g. 0, 1, -1), where col 8 is None and Valor..Designación shift to cols 9..14.
+    """
+    if erp_dataframe is None or len(erp_dataframe) == 0:
+        return []
+
+    columns = resolve_dataframe_columns(erp_dataframe, ERP_COLUMN_RULES)
+    movements: List[Dict[str, Any]] = []
+    seen_key_counts: Dict[str, int] = {}
+
+    for excel_row_number, (_, row) in enumerate(erp_dataframe.iterrows(), start=1):
+        payment_code = str(safe_cell(row, columns["payment_code"]) or "").strip().upper()
+        if not payment_code or ("COD" in payment_code and "DEB" in payment_code):
+            continue
+
+        amt_col = columns["amount"]
+        auth_col = columns["authorization_code"]
+        date_col = columns["transaction_date"]
+        time_col = columns["transaction_time"]
+        user_col = columns["cashier_username"]
+        guest_col = columns["guest_name"]
+
+        tx_date = safe_date(safe_cell(row, date_col))
+        if tx_date is None and safe_cell(row, amt_col) is None:
+            shifted_date = safe_date(safe_cell(row, date_col + 1))
+            if shifted_date is not None:
+                tx_date = shifted_date
+                amt_col += 1
+                auth_col += 1
+                date_col += 1
+                time_col += 1
+                user_col += 1
+                guest_col += 1
+
+        if tx_date is None:
+            continue
+
+        description = " ".join(str(safe_cell(row, columns["payment_description"]) or "").split())
+        upper_desc = description.upper()
+        raw_amount = safe_decimal(safe_cell(row, amt_col))
+
+        usd_card_code = (
+            "MC" if ("US$" in upper_desc and ("MASTER" in upper_desc or payment_code in ("MCUS$", "MUS$"))) else
+            "VI" if ("US$" in upper_desc and ("VISA" in upper_desc or payment_code == "VUS$")) else
+            "AX" if ("US$" in upper_desc and ("AMEX" in upper_desc or "AMERICAN" in upper_desc or payment_code == "AUS$")) else
+            "DI" if ("US$" in upper_desc and ("DINER" in upper_desc or payment_code == "DUS$")) else
+            ""
+        )
+        is_clp_card, clp_payment_group, clp_card_code = classify_bordero_clp_payment(description)
+
+        if usd_card_code and raw_amount != 0:
+            movement_category = "USD_CARD"
+            source_currency = "USD"
+            card_code = usd_card_code
+            payment_group = "CREDIT"
+            amount_val = float(-raw_amount)
+        elif is_clp_card and raw_amount != 0:
+            movement_category = "CLP_CARD"
+            source_currency = "CLP"
+            card_code = clp_card_code or ""
+            payment_group = clp_payment_group
+            amount_val = float(-raw_amount)
+        else:
+            movement_category = "OTHER"
+            source_currency = "USD" if ("US$" in upper_desc or payment_code.endswith("US$")) else "CLP"
+            card_code = ""
+            payment_group = None
+            amount_val = float(raw_amount)
+
+        invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"]))
+        if not invoice_number and columns["invoice_number"] - 1 > columns["payment_description"]:
+            invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"] - 1))
+
+        account_code = clean_code_string(safe_cell(row, columns["account_code"]))
+        auth_code = clean_code_string(safe_cell(row, auth_col))
+        tx_time = safe_time(safe_cell(row, time_col))
+
+        base_key = erp_source_key(
+            source_currency,
+            account_code,
+            invoice_number,
+            auth_code,
+            amount_val,
+            tx_date,
+            tx_time,
+        )
+        occurrence = seen_key_counts.get(base_key, 0) + 1
+        seen_key_counts[base_key] = occurrence
+        source_key = (
+            base_key
+            if occurrence == 1
+            else hashlib.sha1(f"{base_key}|#{occurrence}".encode("utf-8")).hexdigest()
+        )
+
+        movements.append({
+            "excel_row": excel_row_number,
+            "source_file": source_file,
+            "movement_category": movement_category,
+            "source_currency": source_currency,
+            "card_code": card_code,
+            "payment_group": payment_group,
+            "payment_code": payment_code[:20],
+            "payment_description": description[:100],
+            "room_number": clean_code_string(safe_cell(row, columns["room_number"]))[:20],
+            "room_type": str(safe_cell(row, columns["room_type"]) or "").strip()[:20],
+            "reservation_number": clean_code_string(safe_cell(row, columns["reservation_number"]))[:50],
+            "account_code": account_code[:50],
+            "document_number": account_code[:50],
+            "invoice_number": invoice_number[:50],
+            "authorization_code": auth_code[:50],
+            "transaction_date": tx_date.strftime("%d/%m/%Y"),
+            "transaction_time": tx_time.strftime("%H:%M:%S") if tx_time else None,
+            "cashier_username": str(safe_cell(row, user_col) or "").strip()[:50],
+            "guest_name": " ".join(str(safe_cell(row, guest_col) or "").split())[:150],
+            "amount": amount_val,
+            "reconciled": False,
+            "source_key": source_key,
+        })
+
+    return movements
 
 
 def parse_bordero_period(dataframe: pd.DataFrame) -> Tuple[Optional[date], Optional[date]]:
@@ -438,21 +615,7 @@ def parse_universal_transbank_clp(files_or_dfs: List[Any]) -> Dict[str, Dict[str
     for item in files_or_dfs:
         if item is None:
             continue
-        if isinstance(item, pd.DataFrame):
-            df = item
-        else:
-            if hasattr(item, "seek"):
-                item.seek(0)
-            try:
-                df = pd.read_excel(item, header=None)
-            except Exception:
-                if hasattr(item, "seek"):
-                    item.seek(0)
-                try:
-                    tables = pd.read_html(item)
-                    df = tables[0] if tables else pd.DataFrame()
-                except Exception:
-                    df = pd.DataFrame()
+        df = read_excel_or_html_df(item, header=None)
 
         if df is None or len(df) == 0:
             continue
@@ -480,14 +643,24 @@ def parse_universal_transbank_clp(files_or_dfs: List[Any]) -> Dict[str, Dict[str
 
         columns = resolve_dataframe_columns(df, TRANSBANK_CLP_COLUMN_RULES, max_scan_rows=detail_header_row + 3)
         is_consolidated = "todos los medios" in header_medium or not header_medium
+        file_row_totals: Dict[str, Dict[str, Decimal]] = {
+            mod: {"total_sales": Decimal("0"), "commission": Decimal("0"), "commission_vat": Decimal("0"), "total_deposit": Decimal("0")}
+            for mod, _ in clp_modalities_map
+        }
 
         for row_index in range(detail_header_row + 1, len(df)):
             row = df.iloc[row_index]
             auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
             if not auth_code:
                 continue
-            # The detail header spans two rows; the second one ("Código de autorización de venta") is not a sale
-            if "autoriz" in normalize_text(auth_code):
+
+            # Skip secondary detail header rows (e.g. Row 30 carrying "Código de autorización de venta")
+            norm_auth = normalize_text(auth_code)
+            if (
+                norm_auth in ("autorizacion", "codigo autorizacion", "codigo de autorizacion", "codigo de autorizacion de venta")
+                or ("codigo" in norm_auth and "autorizacion" in norm_auth)
+                or "monto original" in normalize_text(safe_cell(row, columns["gross_amount"]))
+            ):
                 continue
 
             movement_type = normalize_text(safe_cell(row, columns["movement_type"]))
@@ -555,6 +728,10 @@ def parse_universal_transbank_clp(files_or_dfs: List[Any]) -> Dict[str, Dict[str
             h["commission_vat"] += commission_vat
             h["total_deposit"] += net_deposit
             h["calculated_deposit"] += net_deposit
+            file_row_totals[modality]["total_sales"] += valid_amount
+            file_row_totals[modality]["commission"] += commission
+            file_row_totals[modality]["commission_vat"] += commission_vat
+            file_row_totals[modality]["total_deposit"] += net_deposit
             if settlement_date and not h["settlement_date"]:
                 h["settlement_date"] = settlement_date
             if company and not h["company"]:
@@ -562,10 +739,12 @@ def parse_universal_transbank_clp(files_or_dfs: List[Any]) -> Dict[str, Dict[str
             if bank_account and not h["bank_account"]:
                 h["bank_account"] = bank_account
 
-        # If not consolidated, read official header amounts from rows 16-25
+        # If not consolidated, read official header amounts from rows 16-25 and accumulate across multiple files
         if not is_consolidated:
             target_mod = "CREDIT" if "cred" in header_medium else ("DEBIT" if "deb" in header_medium else "PREPAID")
             h = settlements[target_mod]["header"]
+            f_row = file_row_totals[target_mod]
+            seen_fields: set = set()
             for row_index in range(min(len(df), detail_header_row)):
                 row = df.iloc[row_index]
                 cells = [(col, val) for col, val in enumerate(row.values) if pd.notna(val) and str(val).strip()]
@@ -574,25 +753,20 @@ def parse_universal_transbank_clp(files_or_dfs: List[Any]) -> Dict[str, Dict[str
                     if label in TBK_HEADER_AMOUNT_LABELS and position + 1 < len(cells):
                         amt = safe_decimal(cells[position + 1][1])
                         field = TBK_HEADER_AMOUNT_LABELS[label]
-                        if field == "total_sales" and amt > 0:
-                            h["total_sales"] = amt
-                            h["sales_total"] = amt
-                        elif field == "commission" and amt > 0:
-                            h["commission"] = amt
-                        elif field == "commission_vat" and amt > 0:
-                            h["commission_vat"] = amt
-                        elif field == "total_deposit" and amt > 0:
-                            h["total_deposit"] = amt
-                            h["calculated_deposit"] = amt
+                        if field in seen_fields or amt <= 0:
+                            continue
+                        seen_fields.add(field)
+                        if field == "total_sales":
+                            delta = amt - f_row["total_sales"]
+                            h["total_sales"] += delta
+                            h["sales_total"] += delta
+                        elif field == "commission":
+                            h["commission"] += amt - f_row["commission"]
+                        elif field == "commission_vat":
+                            h["commission_vat"] += amt - f_row["commission_vat"]
+                        elif field == "total_deposit":
+                            delta = amt - f_row["total_deposit"]
+                            h["total_deposit"] += delta
+                            h["calculated_deposit"] += delta
 
     return settlements
-
-
-def parse_transbank_clp_settlement(dataframe: pd.DataFrame, modality: str) -> Dict[str, Any]:
-    """Legacy helper for backward compatibility: delegates to parse_universal_transbank_clp."""
-    all_settlements = parse_universal_transbank_clp([dataframe])
-    return all_settlements.get(modality) or {
-        "header": {key: Decimal("0") for key in TBK_HEADER_AMOUNT_LABELS.values()},
-        "sales": [],
-        "skipped_movements": 0,
-    }

@@ -1,0 +1,49 @@
+{% load currency_filters %}
+<section class="card card-executive">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-muted">
+        <tr>
+          <th class="ps-4">Fecha</th>
+          <th>Descripción</th>
+          <th>Sucursal / Canal</th>
+          <th>N° Documento</th>
+          {% if consolidated %}<th>Moneda / Cierre</th>{% endif %}
+          <th class="text-end">Cargo</th>
+          <th class="text-end">Abono</th>
+          <th class="text-end">Saldo</th>
+          <th class="pe-4">Clasificación</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in bank_rows %}
+        <tr>
+          <td class="ps-4 small text-nowrap">{{ row.movement_date|date:"d/m/Y"|default:"—" }}</td>
+          <td class="small">{{ row.description|default:"—" }}</td>
+          <td class="small text-muted">{{ row.branch_or_channel|default:"—" }}</td>
+          <td class="small font-mono">{{ row.document_number|default:"—" }}</td>
+          {% if consolidated %}
+          <td class="small text-nowrap">
+            <span class="status-chip {% if row.row_is_usd %}status-neutral{% else %}status-success{% endif %}">{{ row.process.process_currency }}</span>
+            <a href="{% url 'closing_detail' row.process_id %}?vista=cartola" class="ms-1 text-decoration-none font-mono">#{{ row.process_id }}</a>
+          </td>
+          {% endif %}
+          <td class="text-end small text-nowrap">
+            {% if row.charge_amount %}{% if row.row_is_usd %}US$ {{ row.charge_amount|num_usd }}{% else %}${{ row.charge_amount|num_clp }}{% endif %}{% else %}—{% endif %}
+          </td>
+          <td class="text-end fw-semibold text-nowrap">
+            {% if row.deposit_amount %}{% if row.row_is_usd %}US$ {{ row.deposit_amount|num_usd }}{% else %}${{ row.deposit_amount|num_clp }}{% endif %}{% else %}—{% endif %}
+          </td>
+          <td class="text-end small text-nowrap">
+            {% if row.row_is_usd %}US$ {{ row.balance_amount|num_usd }}{% else %}${{ row.balance_amount|num_clp }}{% endif %}
+          </td>
+          <td class="pe-4"><span class="status-chip {{ row.bank_tag_tone }}">{{ row.bank_tag_label }}</span></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="{% if consolidated %}9{% else %}8{% endif %}" class="text-center py-4 text-muted">No hay movimientos de cartola registrados para esos filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/db_pagination_bar.html" with page=page query_string=query_string aria_label="Paginación de cartola bancaria" %}
+</section>

@@ -4,6 +4,8 @@ from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q, Sum
 
+from ..services.clp_reconciliation import MODALITY_LABELS as CLP_MODALITY_LABELS
+from ..services.clp_report_exporter import _split_status_detail
 from ..services.erp_editing import OPEN_STATUS_CODES
 from ..models import CrossMatchResult, ReconciliationProcess, ReconciliationSummary
 
@@ -19,8 +21,6 @@ CLP_EXCEPTION_LABELS = {
     "NOT_FOUND_IN_ERP": "No está en el Borderó",
     "OUT_OF_PERIOD": "Fuera de período",
 }
-
-CLP_MODALITY_LABELS = {"CREDIT": "Crédito", "DEBIT": "Débito", "PREPAID": "Prepago"}
 
 
 def _match_rate(matched: int, total: int) -> float:
@@ -125,7 +125,10 @@ def _usd_dashboard():
         key=lambda c: (c["is_unassigned"], -c["count"]),
     )[:6]
 
-    largest_exceptions = list(pending.select_related("card_type", "process").order_by("-transbank_amount")[:6])
+    largest_exceptions = list(
+        pending.select_related("card_type", "process", "erp_transaction", "card_operator_transaction")
+        .order_by("-transbank_amount")[:6]
+    )
     for item in largest_exceptions:
         item.type_label = _exception_label(EXCEPTION_LABELS, item.system_result)
 
@@ -177,12 +180,6 @@ def _usd_dashboard():
     }
 
 
-def _split_status_detail(detail: str):
-    """CLP closings store 'Modalidad · Tipo de error · Acción sugerida' in system_status_detail."""
-    parts = [p.strip() for p in (detail or "").split(" · ", 2)]
-    return parts if len(parts) == 3 else ["", "", ""]
-
-
 def _clp_dashboard():
     """Peso panel: every figure comes from the saved CLP closings (Credit, Debit and Prepaid settlements)."""
     processes = _closings("CLP")
@@ -216,7 +213,10 @@ def _clp_dashboard():
         group["pct"] = round(group["count"] / max_group * 100) if max_group else 0
         pending_by_error.append(group)
 
-    largest_exceptions = list(pending.select_related("card_type", "process").order_by("-transbank_amount")[:6])
+    largest_exceptions = list(
+        pending.select_related("card_type", "process", "erp_transaction", "card_operator_transaction")
+        .order_by("-transbank_amount")[:6]
+    )
     for item in largest_exceptions:
         modality, error_type, action = _split_status_detail(item.system_status_detail)
         item.type_label = error_type or _exception_label(CLP_EXCEPTION_LABELS, item.system_result)
@@ -284,6 +284,7 @@ def dashboard_view(request):
     """
     usd = _usd_dashboard()
     clp = _clp_dashboard()
+    request._pending_exceptions_count = (usd.get("pending_count") or 0) + (clp.get("pending_count") or 0)
     requested = request.GET.get("moneda", "").lower()
     if requested in ("usd", "clp"):
         active_currency = requested

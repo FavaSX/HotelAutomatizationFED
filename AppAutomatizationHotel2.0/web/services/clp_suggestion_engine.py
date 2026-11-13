@@ -9,6 +9,7 @@ It never reconciles anything automatically: suggestions are a reference for the 
 """
 
 from typing import Any, Dict, List, Optional, Tuple
+from django.db.models import Q
 
 from ..models import ErpTransaction
 from ..templatetags.currency_filters import fmt_clp
@@ -59,8 +60,6 @@ def _erp_row_view(erp_row: Dict[str, Any]) -> Dict[str, Any]:
         "transaction_date": erp_row.get("transaction_date") or "—",
         "transaction_time": erp_row.get("transaction_time") or "",
         "cashier_username": erp_row.get("cashier_username") or "—",
-        "guest_name": erp_row.get("guest_name") or "—",
-        "room_number": erp_row.get("room_number") or "—",
         "account_code": erp_row.get("account_code") or "—",
         "invoice_number": erp_row.get("invoice_number") or "—",
     }
@@ -150,13 +149,13 @@ def _build_candidate_suggestion(
         "missing_code": missing_code,
         "action": action,
         "candidate_summary": (
-            f"{erp_row.get('guest_name') or '—'} · Hab. {erp_row.get('room_number') or '—'} · "
+            f"Cta. {erp_row.get('account_code') or '—'} · Fact. {erp_row.get('invoice_number') or '—'} · "
             f"{fmt_clp(erp_row.get('amount'))} · {erp_row.get('transaction_date')} ({erp_row.get('cashier_username') or '—'})"
         ),
         "manual_check_note": (
             f"El voucher '{voucher['authorization_code']}' ({fmt_clp(voucher['tbk_amount'])}) "
             f"coincide en {erp_file} (fila {erp_row.get('excel_row')}), donde el cajero '{erp_row.get('cashier_username') or '—'}' "
-            f"registró {fmt_clp(erp_row.get('amount'))} como {erp_row.get('payment_code')} con el código '{erp_code}' "
+            f"registró {fmt_clp(erp_row.get('amount'))} como {erp_row.get('payment_code')} con Documento '{erp_code or 'sin código'}' "
             f"(Cta. {erp_row.get('account_code') or '—'} · Fact. {erp_row.get('invoice_number') or '—'}). "
             f"{detail['cause']}. Verifique el voucher físico antes de corregir."
         ),
@@ -189,7 +188,10 @@ def _find_db_suggestion_for_clp_voucher(
                 ErpTransaction.objects.filter(
                     reconciled=False,
                     source_currency="CLP",
-                ).select_related("process", "card_type").order_by("-transaction_date")[:500]
+                )
+                .filter(Q(card_type__isnull=False) | Q(payment_code__in=("RCO", "RC", "REDCOMPRA", "V$", "MC$", "AME$", "DIN$")))
+                .select_related("process", "card_type")
+                .order_by("-transaction_date")[:500]
             )
         except Exception:
             return None
@@ -249,11 +251,9 @@ def _find_db_suggestion_for_clp_voucher(
     db_proc_id = db_tx.process_id
     db_proc_period = db_tx.process.accounting_period if db_tx.process else f"Proceso #{db_proc_id}"
     db_time = db_tx.transaction_time.strftime("%H:%M:%S") if db_tx.transaction_time else ""
-    db_guest = db_tx.guest_name or "—"
-    db_room = db_tx.room_number or "—"
     db_cashier = db_tx.cashier_username or "—"
     db_inv = db_tx.invoice_number or "—"
-    db_acc = db_tx.account_code or "—"
+    db_acc = db_tx.account_code or db_tx.document_number or "—"
     db_card_name = db_tx.card_type.name if db_tx.card_type else ("Redcompra" if is_rc else "Tarjeta de Crédito")
     db_pay_code = db_tx.payment_code or (db_tx.card_type.code if db_tx.card_type else "—")
     source_label = f"Base de Datos (Proceso #{db_proc_id})"
@@ -270,15 +270,15 @@ def _find_db_suggestion_for_clp_voucher(
     if missing_code:
         cause = f"Venta pendiente en BD (Proceso #{db_proc_id}) sin código de autorización"
         reasons.append(_chip("Fila en BD sin código de autorización", "bi-exclamation-triangle", "gold"))
-        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} y anotar código en ERP"
+        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Cta. {db_acc}) y anotar Documento en ERP"
     elif exact_code:
-        cause = f"Código exacto ({db_auth}) hallado en BD Proceso #{db_proc_id}"
+        cause = f"Documento exacto ({db_auth}) hallado en BD Proceso #{db_proc_id}"
         reasons.append(_chip(cause, "bi-check2-circle", "emerald"))
-        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Doc #{db_tx.document_number}, Cta. {db_acc})"
+        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Cta. {db_acc}, Doc. {db_auth}, Fact. {db_inv})"
     else:
-        cause = typo_badge or f"Código digitado como {db_auth} en BD Proceso #{db_proc_id}"
+        cause = typo_badge or f"Documento digitado como {db_auth} en BD Proceso #{db_proc_id}"
         reasons.append(_chip(cause, "bi-upc-scan", "gold"))
-        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} y corregir código"
+        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Cta. {db_acc}) y corregir Documento"
 
     headline = f"Venta pendiente en BD (Proceso #{db_proc_id} · {db_proc_period})"
 
@@ -294,8 +294,6 @@ def _find_db_suggestion_for_clp_voucher(
         "transaction_date": db_date,
         "transaction_time": db_time,
         "cashier_username": db_cashier,
-        "guest_name": db_guest,
-        "room_number": db_room,
         "account_code": db_acc,
         "invoice_number": db_inv,
     }
@@ -308,12 +306,11 @@ def _find_db_suggestion_for_clp_voucher(
         "cause": cause,
         "missing_code": missing_code,
         "action": action,
-        "candidate_summary": f"{db_guest} · Hab. {db_room} · {fmt_clp(db_amount)} · {db_date} ({db_cashier})",
+        "candidate_summary": f"Cta. {db_acc} · Doc. {db_auth or 'sin código'} · Fact. {db_inv} · {fmt_clp(db_amount)} · {db_date} ({db_cashier})",
         "manual_check_note": (
             f"El voucher '{voucher['authorization_code']}' ({fmt_clp(voucher['tbk_amount'])}) no figura en el Borderó actual, "
             f"pero fue localizado en la Base de Datos como venta pendiente en el proceso #{db_proc_id} ({db_proc_period}, fecha {db_date}). "
-            f"Corresponde a la Habitación {db_room} (Huésped: {db_guest}), registrado por el cajero '{db_cashier}' "
-            f"con código '{db_auth or 'sin código'}' (Cta. {db_acc} · Factura {db_inv})."
+            f"Corresponde a la Cuenta {db_acc} (Doc. '{db_auth or 'sin código'}', Factura {db_inv}), registrado por el cajero '{db_cashier}'."
         ),
         "reasons": reasons,
         "files_involved": {"tbk": tbk_file, "erp": source_label},
@@ -336,7 +333,6 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
         return preview_data
 
     erp_rows: List[Dict[str, Any]] = preview_data.get("erp_transactions", [])
-    aux_erp_rows: List[Dict[str, Any]] = preview_data.get("auxiliary_erp_transactions", [])
     orphans = preview_data.get("orphan_vouchers", [])
     discrepancies = preview_data.get("discrepancy_vouchers", [])
     out_of_period = preview_data.get("out_of_period_vouchers", [])
@@ -458,14 +454,14 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                     "missing_code": False,
                     "action": f"Revisar propina/cargo de {fmt_clp(abs(gap))} en Cta. {base_row.get('account_code') or '—'} con cajero {base_row.get('cashier_username') or '—'}",
                     "candidate_summary": (
-                        f"{base_row.get('guest_name') or '—'} · Fact. {base_row.get('invoice_number') or '—'} · "
-                        f"{fmt_clp(base_row.get('amount'))} ({base_row.get('cashier_username') or '—'})"
+                        f"Cta. {base_row.get('account_code') or '—'} · Doc. {base_row.get('authorization_code') or '—'} · "
+                        f"Fact. {base_row.get('invoice_number') or '—'} · {fmt_clp(base_row.get('amount'))} ({base_row.get('cashier_username') or '—'})"
                     ),
                     "manual_check_note": (
                         f"El voucher '{voucher['authorization_code']}' se cobró en Transbank por {fmt_clp(voucher['tbk_amount'])}, "
                         f"pero en el Borderó (fila {base_row.get('excel_row')}, Cta. {base_row.get('account_code') or '—'}, "
                         f"Factura {base_row.get('invoice_number') or '—'}) el cajero '{base_row.get('cashier_username') or '—'}' "
-                        f"registró {fmt_clp(base_row.get('amount'))} con código '{base_row.get('authorization_code')}'. "
+                        f"registró {fmt_clp(base_row.get('amount'))} con Documento '{base_row.get('authorization_code')}'. "
                         f"La diferencia de {fmt_clp(abs(gap))} suele corresponder a propina o recargo digitado en el POS y omitido en la cuenta ERP."
                     ),
                     "reasons": [
@@ -487,10 +483,14 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                 "cause": f"Medio de pago registrado como {base_row.get('payment_code')} en lugar de {voucher.get('modality_label')}",
                 "missing_code": False,
                 "action": f"Cambiar medio de pago de {base_row.get('payment_code')} a {voucher.get('modality_label')} en el ERP",
-                "candidate_summary": f"{base_row.get('guest_name') or '—'} · {fmt_clp(base_row.get('amount'))} ({base_row.get('cashier_username') or '—'})",
+                "candidate_summary": (
+                    f"Cta. {base_row.get('account_code') or '—'} · Doc. {base_row.get('authorization_code') or '—'} · "
+                    f"Fact. {base_row.get('invoice_number') or '—'} · {fmt_clp(base_row.get('amount'))} ({base_row.get('cashier_username') or '—'})"
+                ),
                 "manual_check_note": (
-                    f"El voucher '{voucher['authorization_code']}' ({fmt_clp(voucher['tbk_amount'])}) coincide en código y monto "
-                    f"con la fila {base_row.get('excel_row')} del Borderó, pero fue ingresado bajo el código '{base_row.get('payment_code')}'."
+                    f"El voucher '{voucher['authorization_code']}' ({fmt_clp(voucher['tbk_amount'])}) coincide en Documento y monto "
+                    f"con la fila {base_row.get('excel_row')} del Borderó (Cta. {base_row.get('account_code') or '—'}, Doc. {base_row.get('authorization_code') or '—'}), "
+                    f"pero fue ingresado bajo el código '{base_row.get('payment_code')}'."
                 ),
                 "reasons": [
                     _chip(f"Monto Exacto ({fmt_clp(base_row.get('amount'))})", "bi-cash-stack", "emerald"),
@@ -531,7 +531,10 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
             ErpTransaction.objects.filter(
                 reconciled=False,
                 source_currency="CLP",
-            ).select_related("process", "card_type").order_by("-transaction_date")[:500]
+            )
+            .filter(Q(card_type__isnull=False) | Q(payment_code__in=("RCO", "RC", "REDCOMPRA", "V$", "MC$", "AME$", "DIN$")))
+            .select_related("process", "card_type")
+            .order_by("-transaction_date")[:500]
         )
     except Exception:
         db_candidates = []

@@ -555,27 +555,15 @@ footer.app-footer {
   border: 1px solid var(--glass-border) !important;
   box-shadow: 0 24px 64px rgba(0, 0, 0, .3), inset 0 1px 0 var(--glass-highlight);
 }
-.modal-header-navy {
-  background: var(--navy-gradient);
-  box-shadow: var(--navy-glow);
-}
 .modal-header-navy-gold {
   background: var(--navy-gradient);
   border-bottom: 3px solid var(--accent) !important;
-}
-.modal-icon-danger {
-  width: 48px;
-  height: 48px;
 }
 .modal-icon-gold {
   width: 44px;
   height: 44px;
   background: rgba(var(--accent-rgb), .18);
   color: var(--accent-soft);
-}
-.modal-icon-success {
-  width: 46px;
-  height: 46px;
 }
 
 /* ===================== 5. Buttons ===================== */
@@ -867,8 +855,7 @@ footer.app-footer {
   font-size: 0.72rem;
 }
 
-/* USD Preview View */
-.voucher-search-wrapper { max-width: 400px; }
+/* USD & CLP Preview Views */
 .voucher-table-scroll {
   max-height: 500px;
   /* Keeps the card height when filters leave few or no rows, so the page does not shrink
@@ -880,40 +867,8 @@ footer.app-footer {
   cursor: pointer;
   user-select: none;
 }
-.sticky-action-bar {
-  position: sticky;
-  bottom: 1rem;
-  z-index: 1020;
-  background: var(--surface);
-  backdrop-filter: blur(8px);
-  border-color: var(--border-strong) !important;
-}
 
 /* Level 2 Assisted Suggestion Modal Badges & Match-Reason Highlights */
-.suggestion-badge-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: var(--accent-gradient);
-  color: var(--on-accent);
-}
-.suggestion-confidence {
-  font-size: 0.66rem;
-  font-weight: 600;
-  padding: 0.12rem 0.5rem;
-  border-radius: 999px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  background: transparent;
-  color: var(--text-muted);
-  border: 1px solid var(--border-strong);
-}
 .reason-chip {
   display: inline-flex;
   align-items: center;
@@ -924,11 +879,8 @@ footer.app-footer {
   border-radius: 6px;
   line-height: 1.25;
 }
-/* Neutral style for all matching attributes (Zero Color Noise) */
-.reason-neutral,
-.reason-emerald,
-.reason-cyan,
-.reason-purple {
+/* Neutral style for matching attributes */
+.reason-emerald {
   background: transparent;
   color: var(--text-muted);
   border: 1px solid var(--border);
@@ -946,95 +898,6 @@ html[data-bs-theme="light"] .reason-gold {
   border-color: rgba(180, 83, 9, 0.35);
 }
 
-/* Compact 3-Column & 2-Column Comparison Cards */
-.suggestion-3col-grid {
-  display: grid;
-  grid-template-columns: 0.95fr 1.15fr 1fr;
-  background: var(--surface);
-}
-@media (max-width: 991.98px) {
-  .suggestion-3col-grid { grid-template-columns: 1fr; }
-}
-.suggestion-2col-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  background: var(--surface);
-}
-@media (max-width: 767.98px) {
-  .suggestion-2col-grid { grid-template-columns: 1fr; }
-}
-.suggestion-col-box {
-  padding: 0.65rem 0.95rem;
-  border-right: 1px solid var(--border);
-  min-width: 0;
-}
-.suggestion-col-box:last-child { border-right: none; }
-.suggestion-col-tbk {
-  background: var(--surface-2);
-  border-right: 2px solid var(--border-strong);
-}
-.suggestion-col-title {
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  height: 24px;
-  margin-bottom: 0.35rem;
-  padding-bottom: 0.25rem;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.suggestion-kv-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  height: 30px;
-  padding: 0 0.45rem;
-  border-radius: 6px;
-  font-size: 0.79rem;
-  border-bottom: 1px dashed rgba(148, 163, 184, 0.14);
-  white-space: nowrap;
-}
-.suggestion-kv-row:last-child { border-bottom: none; }
-.suggestion-kv-label {
-  color: var(--text-muted);
-  font-size: 0.74rem;
-  flex-shrink: 0;
-}
-.suggestion-kv-val {
-  font-family: var(--bs-font-monospace);
-  font-weight: 600;
-  color: var(--text);
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.suggestion-kv-diff {
-  background: rgba(245, 158, 11, 0.14);
-  border-left: 3px solid #F59E0B;
-}
-.suggestion-kv-diff .suggestion-kv-val {
-  color: #FBBF24;
-  font-weight: 700;
-}
-html[data-bs-theme="light"] .suggestion-kv-diff {
-  background: rgba(245, 158, 11, 0.13);
-}
-html[data-bs-theme="light"] .suggestion-kv-diff .suggestion-kv-val {
-  color: #B45309;
-}
-.suggestion-empty {
-  font-size: 0.74rem;
-  color: var(--text-muted);
-  font-style: italic;
-}
 .btn-suggestion-trigger {
   display: inline-flex;
   align-items: center;
@@ -1087,37 +950,41 @@ html[data-bs-theme="light"] .suggestion-caution-banner {
 .caution-chevron { transition: transform .2s ease; color: var(--text-muted); }
 .caution-toggle[aria-expanded="true"] .caution-chevron { transform: rotate(180deg); }
 .caution-body { padding: .4rem 0 .2rem 2.25rem; }
-.suggestion-manual-box {
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  padding: 0.85rem 1rem;
-}
 
 /* Dual Linked Pills (Voucher TBK⇄ERP & Document ERP⇄OP) — Consolidated Grid */
 .voucher-dual-pill,
 .doc-dual-pill {
   display: inline-grid !important;
   align-items: stretch;
-  height: 30px;
+  width: auto;
+  height: 32px;
   border-radius: 9999px;
   border: 1px solid var(--border);
   background-color: var(--surface);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   font-family: var(--bs-font-monospace, monospace);
+  font-variant-numeric: tabular-nums;
   font-size: 0.8125rem;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   overflow: hidden;
   transition: box-shadow 0.15s ease, transform 0.15s ease;
   vertical-align: middle;
 }
 .voucher-dual-pill {
-  grid-template-columns: 110px 28px 122px;
-  width: 260px;
+  grid-template-columns: minmax(124px, max-content) 26px minmax(162px, max-content);
 }
 .doc-dual-pill {
-  grid-template-columns: 110px 28px 118px;
-  width: 256px;
+  grid-template-columns: minmax(140px, max-content) 26px minmax(146px, max-content);
+}
+.voucher-dual-pill small,
+.doc-dual-pill small {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  opacity: 0.82;
+  flex-shrink: 0;
 }
 .voucher-dual-pill:hover,
 .doc-dual-pill:hover {
@@ -1129,13 +996,13 @@ html[data-bs-theme="light"] .suggestion-caution-banner {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 0.65rem;
+  padding: 0 0.7rem;
   background-color: var(--surface-2);
   color: var(--text);
   white-space: nowrap;
   font-weight: 600;
+  line-height: 1;
   gap: 0.35rem;
-  overflow: hidden;
 }
 .voucher-dual-equal,
 .doc-dual-equal {
@@ -1161,15 +1028,17 @@ html[data-bs-theme="light"] .suggestion-caution-banner {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 0.65rem;
+  padding: 0 0.7rem;
   font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
   gap: 0.35rem;
-  overflow: hidden;
 }
 .voucher-dual-erp .voucher-check,
 .doc-dual-op .doc-check {
   margin-left: auto;
+  padding-left: 0.15rem;
+  flex-shrink: 0;
   font-weight: 800;
   font-size: 0.95rem;
   line-height: 1;
@@ -1201,7 +1070,7 @@ body.table-focus-mode {
 }
 body.table-focus-mode .sidebar-panel,
 body.table-focus-mode .app-navbar,
-body.table-focus-mode .sticky-action-bar,
+body.table-focus-mode .action-bar,
 body.table-focus-mode main > *:not(#voucherSectionCard) {
   display: none !important;
 }
@@ -1305,8 +1174,7 @@ body.table-focus-mode #voucherSectionCard tbody tr:hover {
   background-color: #17171a !important;
   border-top-color: rgba(255, 255, 255, 0.08) !important;
 }
-.voucher-pagination-bar .pagination .page-link,
-#sugPaginationList .page-link {
+.voucher-pagination-bar .pagination .page-link {
   color: var(--text);
   background-color: var(--surface);
   border-color: var(--border);
@@ -1314,27 +1182,23 @@ body.table-focus-mode #voucherSectionCard tbody tr:hover {
   font-size: 0.8125rem;
   transition: all 0.15s ease-in-out;
 }
-.voucher-pagination-bar .pagination .page-item.active .page-link,
-#sugPaginationList .page-item.active .page-link {
+.voucher-pagination-bar .pagination .page-item.active .page-link {
   background-color: var(--navy);
   border-color: var(--brand);
   color: #fff;
   font-weight: 700;
 }
-[data-bs-theme="dark"] .voucher-pagination-bar .pagination .page-item.active .page-link,
-[data-bs-theme="dark"] #sugPaginationList .page-item.active .page-link {
+[data-bs-theme="dark"] .voucher-pagination-bar .pagination .page-item.active .page-link {
   background-color: var(--brand);
   border-color: var(--brand);
   color: var(--on-accent);
 }
-.voucher-pagination-bar .pagination .page-link:hover,
-#sugPaginationList .page-link:hover {
+.voucher-pagination-bar .pagination .page-link:hover {
   background-color: var(--surface-2);
   color: var(--brand-text);
   border-color: var(--brand);
 }
-.voucher-pagination-bar .pagination .page-item.disabled .page-link,
-#sugPaginationList .page-item.disabled .page-link {
+.voucher-pagination-bar .pagination .page-item.disabled .page-link {
   color: var(--text-muted);
   opacity: 0.5;
   background-color: transparent;
@@ -1412,11 +1276,8 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.icon-square-primary { background: var(--accent-gradient); color: var(--on-accent); }
 .icon-square-gold { background: rgba(var(--accent-rgb), .10); color: var(--brand); }
 .icon-square-navy { background: rgba(79, 91, 213, .10); color: var(--navy-text); }
-.icon-square-neutral { background: var(--surface-2); color: var(--text-muted); }
-/* existing class name, used across the upload/dashboard templates — alias to the gold variant */
 /* ===================== 9. KPI numbers ===================== */
 .stat-value { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
 .stat-value.accent { color: var(--brand-text); }
@@ -1563,28 +1424,6 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
 .legend-item:hover { color: var(--text); }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 
-/* Numeric tables: tabular figures, amounts never wrap */
-.table-numeric .text-end, .table-numeric thead th { white-space: nowrap; }
-.table-numeric td { font-variant-numeric: tabular-nums; }
-.table-dash tfoot td {
-  font-weight: 700;
-  padding: .8rem 1rem;
-  border-top: 1px solid var(--border-strong);
-  border-bottom: 0;
-  background: var(--surface-2);
-}
-.table-dash tfoot td:first-child { padding-left: 1.5rem; }
-.table-dash tfoot td:last-child { padding-right: 1.5rem; }
-.table-dash .group-row th { padding-bottom: 0; border-bottom: 0; }
-.table-dash .group-head { color: var(--text); letter-spacing: .06em; }
-.table-dash .group-start { border-left: 1px solid var(--border); }
-.table-dash .row-muted td { color: var(--text-muted); }
-
-.diff-value { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
-.diff-ok { color: var(--text-muted); font-weight: 500; }
-.diff-ok i { color: var(--success); }
-.diff-off { color: var(--danger); }
-
 /* Segmented tab control */
 .segmented {
   display: inline-flex; flex-wrap: wrap; gap: 4px;
@@ -1663,30 +1502,6 @@ a.segmented-item { text-decoration: none; }
   margin-bottom: .35rem;
 }
 
-/* Voucher tables */
-.table-scroll { max-height: 560px; overflow-y: auto; }
-.table-scroll thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: inset 0 -1px 0 var(--border); }
-.table-dash th.sortable { cursor: pointer; user-select: none; }
-.table-dash th.sortable:hover { color: var(--text); }
-.guest-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.card-chip {
-  display: inline-block;
-  font-size: .75rem; font-weight: 600;
-  padding: 2px 9px; border-radius: 6px;
-  background: var(--surface-2); color: var(--text);
-  border: 1px solid var(--border);
-}
-.diagnosis {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  max-width: 300px;
-  min-width: 180px;
-  overflow: hidden;
-  font-size: .8rem; color: var(--text-muted);
-  vertical-align: middle;
-}
-
 /* Sticky action bar */
 .action-bar {
   position: sticky; bottom: 1rem; z-index: 1020;
@@ -1707,9 +1522,6 @@ a.segmented-item { text-decoration: none; }
   .action-bar > div:last-child { width: 100%; }
   .action-bar .btn { flex: 1; }
 }
-.table-compact tbody td, .table-compact thead th { padding-left: .7rem; padding-right: .7rem; }
-.table-compact .guest-name { max-width: 170px; }
-.table-compact .diagnosis { max-width: 260px; }
 @media (min-width: 992px) {
   .action-bar { flex-wrap: nowrap; }
 }
@@ -1932,7 +1744,6 @@ a.segmented-item { text-decoration: none; }
 .suggestion-inbox .table td { vertical-align: middle; }
 
 /* ===================== Suggestion card (paso 2 + Pendientes) ===================== */
-.sc-list { display: flex; flex-direction: column; gap: 1rem; padding: 1rem; }
 .sc-card {
   border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface);
   overflow: hidden; display: flex; flex-direction: column;
@@ -2030,3 +1841,19 @@ a.segmented-item { text-decoration: none; }
 .sc-why-text { font-size: .74rem; color: var(--text-muted); }
 .sc-row-ok .sc-why-text { color: var(--success); }
 .sc-row-diff .sc-why-text { color: var(--warning); font-weight: 600; }
+
+/* ===================== Borderó ERP: Filas modificadas ===================== */
+tr.erp-row-modified { cursor: pointer; }
+tr.erp-row-modified > td:first-child { box-shadow: inset 3px 0 0 var(--bs-warning); }
+.erp-modified-chip {
+  appearance: none;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.erp-modified-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
+}
+.erp-modified-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.erp-history-field { background: var(--surface-2); border-color: var(--border) !important; }
+.erp-history-field-changed { background: color-mix(in srgb, var(--warning) 8%, var(--surface)); }

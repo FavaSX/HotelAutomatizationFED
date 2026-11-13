@@ -13,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Tuple
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_time
 
@@ -26,7 +26,7 @@ from ..models import (
     ReconciliationStatus,
 )
 from .erp_corrections import CORRECTABLE_FIELDS
-from .voucher_recross import NOT_LINKED_RESULTS, fmt_clp, recross_voucher
+from .voucher_recross import NOT_LINKED_RESULTS, fmt_clp, recalculate_process_summaries, recross_voucher
 
 FIELD_LABELS = {
     "amount": "Monto",
@@ -38,9 +38,7 @@ FIELD_LABELS = {
     "invoice_number": "Factura",
     "account_code": "Cuenta",
     "reservation_number": "Reserva",
-    "room_number": "Habitación",
     "room_type": "Tipo de habitación",
-    "guest_name": "Huésped",
     "cashier_username": "Cajero",
 }
 # Optional text fields of the Bordero row: max length; an empty value clears them
@@ -48,9 +46,7 @@ OPTIONAL_TEXT_FIELDS = {
     "invoice_number": 50,
     "account_code": 50,
     "reservation_number": 50,
-    "room_number": 20,
     "room_type": 20,
-    "guest_name": 150,
     "cashier_username": 50,
 }
 CLEARABLE_FIELDS = (*OPTIONAL_TEXT_FIELDS, "transaction_time")
@@ -83,9 +79,15 @@ def payment_code_choices(currency: str) -> List[Tuple[str, str, Optional[CardTyp
     card_types = {c.id: c for c in CardType.objects.all()}
     card_by_code = {c.code: c for c in card_types.values()}
     seen: Dict[str, Optional[CardType]] = {}
+    default_codes = tuple(DEFAULT_PAYMENT_CODES.get(currency, {}).keys())
     rows = (
-        ErpTransaction.objects.filter(source_currency=currency).exclude(payment_code__isnull=True).exclude(payment_code="")
-        .values("payment_code", "card_type_id").annotate(n=Count("id")).order_by("-n")
+        ErpTransaction.objects.filter(source_currency=currency)
+        .filter(Q(card_type__isnull=False) | Q(payment_code__in=default_codes))
+        .exclude(payment_code__isnull=True)
+        .exclude(payment_code="")
+        .values("payment_code", "card_type_id")
+        .annotate(n=Count("id"))
+        .order_by("-n")
     )
     for row in rows:
         seen.setdefault(row["payment_code"], card_types.get(row["card_type_id"]))
@@ -107,13 +109,13 @@ def _card_type_for(currency: str, payment_code: str) -> Tuple[bool, Optional[Car
     return False, None
 
 
-def default_payment_code(match: CrossMatchResult) -> str:
+def default_payment_code(match: CrossMatchResult, choices: Optional[List[Tuple[str, str, Optional[CardType]]]] = None) -> str:
     """Payment code a hand-added row of this voucher should carry."""
     currency = match.process.process_currency
     tbk = match.transbank_transaction
     if currency == "CLP" and tbk and tbk.payment_modality in ("DEBIT", "PREPAID"):
         return "RCO"
-    for code, _, card in payment_code_choices(currency):
+    for code, _, card in (choices if choices is not None else payment_code_choices(currency)):
         if code != "RCO" and card and card.id == match.card_type_id:
             return code
     return ""
@@ -157,8 +159,8 @@ def _parse_value(field_name: str, raw: Any, currency: str):
         return parsed
     text = str(raw or "").strip()
     if field_name in OPTIONAL_TEXT_FIELDS:
-        if field_name in ("cashier_username", "guest_name"):
-            text = " ".join(text.upper().split())  # the Bordero writes users and designations in capitals
+        if field_name == "cashier_username":
+            text = " ".join(text.upper().split())  # the Bordero writes user codes in capitals
         return text[:OPTIONAL_TEXT_FIELDS[field_name]] or None
     if field_name == "authorization_code":
         return text.upper()
@@ -239,9 +241,18 @@ def _settle_case(match: CrossMatchResult, user, summary: str, previous_result: O
 def _settle_all(
     row: ErpTransaction, match: Optional[CrossMatchResult], user, summary: str, previous_result: Optional[str] = None
 ) -> Dict[str, Any]:
+    affected = _affected_matches(row, match)
     results = [
-        _settle_case(m, user, summary, previous_result if m is match else None) for m in _affected_matches(row, match)
+        _settle_case(m, user, summary, previous_result if m is match else None) for m in affected
     ]
+    seen_procs = {}
+    for m in affected:
+        if m.process_id:
+            seen_procs[m.process_id] = m.process
+    if row.process_id and row.process_id not in seen_procs:
+        seen_procs[row.process_id] = row.process
+    for proc in seen_procs.values():
+        recalculate_process_summaries(proc)
     return results[0] if results else {"match": None, "matched": False}
 
 
@@ -290,8 +301,10 @@ def edit_row(
     changed_fields = {f for f, _, _ in changes}
     for field_name, old_value, new_value in changes:
         setattr(row, field_name, new_value)
-        if field_name == "document_number" and row.account_code == old_value and "account_code" not in changed_fields:
-            row.account_code = new_value  # in the CLP Bordero the account is the document
+        if field_name == "document_number" and (row.account_code or "") == (old_value or "") and "account_code" not in changed_fields:
+            row.account_code = new_value  # in the Bordero, Col. D ("Cuenta") mirrors document_number
+        if field_name == "account_code" and (row.document_number or "") == (old_value or "") and "document_number" not in changed_fields and new_value:
+            row.document_number = new_value
         if field_name == "payment_code":
             _, row.card_type = _card_type_for(currency, new_value)
         history.append(_record(row, user, field_name, old_value, new_value, source, match, reason))
@@ -316,20 +329,30 @@ def add_row(match: CrossMatchResult, values: Dict[str, Any], user, reason: str =
     code = _parse_value("authorization_code", values.get("authorization_code"), currency)
     if not code:
         raise CorrectionError("Indica el Documento (código de autorización del voucher).")
-    # Bordero "Cuenta" is what the uploads store as the row's document number; it is optional
-    raw_account = str(values.get("account_code") or values.get("document_number") or "").strip()
-    document = _parse_value("document_number", raw_account, currency) if raw_account else ""
+    # Bordero Col. D ("Cuenta") is stored as both account_code and document_number; it is optional
+    raw_acc = str(values.get("account_code") or "").strip()
+    raw_doc = str(values.get("document_number") or "").strip()
+    if raw_doc and raw_acc:
+        document = _parse_value("document_number", raw_doc, currency)
+        account = _parse_value("account_code", raw_acc, currency)
+    elif raw_acc:
+        document = _parse_value("document_number", raw_acc, currency)
+        account = document
+    elif raw_doc:
+        document = _parse_value("document_number", raw_doc, currency)
+        account = document
+    else:
+        document = ""
+        account = None
     tx_date = _parse_value("transaction_date", values.get("transaction_date"), currency)
     payment_code = _parse_value("payment_code", values.get("payment_code"), currency)
     _, card_type = _card_type_for(currency, payment_code)
     optional = {f: _parse_value(f, values.get(f), currency) for f in CLEARABLE_FIELDS}
-    if not optional["room_number"] and match.room_number and match.room_number != "—":
-        optional["room_number"] = match.room_number
 
     row = ErpTransaction.objects.create(
         process=match.process,
         card_type=card_type,
-        account_code=document or None,
+        account_code=account,
         document_number=document,
         invoice_number=optional["invoice_number"] or "",
         payment_code=payment_code,
@@ -337,21 +360,22 @@ def add_row(match: CrossMatchResult, values: Dict[str, Any], user, reason: str =
         transaction_date=tx_date,
         transaction_time=optional["transaction_time"],
         cashier_username=optional["cashier_username"],
-        guest_name=optional["guest_name"],
         reservation_number=optional["reservation_number"],
         room_type=optional["room_type"],
-        room_number=optional["room_number"],
+        guest_name=None,
+        room_number=None,
         amount=amount,
         source_currency=currency,
         origin=ErpTransaction.ORIGIN_MANUAL,
         source_key=None,
     )
+    account_label = account or document or "—"
     ErpTransactionChange.objects.create(
         erp_transaction=row, field_name=ErpTransactionChange.FIELD_CREATED, old_value="",
-        new_value=f"Cta {document or '—'} · Doc {code} · {display_value('amount', amount, currency)} · {tx_date:%d/%m/%Y} · {payment_code}",
+        new_value=f"Cta {account_label} · Doc {code} · {display_value('amount', amount, currency)} · {tx_date:%d/%m/%Y} · {payment_code}",
         user=user, source=ErpTransactionChange.SOURCE_MANUAL, cross_match_result=match, reason=(reason or "").strip() or None,
     )
-    summary = f"Fila agregada a mano en ERP: Cuenta {document or '—'}, Documento {code}, {display_value('amount', amount, currency)}"
+    summary = f"Fila agregada a mano en ERP: Cuenta {account_label}, Documento {code}, {display_value('amount', amount, currency)}"
     return _settle_all(row, match, user, summary)
 
 
@@ -377,27 +401,68 @@ def soft_delete_row(row: ErpTransaction, user, reason: str, match: Optional[Cros
     return _settle_all(row, match, user, summary)
 
 
+def candidate_rows_by_match(matches: List[CrossMatchResult], limit: int = 4) -> Dict[int, List[ErpTransaction]]:
+    """
+    Batched version of `candidate_rows`: resolves ERP candidate rows for a whole page of CrossMatchResult
+    items in at most 3 SQL queries instead of N*3 queries.
+    """
+    from .column_detector import normalize_auth_code
+
+    if not matches:
+        return {}
+
+    linked_ids = {m.erp_transaction_id for m in matches if m.erp_transaction_id}
+    proposed_ids = {
+        p["erp_id"]
+        for m in matches
+        if (p := (getattr(m, "proposed_change", None) or {})) and p.get("erp_id")
+    }
+    direct_ids = linked_ids | proposed_ids
+    direct_map: Dict[int, ErpTransaction] = {}
+    if direct_ids:
+        for row in ErpTransaction.objects.filter(pk__in=direct_ids).select_related("card_type"):
+            direct_map[row.pk] = row
+
+    codes_by_currency: Dict[str, set] = {"CLP": set(), "USD": set()}
+    for m in matches:
+        curr = m.process.process_currency if m.process_id else "CLP"
+        code = normalize_auth_code(m.authorization_code or "")
+        if code:
+            codes_by_currency.setdefault(curr, set()).add(code)
+
+    rows_by_curr_and_code: Dict[Tuple[str, str], List[ErpTransaction]] = {}
+    for curr, codes in codes_by_currency.items():
+        if not codes:
+            continue
+        q = Q()
+        for c in codes:
+            q |= Q(authorization_code__icontains=c)
+        for row in ErpTransaction.objects.filter(source_currency=curr).filter(q).select_related("card_type").order_by("id"):
+            norm = normalize_auth_code(row.authorization_code or "")
+            if norm in codes:
+                rows_by_curr_and_code.setdefault((curr, norm), []).append(row)
+
+    result: Dict[int, List[ErpTransaction]] = {}
+    for m in matches:
+        seen: Dict[int, ErpTransaction] = {}
+        if m.erp_transaction_id and m.erp_transaction_id in direct_map:
+            seen[m.erp_transaction_id] = direct_map[m.erp_transaction_id]
+        proposed = (getattr(m, "proposed_change", None) or {}).get("erp_id")
+        if proposed and proposed not in seen and proposed in direct_map:
+            seen[proposed] = direct_map[proposed]
+        curr = m.process.process_currency if m.process_id else "CLP"
+        code = normalize_auth_code(m.authorization_code or "")
+        for row in rows_by_curr_and_code.get((curr, code), []):
+            if len(seen) >= limit:
+                break
+            seen.setdefault(row.pk, row)
+        result[m.pk] = list(seen.values())[:limit]
+    return result
+
+
 def candidate_rows(match: CrossMatchResult, limit: int = 4) -> List[ErpTransaction]:
     """
     ERP rows the accountant may want to fix for this case: the row it was crossed with, the row the
     suggestion points to, then rows of the same voucher code. Only active rows.
     """
-    from .column_detector import normalize_auth_code
-    from .voucher_recross import _rows_with_code
-
-    currency = match.process.process_currency
-    seen: Dict[int, ErpTransaction] = {}
-    if match.erp_transaction_id:
-        linked = ErpTransaction.objects.filter(pk=match.erp_transaction_id).select_related("card_type").first()
-        if linked:
-            seen[linked.pk] = linked
-    proposed = (getattr(match, "proposed_change", None) or {}).get("erp_id")
-    if proposed and proposed not in seen:
-        row = ErpTransaction.objects.filter(pk=proposed).select_related("card_type").first()
-        if row:
-            seen[row.pk] = row
-    for row in _rows_with_code(currency, normalize_auth_code(match.authorization_code or "")):
-        if len(seen) >= limit:
-            break
-        seen.setdefault(row.pk, row)
-    return list(seen.values())[:limit]
+    return candidate_rows_by_match([match], limit=limit).get(match.pk, [])

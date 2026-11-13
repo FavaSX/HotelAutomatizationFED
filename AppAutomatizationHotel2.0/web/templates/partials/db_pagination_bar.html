@@ -1,0 +1,67 @@
+{% load l10n %}
+{% if page.paginator.count > 0 %}
+<div class="voucher-pagination-bar border-top px-4 py-2 bg-light d-flex flex-wrap justify-content-between align-items-center gap-3">
+  <div class="small text-muted">
+    Mostrando <strong>{{ page.start_index }}–{{ page.end_index }}</strong> de <strong>{{ page.paginator.count }}</strong>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <form method="get" class="m-0 d-inline-flex align-items-center js-db-page-size-form">
+      {% for param_key, param_val in preserved_query_params %}
+      <input type="hidden" name="{{ param_key }}" value="{{ param_val }}">
+      {% endfor %}
+      <input type="hidden" name="page" value="1">
+      <select name="por_pagina"
+              class="form-select form-select-sm rounded-pill voucher-page-size-select js-db-page-size-select"
+              style="width: auto; min-width: 108px;"
+              autocomplete="off"
+              aria-label="Registros por página"
+              title="Registros por página">
+        {% for size in page.page_size_options %}
+        <option value="{{ size|unlocalize }}" {% if page.paginator.per_page == size %}selected{% endif %}>Página {{ size|unlocalize }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% if page.paginator.num_pages > 1 %}
+    <nav aria-label="{{ aria_label|default:'Paginación de resultados' }}">
+      <ul class="pagination pagination-sm mb-0 rounded-pill">
+        {% if page.has_previous %}
+        <li class="page-item">
+          <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page=1" aria-label="Primera página" title="Primera página">&laquo;</a>
+        </li>
+        <li class="page-item">
+          <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page.previous_page_number|unlocalize }}" aria-label="Anterior" title="Anterior">&lsaquo;</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link" aria-hidden="true">&laquo;</span></li>
+        <li class="page-item disabled"><span class="page-link" aria-hidden="true">&lsaquo;</span></li>
+        {% endif %}
+
+        {% for item in page.page_items %}
+          {% if item.kind == "ellipsis" %}
+          <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+          {% elif item.active %}
+          <li class="page-item active" aria-current="page"><span class="page-link">{{ item.number|unlocalize }}</span></li>
+          {% else %}
+          <li class="page-item">
+            <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ item.number|unlocalize }}">{{ item.number|unlocalize }}</a>
+          </li>
+          {% endif %}
+        {% endfor %}
+
+        {% if page.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page.next_page_number|unlocalize }}" aria-label="Siguiente" title="Siguiente">&rsaquo;</a>
+        </li>
+        <li class="page-item">
+          <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page.paginator.num_pages|unlocalize }}" aria-label="Última página" title="Última página">&raquo;</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link" aria-hidden="true">&rsaquo;</span></li>
+        <li class="page-item disabled"><span class="page-link" aria-hidden="true">&raquo;</span></li>
+        {% endif %}
+      </ul>
+    </nav>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

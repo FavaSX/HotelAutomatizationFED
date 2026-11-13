@@ -35,7 +35,7 @@ class ReconciliationStatus(models.Model):
 
 
 class SystemConfiguration(models.Model):
-    """Single-row table with the reconciliation tolerances, editable by superusers from /settings/."""
+    """Single-row table with the reconciliation tolerances, editable by authenticated users from /settings/."""
     usd_rounding_tolerance = models.DecimalField(
         max_digits=6,
         decimal_places=2,
@@ -80,7 +80,6 @@ class ReconciliationProcess(models.Model):
     execution_date = models.DateTimeField(auto_now_add=True)
     process_currency = models.CharField(max_length=5, choices=CURRENCY_CHOICES)
     accounting_period = models.CharField(max_length=50, blank=True, null=True)
-    daily_dollar_rate = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
 
     # Uploaded source Excel file names
     erp_file_name = models.CharField(max_length=255, blank=True, null=True)
@@ -96,10 +95,6 @@ class ReconciliationProcess(models.Model):
 
     # Tolerance snapshot used when this process was reconciled (USD or CLP depending on process_currency)
     tolerance_applied = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
-
-    # Generated output Excel paths
-    matched_transactions_file_path = models.CharField(max_length=255, blank=True, null=True)
-    unmatched_transactions_file_path = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         db_table = 'reconciliation_process'
@@ -199,6 +194,7 @@ class ErpTransaction(models.Model):
     reservation_number = models.CharField(max_length=50, blank=True, null=True)
     account_code = models.CharField(max_length=50, blank=True, null=True)
     payment_code = models.CharField(max_length=20, blank=True, null=True)
+    payment_description = models.CharField(max_length=100, blank=True, null=True)
     invoice_number = models.CharField(max_length=50, blank=True, null=True)
     document_number = models.CharField(max_length=50)
     authorization_code = models.CharField(max_length=50, blank=True, null=True)
@@ -333,6 +329,7 @@ class CrossMatchResult(models.Model):
     card_operator_transaction = models.ForeignKey(CardOperatorTransaction, on_delete=models.SET_NULL, null=True, blank=True)
 
     authorization_code = models.CharField(max_length=50, blank=True, null=True)
+    account_code = models.CharField(max_length=50, blank=True, null=True)
     document_number = models.CharField(max_length=50, blank=True, null=True)
     sale_date = models.DateField(blank=True, null=True)
 
@@ -348,7 +345,7 @@ class CrossMatchResult(models.Model):
     difference_usd = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     difference_clp = models.DecimalField(max_digits=14, decimal_places=2, default=0)
 
-    # System diagnosis: MATCHED, AMOUNT_MISMATCH, NOT_FOUND_IN_ERP, GHOST_IN_ERP, CARD_TYPE_MISMATCH
+    # System diagnosis: MATCHED, AMOUNT_MISMATCH, NOT_FOUND_IN_ERP, CARD_TYPE_MISMATCH
     system_result = models.CharField(max_length=40)
     system_status_detail = models.CharField(max_length=255, blank=True, null=True)
     system_observation = models.CharField(max_length=255, blank=True, null=True)
@@ -367,6 +364,64 @@ class CrossMatchResult(models.Model):
     def __str__(self):
         return f"Match {self.authorization_code} - {self.system_result}"
 
+    @staticmethod
+    def _clean_code(value) -> str:
+        val = (str(value) if value is not None else "").strip()
+        return "" if val in ("", "—") else val
+
+    @property
+    def display_account_code(self) -> str:
+        """Bordero Col. D ('Cuenta'), supporting both new rows and historical DB rows."""
+        direct = self._clean_code(self.account_code)
+        if direct:
+            return direct
+        if self.erp_transaction_id:
+            from_erp = self._clean_code(self.erp_transaction.account_code or self.erp_transaction.document_number)
+            if from_erp:
+                return from_erp
+        if self.process_id and self.process.process_currency == "USD":
+            return self._clean_code(self.document_number)
+        return ""
+
+    @property
+    def display_erp_document(self) -> str:
+        """Bordero Col. J ('Documento'), supporting both new rows and historical DB rows."""
+        if self.erp_transaction_id:
+            from_erp = self._clean_code(self.erp_transaction.authorization_code)
+            if from_erp:
+                return from_erp
+        doc = self._clean_code(self.document_number)
+        if not doc:
+            return ""
+        # Historical USD rows stored Bordero Cuenta / Op. Doc in document_number without account_code
+        if self.process_id and self.process.process_currency == "USD" and not self._clean_code(self.account_code):
+            if self.system_result != "NOT_FOUND_IN_ERP":
+                return self._clean_code(self.authorization_code)
+            return ""
+        return doc
+
+    @property
+    def display_operator_document(self) -> str:
+        """Posición por Clientes Col. C ('Documento')."""
+        if self.card_operator_transaction_id:
+            return self._clean_code(self.card_operator_transaction.document_number)
+        return ""
+
+    @property
+    def display_document_number(self) -> str:
+        """Unified 'Documento' representation for shared views and exports."""
+        erp_doc = self.display_erp_document
+        if self.process_id and self.process.process_currency == "CLP":
+            return erp_doc
+        op_doc = self.display_operator_document
+        if erp_doc and op_doc:
+            return erp_doc if erp_doc == op_doc else f"ERP: {erp_doc} / PC: {op_doc}"
+        if erp_doc:
+            return erp_doc
+        if op_doc:
+            return f"PC: {op_doc}"
+        return ""
+
 
 class AuditResolutionLog(models.Model):
     cross_match_result = models.ForeignKey(CrossMatchResult, on_delete=models.CASCADE, related_name='audit_logs')
@@ -384,3 +439,73 @@ class AuditResolutionLog(models.Model):
 
     def __str__(self):
         return f"Log #{self.id} on Match #{self.cross_match_result_id} by {self.user.username}"
+
+
+# ==========================================
+# 5. USER MANAGEMENT AND LIFECYCLE AUDIT
+# ==========================================
+
+class UserAccountStatus(models.Model):
+    """
+    Soft-delete and lifecycle metadata for Django's built-in User accounts.
+    Users are never physically deleted so protected foreign keys and audit history remain intact.
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='account_status')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_user_statuses'
+    )
+    is_soft_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='deleted_user_statuses'
+    )
+    delete_reason = models.CharField(max_length=255, blank=True, default='')
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restored_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='restored_user_statuses'
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_account_status'
+        verbose_name = 'User Account Status'
+        verbose_name_plural = 'User Account Statuses'
+
+    def __str__(self):
+        state = 'Soft-deleted' if self.is_soft_deleted else 'Active'
+        return f"{self.user.username} ({state})"
+
+
+class UserAuditLog(models.Model):
+    """Immutable audit trail for user creation, updates, password resets, soft deletes and restorations."""
+
+    ACTION_CREATED = 'CREATED'
+    ACTION_UPDATED = 'UPDATED'
+    ACTION_PASSWORD_RESET = 'PASSWORD_RESET'
+    ACTION_SOFT_DELETED = 'SOFT_DELETED'
+    ACTION_RESTORED = 'RESTORED'
+    ACTION_CHOICES = [
+        (ACTION_CREATED, 'Usuario creado'),
+        (ACTION_UPDATED, 'Datos / rol actualizado'),
+        (ACTION_PASSWORD_RESET, 'Contraseña restablecida'),
+        (ACTION_SOFT_DELETED, 'Eliminado (soft delete)'),
+        (ACTION_RESTORED, 'Usuario reactivado'),
+    ]
+
+    target_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='management_logs')
+    actor = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='performed_user_management_logs'
+    )
+    action = models.CharField(max_length=25, choices=ACTION_CHOICES)
+    details = models.CharField(max_length=500, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'user_audit_log'
+        ordering = ['-created_at', '-id']
+        verbose_name = 'User Audit Log'
+        verbose_name_plural = 'User Audit Logs'
+
+    def __str__(self):
+        return f"{self.action} on {self.target_user.username} by {self.actor.username if self.actor_id else 'system'}"

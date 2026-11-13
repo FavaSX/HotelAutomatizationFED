@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static currency_filters l10n %}
 
-{% block module_subtitle %}Módulo Pesos (CLP){% endblock %}
+{% block page_title %}Hotel Plaza San Francisco | Previsualización Pesos (CLP){% endblock %}
 
 {% block content %}
 {% include "partials/erp_corrections_notice.html" %}
@@ -220,7 +220,7 @@
     <div class="search-field">
       <i class="bi bi-search"></i>
       <input type="text" id="voucherSearchInput" class="form-control form-control-sm"
-             placeholder="Buscar voucher, código Borderó, cuenta, factura, cajero…"
+             placeholder="Buscar voucher, cuenta, documento, factura, cajero…"
              oninput="applyVoucherFilters()" aria-label="Buscar vouchers">
       <button type="button" id="btnClearVoucherSearch" class="search-clear d-none" onclick="clearVoucherSearch()" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">
         <i class="bi bi-x-circle-fill"></i>
@@ -289,9 +289,9 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4" style="min-width: 265px;">Cruce de Vouchers (TBK ⇄ Borderó)</th>
+              <th class="ps-4" style="min-width: 340px;">Cruce de Vouchers (TBK ⇄ Borderó)</th>
               <th>Medio / Marca</th>
-              <th>Cuenta / Factura</th>
+              <th>Cuenta / Documento</th>
               <th>Fecha Venta</th>
               <th>Cajero</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyMatched', 'tbk', this)">Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i></th>
@@ -326,9 +326,16 @@
               </td>
               <td><span class="badge bg-dark">{{ item.modality_label }}</span> <small class="text-muted">{{ item.card_name }}</small></td>
               <td class="small font-monospace">
-                {% if item.document_number or item.invoice_number %}
-                <span class="text-dark fw-semibold">Cta: {{ item.document_number|default:"—" }}</span>
-                {% if item.invoice_number %}<span class="text-muted d-block">Fact: {{ item.invoice_number }}</span>{% endif %}
+                {% if item.account_code and item.account_code != "—" or item.erp_authorization_code and item.erp_authorization_code != "—" or item.invoice_number and item.invoice_number != "—" %}
+                  {% if item.account_code and item.account_code != "—" %}
+                  <span class="text-dark fw-semibold">Cta: {{ item.account_code }}</span>
+                  {% endif %}
+                  {% if item.erp_authorization_code and item.erp_authorization_code != "—" %}
+                  <span class="text-dark d-block">Doc: {{ item.erp_authorization_code }}</span>
+                  {% endif %}
+                  {% if item.invoice_number and item.invoice_number != "—" %}
+                  <span class="text-muted d-block">Fact: {{ item.invoice_number }}</span>
+                  {% endif %}
                 {% else %}
                 <span class="text-muted">—</span>
                 {% endif %}
@@ -400,9 +407,9 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4" style="min-width: 265px;">Cruce de Vouchers (TBK ⇄ Borderó)</th>
+              <th class="ps-4" style="min-width: 340px;">Cruce de Vouchers (TBK ⇄ Borderó)</th>
               <th>Medio / Marca</th>
-              <th>Cuenta / Factura</th>
+              <th>Cuenta / Documento</th>
               <th>Fecha Venta</th>
               <th>Cajero</th>
               <th class="text-end th-sortable" onclick="sortVoucherTable('tbodyDiscrepancies', 'tbk', this)">Monto TBK <i class="bi bi-arrow-down-up ms-1 sort-icon opacity-50"></i></th>
@@ -431,15 +438,22 @@
                   <span class="voucher-dual-erp">
                     <small class="fw-bold">{{ item.erp_payment_code|default:"ERP" }}:</small>
                     <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
-                    <i class="bi bi-exclamation-triangle-fill text-warning ms-1"></i>
+                    <i class="bi bi-exclamation-triangle-fill text-warning ms-auto flex-shrink-0"></i>
                   </span>
                 </div>
               </td>
               <td><span class="badge bg-dark">{{ item.modality_label }}</span> <small class="text-muted">{{ item.card_name }}</small></td>
               <td class="small font-monospace">
-                {% if item.document_number or item.invoice_number %}
-                <span class="text-dark fw-semibold">Cta: {{ item.document_number|default:"—" }}</span>
-                {% if item.invoice_number %}<span class="text-muted d-block">Fact: {{ item.invoice_number }}</span>{% endif %}
+                {% if item.account_code and item.account_code != "—" or item.erp_authorization_code and item.erp_authorization_code != "—" or item.invoice_number and item.invoice_number != "—" %}
+                  {% if item.account_code and item.account_code != "—" %}
+                  <span class="text-dark fw-semibold">Cta: {{ item.account_code }}</span>
+                  {% endif %}
+                  {% if item.erp_authorization_code and item.erp_authorization_code != "—" %}
+                  <span class="text-dark d-block">Doc: {{ item.erp_authorization_code }}</span>
+                  {% endif %}
+                  {% if item.invoice_number and item.invoice_number != "—" %}
+                  <span class="text-muted d-block">Fact: {{ item.invoice_number }}</span>
+                  {% endif %}
                 {% else %}
                 <span class="text-muted">—</span>
                 {% endif %}
@@ -607,23 +621,25 @@
   </div>
 </div>
 
+{% include "partials/preview_source_tables.html" %}
+
 <!-- JSON payloads for the Level 2 suggestions modal -->
 <script type="application/json" id="jsonClpDiscrepanciesData">{{ discrepancy_vouchers|to_json|safe }}</script>
 <script type="application/json" id="jsonClpOrphansData">{{ orphan_vouchers|to_json|safe }}</script>
 <script type="application/json" id="jsonClpOutOfPeriodData">{{ out_of_period_vouchers|to_json|safe }}</script>
 
-<!-- Bottom Sticky Bar with Action Buttons -->
-<div class="p-3 rounded-4 border shadow-lg d-flex flex-wrap justify-content-between align-items-center gap-3 sticky-action-bar">
-  <div class="d-flex align-items-center gap-2 text-muted small">
-    <i class="bi bi-info-circle-fill text-primary fs-5"></i>
-    <span>Los datos anteriores fueron calculados en memoria. Si todo está conforme, haga clic en <strong>Confirmar y Guardar en BD</strong> para consolidar el cierre.</span>
+<!-- Sticky action bar -->
+<div class="action-bar">
+  <div class="d-none d-md-flex align-items-center gap-2 small text-muted min-w-0">
+    <i class="bi bi-info-circle" style="color: var(--brand);"></i>
+    <span>¿Todo conforme? Guarda el cierre, o descártalo para cargar archivos corregidos.</span>
   </div>
-  <div class="d-flex gap-2">
-    <button type="button" class="btn btn-outline-danger rounded-pill px-4 fw-semibold" data-bs-toggle="modal" data-bs-target="#discardPreviewModal">
-      <i class="bi bi-trash3 me-1"></i> Descartar
+  <div class="d-flex gap-2 flex-shrink-0">
+    <button type="button" id="btnDiscardPreview" class="btn btn-outline-secondary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#discardPreviewModal">
+      Descartar
     </button>
-    <button type="button" class="btn btn-brand rounded-pill px-5 py-2 fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#commitPreviewModal">
-      <i class="bi bi-check-circle-fill me-1"></i> Confirmar y Guardar en BD
+    <button type="button" id="btnCommitToDb" class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#commitPreviewModal">
+      <i class="bi bi-check2-circle me-1"></i> Guardar cierre
     </button>
   </div>
 </div>
@@ -635,8 +651,9 @@
 <script>document.body.dataset.previewCorrectionUrl = "{% url 'clp_preview_correction' %}"; document.body.dataset.previewCurrency = "CLP";</script>
 <script src="{% static 'js/usd_preview.js' %}?v=32"></script>
 <script src="{% static 'js/suggestion_apply.js' %}?v=3"></script>
-<script src="{% static 'js/suggestion_card.js' %}?v=6"></script>
-<script src="{% static 'js/clp_preview.js' %}?v=10"></script>
+<script src="{% static 'js/suggestion_card.js' %}?v=7"></script>
+<script src="{% static 'js/clp_preview.js' %}?v=11"></script>
+<script src="{% static 'js/source_tables_viewer.js' %}?v=5"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab
   document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {

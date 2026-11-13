@@ -1,4 +1,4 @@
-"""Superuser-only tools: tolerance settings and the test database cleanup."""
+"""Administration utilities: reconciliation tolerance settings and test database cleanup."""
 
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
@@ -14,11 +14,8 @@ def clear_test_database_view(request):
     """
     Temporary testing utility: deletes all ReconciliationProcess records (and cascades
     to all 7 child transaction/summary/validation tables) while keeping catalog tables intact.
-    Restricted to superusers so demo accounts on the public deployment cannot wipe data.
     """
-    if not request.user.is_superuser:
-        messages.error(request, "Solo un administrador puede vaciar la base de datos.")
-    elif request.method == "POST":
+    if request.method == "POST":
         process_count = ReconciliationProcess.objects.count()
         ReconciliationProcess.objects.all().delete()
         for session_key in (USD_SESSION_KEY, CLP_SESSION_KEY):
@@ -32,11 +29,7 @@ def clear_test_database_view(request):
 
 @login_required(login_url="login")
 def settings_view(request):
-    """Reconciliation tolerance settings (USD and CLP). Restricted to superusers."""
-    if not request.user.is_superuser:
-        messages.error(request, "Solo un administrador puede modificar la configuración.")
-        return redirect("dashboard")
-
+    """Reconciliation tolerance settings (USD and CLP). Accessible to all authenticated users."""
     config = SystemConfiguration.get_solo()
     form = ToleranceSettingsForm(request.POST or None, instance=config)
     if request.method == "POST" and form.is_valid():

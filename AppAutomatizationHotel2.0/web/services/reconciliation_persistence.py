@@ -21,10 +21,11 @@ from ..models import (
 )
 from ..templatetags.currency_filters import format_observation
 from .column_detector import safe_date
-from .preview_corrections import apply_pending_corrections
+from .preview_corrections import apply_pending_corrections, original_erp_rows
 from .suggestion_actions import with_proposed_change
 from .persistence_common import (
     get_model_at,
+    sync_additional_erp_movements,
     sync_bank_statement_movements,
     sync_erp_transactions_by_currency,
     sync_transbank_transactions_for_process,
@@ -147,6 +148,7 @@ def _sync_operator_transactions(
     )
     existing_map = {(o.card_type_id, o.document_number or "", o.sequence_number or ""): o for o in existing_qs}
     op_models, new_ops, ops_to_update = [], [], []
+    seen_op_update_ids: set = set()
 
     for o_data in operator_raw:
         c_model = card_types.get(o_data.get("card_code"), card_types.get("VI"))
@@ -156,8 +158,15 @@ def _sync_operator_transactions(
         key = (c_model.id, o_doc, o_seq)
         if key in existing_map:
             existing_obj = existing_map[key]
+            changed = False
             if o_auth and not existing_obj.authorization_code:
                 existing_obj.authorization_code = o_auth
+                changed = True
+            if existing_obj.process_id != process.id:
+                existing_obj.process = process
+                changed = True
+            if changed and existing_obj.pk and existing_obj.pk not in seen_op_update_ids:
+                seen_op_update_ids.add(existing_obj.pk)
                 ops_to_update.append(existing_obj)
             op_models.append(existing_obj)
         else:
@@ -178,7 +187,7 @@ def _sync_operator_transactions(
     if new_ops:
         CardOperatorTransaction.objects.bulk_create(new_ops)
     if ops_to_update:
-        CardOperatorTransaction.objects.bulk_update(ops_to_update, ["authorization_code"])
+        CardOperatorTransaction.objects.bulk_update(ops_to_update, ["process", "authorization_code"])
     return op_models
 
 
@@ -220,6 +229,16 @@ def _sync_cross_match_results(
 
     def _build_entry(v_dict: Dict[str, Any], sys_result: str, status_detail: str, default_status):
         tbk_obj = get_model_at(tbk_models, v_dict.get("tbk_index"))
+        erp_linked = v_dict.get("erp_index") is not None
+        acc_code = (
+            (v_dict.get("account_code") or "").strip()
+            or ((v_dict.get("document_number") or "").strip() if erp_linked else "")
+        )
+        if acc_code == "—":
+            acc_code = ""
+        erp_doc = (v_dict.get("erp_authorization_code") or "").strip() if erp_linked else ""
+        if erp_doc == "—":
+            erp_doc = ""
         sug_payload = with_proposed_change("USD", {**v_dict, "system_result": sys_result}, v_dict.get("suggestion"), erp_models)
         match_fields = {
             "process": process,
@@ -227,11 +246,12 @@ def _sync_cross_match_results(
             "erp_transaction": get_model_at(erp_models, v_dict.get("erp_index")),
             "card_operator_transaction": get_model_at(operator_models, v_dict.get("operator_index")),
             "authorization_code": v_dict["authorization_code"],
-            "document_number": v_dict.get("document_number", ""),
+            "account_code": acc_code,
+            "document_number": erp_doc,
             "sale_date": safe_date(v_dict.get("sale_date")),
             "merchant_location_name": v_dict.get("merchant_location", "HOTEL PLAZA SAN FRANCISCO"),
-            "guest_name": v_dict.get("guest_name", "—"),
-            "room_number": v_dict.get("room_number", "—"),
+            "guest_name": "—",
+            "room_number": "—",
             "cashier_username": v_dict.get("cashier_username", "—"),
             "transbank_amount": Decimal(str(v_dict.get("gross_amount_usd", 0.0))),
             "operator_amount_usd": Decimal(str(v_dict.get("operator_amount_usd", 0.0))),
@@ -286,7 +306,7 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         process = _get_or_save_usd_process(user, preview, tbk_raw, existing_tbk_map, card_types)
         _sync_bank_movements_and_validation(process, preview)
         erp_models = sync_erp_transactions_by_currency(
-            process, preview.get("erp_transactions", []), _card_resolver, source_currency="USD"
+            process, original_erp_rows(preview, "USD"), _card_resolver, source_currency="USD"
         )
         tbk_models = sync_transbank_transactions_for_process(
             process,
@@ -301,4 +321,5 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         _sync_cross_match_results(process, user, preview, erp_models, tbk_models, operator_models, card_types)
         # Corrections the accountant accepted in step 2: written to the ERP with history and re-cross
         apply_pending_corrections(preview, erp_models, tbk_models, user)
+        sync_additional_erp_movements(process, preview.get("additional_erp_token"), card_types)
         return process

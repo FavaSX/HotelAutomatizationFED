@@ -18,11 +18,12 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from ..models import ErpTransaction
 from .column_detector import normalize_auth_code, safe_date, safe_time
 
-# Fields the accountant may correct; their DB value replaces the Excel value on a new upload
+# Fields the accountant may correct; their DB value replaces the Excel value on a new upload.
+# Guest name and room number stay excluded to preserve Pendientes/Conciliación privacy.
 CORRECTABLE_FIELDS = (
     "amount", "authorization_code", "transaction_date", "payment_code", "document_number",
     "transaction_time", "invoice_number", "account_code", "reservation_number",
-    "room_number", "room_type", "guest_name", "cashier_username",
+    "room_type", "cashier_username",
 )
 MANUAL_SOURCE_LABEL = "Agregada a mano"
 
@@ -77,22 +78,34 @@ def _corrected_rows_by_key(source_currency: str, keys: Iterable[str]) -> Dict[st
     keys = [k for k in set(keys) if k]
     if not keys:
         return {}
-    rows = (
-        ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=keys)
-        .filter(changes__isnull=False)
-        .distinct()
-    )
-    return {row.source_key: row for row in rows}
+    result: Dict[str, ErpTransaction] = {}
+    for start in range(0, len(keys), 900):
+        chunk = keys[start : start + 900]
+        rows = (
+            ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=chunk)
+            .filter(changes__isnull=False)
+            .distinct()
+        )
+        for row in rows:
+            result[row.source_key] = row
+    return result
 
 
 def _manual_rows_for_codes(source_currency: str, voucher_codes: Optional[Set[str]]) -> List[ErpTransaction]:
     """Active hand-added rows whose authorization code belongs to one of the uploaded vouchers."""
-    if not voucher_codes:
+    clean_codes = {c for c in (voucher_codes or set()) if c}
+    if not clean_codes:
         return []
-    rows = ErpTransaction.objects.filter(
-        source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL
-    ).select_related("card_type")
-    return [r for r in rows if normalize_auth_code(r.authorization_code or "") in voucher_codes]
+    from django.db.models import Q
+    q = Q()
+    for c in clean_codes:
+        q |= Q(authorization_code__icontains=c)
+    rows = (
+        ErpTransaction.objects.filter(source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL)
+        .filter(q)
+        .select_related("card_type")
+    )
+    return [r for r in rows if normalize_auth_code(r.authorization_code or "") in clean_codes]
 
 
 def _same_sale(a_code: Any, a_amount: Any, a_date: Any, row: ErpTransaction) -> bool:
@@ -110,12 +123,22 @@ def _possible_duplicates(
     candidates = (source_key, code, amount, date, excel_label) of the uploaded rows.
     A NEW Excel row (fingerprint not in the DB) that matches a hand-added row is a possible duplicate.
     """
-    manual = list(ErpTransaction.objects.filter(source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL))
+    if not candidates:
+        return []
+    cand_dates = {d for _, _, _, raw_d, _ in candidates if (d := safe_date(raw_d)) is not None}
+    manual_qs = ErpTransaction.objects.filter(source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL)
+    if cand_dates:
+        manual_qs = manual_qs.filter(transaction_date__in=cand_dates)
+    manual = list(manual_qs)
     if not manual:
         return []
-    known = set(
-        ErpTransaction.all_objects.filter(source_key__in=[c[0] for c in candidates]).values_list("source_key", flat=True)
-    )
+    all_cand_keys = [c[0] for c in candidates if c[0]]
+    known: set = set()
+    for start in range(0, len(all_cand_keys), 900):
+        known.update(
+            ErpTransaction.all_objects.filter(source_key__in=all_cand_keys[start : start + 900])
+            .values_list("source_key", flat=True)
+        )
     duplicates = []
     for key, code, amount, tx_date, excel_label in candidates:
         if key in known:
@@ -148,7 +171,7 @@ def _clp_raw_from_model(row: ErpTransaction) -> Dict[str, Any]:
         "payment_group": "REDCOMPRA" if is_redcompra else "CREDIT",
         "payment_code": row.payment_code or "",
         "payment_description": "Red Compra" if is_redcompra else f"{row.card_type.name} $",
-        "room_number": row.room_number or "",
+        "room_number": "",
         "room_type": row.room_type or "",
         "reservation_number": row.reservation_number or "",
         "account_code": row.account_code or row.document_number,
@@ -157,7 +180,7 @@ def _clp_raw_from_model(row: ErpTransaction) -> Dict[str, Any]:
         "transaction_date": row.transaction_date.strftime("%d/%m/%Y") if row.transaction_date else None,
         "transaction_time": row.transaction_time.strftime("%H:%M:%S") if row.transaction_time else None,
         "cashier_username": row.cashier_username or "",
-        "guest_name": row.guest_name or "",
+        "guest_name": "",
         "amount": float(row.amount),
         "is_reversal": row.amount < 0,
         "reconciled": False,
@@ -217,8 +240,14 @@ def _overlay_db_values(e_data: Dict[str, Any], db_row: ErpTransaction, doc_field
     e_data["amount"] = float(db_row.amount)
     e_data["authorization_code"] = db_row.authorization_code or ""
     e_data["transaction_date"] = db_row.transaction_date.strftime("%d/%m/%Y") if db_row.transaction_date else None
+    e_data["transaction_time"] = db_row.transaction_time.strftime("%H:%M:%S") if db_row.transaction_time else None
     e_data["payment_code"] = db_row.payment_code or ""
-    e_data[doc_field] = db_row.document_number
+    e_data["account_code"] = db_row.account_code or db_row.document_number
+    e_data["invoice_number"] = db_row.invoice_number or ""
+    e_data["reservation_number"] = db_row.reservation_number or ""
+    e_data["room_type"] = db_row.room_type or ""
+    e_data["cashier_username"] = db_row.cashier_username or ""
+    e_data[doc_field] = (db_row.account_code or db_row.document_number) if doc_field == "account_code" else db_row.document_number
     if "is_reversal" in e_data:
         e_data["is_reversal"] = db_row.amount < 0
     if "payment_group" in e_data:
