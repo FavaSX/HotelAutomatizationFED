@@ -296,7 +296,7 @@
           </div>
 
           <dl class="exc-facts">
-            <div><dt>Cuenta (Col. D)</dt><dd class="font-mono">{{ e.display_account_code|default:"—" }}</dd></div>
+            <div><dt>Cuenta</dt><dd class="font-mono">{{ e.display_account_code|default:"—" }}</dd></div>
             <div><dt>Documento</dt><dd class="font-mono">{{ e.display_document_number|default:"—" }}</dd></div>
             <div><dt>Fecha venta</dt><dd>{{ e.sale_date|date:"d/m/Y"|default:"—" }}</dd></div>
             <div><dt>Cajero</dt><dd>{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}<span class="text-muted fw-normal">Sin cajero</span>{% endif %}</dd></div>
@@ -369,7 +369,7 @@
                     {% csrf_token %}
                     <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
                     <div class="col-6 col-md-4">
-                      <label class="form-label small mb-0" for="doc-{{ e.id }}-{{ row.id }}">Cuenta (Col. D)</label>
+                      <label class="form-label small mb-0" for="doc-{{ e.id }}-{{ row.id }}">Cuenta</label>
                       <input id="doc-{{ e.id }}-{{ row.id }}" name="document_number" class="form-control form-control-sm font-mono" value="{{ row.account_code|default:row.document_number }}">
                     </div>
                     <div class="col-6 col-md-4">
@@ -454,7 +454,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="nacc-{{ e.id }}">Cuenta (Col. D)</label>
+                  <label class="form-label small mb-0" for="nacc-{{ e.id }}">Cuenta</label>
                   <input id="nacc-{{ e.id }}" name="account_code" class="form-control form-control-sm font-mono" maxlength="50">
                 </div>
                 <div class="col-6 col-md-4">

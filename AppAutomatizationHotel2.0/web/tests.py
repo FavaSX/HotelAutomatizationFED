@@ -916,7 +916,8 @@ class DashboardExceptionsAndLegacyCompatTests(TestCase):
 
         exc_usd = self.client.get(reverse("exceptions"), {"moneda": "usd"})
         self.assertContains(exc_usd, "Cuenta / Doc. / Cajero")
-        self.assertContains(exc_usd, "Cuenta (Col. D)")
+        self.assertContains(exc_usd, "<dt>Cuenta</dt>")
+        self.assertNotContains(exc_usd, "(Col. D)")
         self.assertContains(exc_usd, "Cta: 1715800")
         self.assertContains(exc_usd, "Doc: 334455")
         self.assertNotContains(exc_usd, "Habitación")
