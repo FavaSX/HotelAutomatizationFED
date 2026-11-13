@@ -27,15 +27,6 @@ from .common import (
 )
 
 
-CLP_FILE_INPUTS = {
-    "erp_file": "clp_erp_file",
-    "bank_statement_file": "clp_bank_file",
-    "transbank_credit_file": "clp_tbk_credit_file",
-    "transbank_debit_file": "clp_tbk_debit_file",
-    "transbank_prepaid_file": "clp_tbk_prepaid_file",
-}
-
-
 @login_required(login_url="login")
 def clp_upload_view(request):
     """
@@ -73,12 +64,19 @@ def clp_upload_view(request):
             return redirect("clp_upload")
 
         try:
-            request.session[CLP_SESSION_KEY] = calculate_clp_preview(
+            preview = calculate_clp_preview(
                 erp_file=erp_file,
                 bank_statement_file=bank_file,
                 extra_erp_files=extra_erp_files,
                 tbk_files=tbk_files,
             )
+            request.session[CLP_SESSION_KEY] = preview
+            failed_extras = preview.get("failed_extra_erp_files") or []
+            if failed_extras:
+                messages.warning(
+                    request,
+                    f"No se pudieron leer algunos archivos ERP adicionales: {', '.join(failed_extras)}.",
+                )
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("clp_preview")
         except Exception as error:
@@ -170,7 +168,6 @@ def clp_preview_view(request):
         "orphan_vouchers": preview.get("orphan_vouchers", []),
         "out_of_period_vouchers": preview.get("out_of_period_vouchers", []),
         "cashiers": all_cashiers,
-        "all_cashiers": all_cashiers,
         "counts": preview.get("counts", {}),
         "suggestion_counts": preview.get("suggestion_counts", {}),
         "all_banks_matched": all(b.get("is_matched") for b in active_banks),
@@ -187,6 +184,7 @@ def clp_discard_view(request):
         session_key=CLP_SESSION_KEY,
         upload_url_name="clp_upload",
         info_message="La previsualización fue descartada. La base de datos no fue modificada.",
+        require_post=True,
     )
 
 

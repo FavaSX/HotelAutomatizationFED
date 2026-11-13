@@ -52,7 +52,14 @@ def usd_upload_view(request):
 
         extra_erp_files = request.FILES.getlist("usd_extra_erp_files")
         try:
-            request.session[USD_SESSION_KEY] = calculate_usd_preview(**files, extra_erp_files=extra_erp_files)
+            preview = calculate_usd_preview(**files, extra_erp_files=extra_erp_files)
+            request.session[USD_SESSION_KEY] = preview
+            failed_extras = preview.get("failed_extra_erp_files") or []
+            if failed_extras:
+                messages.warning(
+                    request,
+                    f"No se pudieron leer algunos archivos ERP adicionales: {', '.join(failed_extras)}.",
+                )
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("usd_preview")
         except Exception as error:
@@ -134,7 +141,6 @@ def usd_preview_view(request):
         "orphan_vouchers": preview.get("orphan_vouchers", []),
         "counts": counts,
         "cashiers": all_cashiers,
-        "all_cashiers": all_cashiers,
         "tolerance": preview.get("tolerance", 0.0),
         "suggestion_counts": preview.get("suggestion_counts", {}),
         "source_tables": build_preview_source_tables_context(preview, "USD"),

@@ -22,6 +22,7 @@ from .preview_corrections import apply_pending_corrections, original_erp_rows
 from .suggestion_actions import with_proposed_change
 from .persistence_common import (
     get_model_at,
+    sync_additional_erp_movements,
     sync_bank_statement_movements,
     sync_erp_transactions_by_currency,
     sync_transbank_transactions_for_process,
@@ -222,4 +223,5 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         upsert_cross_match_and_audit_logs(user, tbk_models, prepared_entries, accepted_status)
         # 7. Corrections the accountant accepted in step 2: written to the ERP with history and re-cross
         apply_pending_corrections(preview, erp_models, tbk_models, user)
+        sync_additional_erp_movements(process, preview.get("additional_erp_token"), card_types)
         return process

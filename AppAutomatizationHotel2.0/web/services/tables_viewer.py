@@ -25,16 +25,13 @@ from ..models import (
     ReconciliationStatus,
     TransbankTransaction,
 )
+from ..templatetags.currency_filters import fmt_clp
+from .clp_report_exporter import MODALITY_LABELS as CLP_MODALITY_LABELS
 from .column_detector import safe_date
 
 
 MODALITY_LABELS: Dict[str, str] = {
-    "CREDIT": "Crédito",
-    "DEBIT": "Débito",
-    "PREPAID": "Prepago",
-    "CLP_CREDIT": "Crédito",
-    "CLP_DEBIT": "Débito",
-    "CLP_PREPAID": "Prepago",
+    **CLP_MODALITY_LABELS,
     "USD_GENERAL": "Dólares (General)",
     "INTERNATIONAL_USD": "Internacional USD",
 }
@@ -89,8 +86,7 @@ def _format_erp_field_value(field_name: str, raw_val: Any) -> str:
     if field_name == "amount":
         try:
             num = Decimal(val)
-            s = f"{round(abs(num)):,}".replace(",", ".")
-            return f"{'-' if num < 0 else ''}${s}"
+            return f"-{fmt_clp(abs(num))}" if num < 0 else fmt_clp(num)
         except (InvalidOperation, ValueError):
             return val
     if field_name == "transaction_date":
@@ -677,8 +673,55 @@ def get_consultas_nav_counts() -> Dict[str, int]:
     }
 
 
-def _paginate(queryset_or_list, page_num: Any, per_page: int = 30):
-    return Paginator(queryset_or_list, per_page).get_page(page_num)
+DB_PAGE_SIZE_CHOICES: Tuple[int, ...] = (10, 25, 50, 100)
+
+
+def allowed_page_sizes(default: int = 25) -> Tuple[int, ...]:
+    """Returns allowed page-size choices, always including the view's default."""
+    return tuple(sorted({*DB_PAGE_SIZE_CHOICES, default}))
+
+
+def resolve_per_page(request, default: int = 25) -> int:
+    """Reads `por_pagina` from request.GET within allowed choices, falling back to `default`."""
+    raw = (request.GET.get("por_pagina") or "").strip() if hasattr(request, "GET") else ""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value in allowed_page_sizes(default) else default
+
+
+def build_page_items(current_page: int, total_pages: int) -> List[Dict[str, Any]]:
+    """Builds the 3-page sliding window + ellipsis items matching JS `buildPaginationItemsHtml`."""
+    if total_pages <= 1:
+        return []
+
+    start_p = max(1, current_page - 1)
+    end_p = min(total_pages, current_page + 1)
+    if start_p == 1:
+        end_p = min(total_pages, 3)
+    elif end_p == total_pages:
+        start_p = max(1, total_pages - 2)
+
+    items: List[Dict[str, Any]] = []
+    if start_p > 1:
+        items.append({"kind": "page", "number": 1, "active": False})
+        if start_p > 2:
+            items.append({"kind": "ellipsis"})
+    for p in range(start_p, end_p + 1):
+        items.append({"kind": "page", "number": p, "active": p == current_page})
+    if end_p < total_pages:
+        if end_p < total_pages - 1:
+            items.append({"kind": "ellipsis"})
+        items.append({"kind": "page", "number": total_pages, "active": False})
+    return items
+
+
+def _paginate(queryset_or_list, page_num: Any, per_page: int = 25, base_default: Optional[int] = None):
+    page = Paginator(queryset_or_list, per_page).get_page(page_num)
+    page.page_items = build_page_items(page.number, page.paginator.num_pages)
+    page.page_size_options = allowed_page_sizes(base_default if base_default is not None else per_page)
+    return page
 
 
 def _normalize_moneda(request) -> str:
@@ -687,7 +730,7 @@ def _normalize_moneda(request) -> str:
 
 
 def build_cruce_view_data(
-    request, process: Optional[ReconciliationProcess] = None, per_page: int = 30
+    request, process: Optional[ReconciliationProcess] = None, per_page: int = 25
 ) -> Dict[str, Any]:
     """Builds filtered, paginated CrossMatchResult table context for one closing or consolidated."""
     q = (request.GET.get("q") or "").strip()
@@ -745,7 +788,8 @@ def build_cruce_view_data(
     total_count = agg["total"] or 0
     matched_count = agg["matched"] or 0
 
-    page = _paginate(qs, request.GET.get("page"), per_page=per_page)
+    effective_per_page = resolve_per_page(request, default=per_page)
+    page = _paginate(qs, request.GET.get("page"), per_page=effective_per_page, base_default=per_page)
     linked_erp_by_id = {
         item.erp_transaction_id: item.erp_transaction
         for item in page.object_list
@@ -794,7 +838,7 @@ def build_cruce_view_data(
 
 
 def build_erp_view_data(
-    request, process: Optional[ReconciliationProcess] = None, per_page: int = 30
+    request, process: Optional[ReconciliationProcess] = None, per_page: int = 25
 ) -> Dict[str, Any]:
     """Builds filtered, paginated Borderó ERP table context for one closing or consolidated."""
     q = (request.GET.get("q") or "").strip()
@@ -841,7 +885,13 @@ def build_erp_view_data(
         qs = qs.filter(_has_modifications=True)
     elif origen in (ErpTransaction.ORIGIN_EXCEL, ErpTransaction.ORIGIN_MANUAL):
         qs = qs.filter(origin=origen)
-    if tarjeta:
+    if tarjeta == "ALL_CARDS":
+        qs = qs.filter(Q(card_type__isnull=False) | Q(payment_code__in=("RCO", "RC", "REDCOMPRA")))
+    elif tarjeta == "RCO":
+        qs = qs.filter(payment_code__in=("RCO", "RC", "REDCOMPRA"))
+    elif tarjeta == "NON_CARD":
+        qs = qs.filter(card_type__isnull=True).exclude(payment_code__in=("RCO", "RC", "REDCOMPRA"))
+    elif tarjeta:
         qs = qs.filter(card_type__code=tarjeta)
     if q:
         qs = qs.filter(
@@ -855,6 +905,7 @@ def build_erp_view_data(
             | Q(invoice_number__icontains=q)
             | Q(cashier_username__icontains=q)
             | Q(payment_code__icontains=q)
+            | Q(payment_description__icontains=q)
         )
 
     agg = qs.aggregate(
@@ -866,7 +917,8 @@ def build_erp_view_data(
         total_clp=Sum("amount"),
     )
 
-    page = _paginate(qs, request.GET.get("page"), per_page=per_page)
+    effective_per_page = resolve_per_page(request, default=per_page)
+    page = _paginate(qs, request.GET.get("page"), per_page=effective_per_page, base_default=per_page)
     mod_rows_by_id = {row.id: row for row in page.object_list if row._has_modifications}
     erp_history_map = _fetch_erp_history_map_for_rows(mod_rows_by_id, include_guest_and_room=True)
     for row in page.object_list:
@@ -912,7 +964,7 @@ def build_erp_view_data(
 
 
 def build_bank_view_data(
-    request, process: Optional[ReconciliationProcess] = None, per_page: int = 30
+    request, process: Optional[ReconciliationProcess] = None, per_page: int = 25
 ) -> Dict[str, Any]:
     """Builds filtered, paginated Cartola Bancaria table context for one closing or consolidated."""
     q = (request.GET.get("q") or "").strip()
@@ -961,7 +1013,8 @@ def build_bank_view_data(
         tbk=Count("id", filter=Q(is_transbank_deposit=True) | Q(_is_matched_val=True)),
     )
 
-    page = _paginate(qs, request.GET.get("page"), per_page=per_page)
+    effective_per_page = resolve_per_page(request, default=per_page)
+    page = _paginate(qs, request.GET.get("page"), per_page=effective_per_page, base_default=per_page)
     for row in page.object_list:
         row.row_is_usd = (row.process.process_currency == "USD")
         if row._is_matched_val:
@@ -991,7 +1044,7 @@ def build_bank_view_data(
 
 
 def build_operator_view_data(
-    request, process: Optional[ReconciliationProcess] = None, per_page: int = 30
+    request, process: Optional[ReconciliationProcess] = None, per_page: int = 25
 ) -> Dict[str, Any]:
     """Builds filtered, paginated Posición por Clientes (USD) context for one closing or consolidated."""
     q = (request.GET.get("q") or "").strip()
@@ -1037,7 +1090,8 @@ def build_operator_view_data(
         total_usd=Sum("foreign_currency_amount"),
     )
 
-    page = _paginate(qs, request.GET.get("page"), per_page=per_page)
+    effective_per_page = resolve_per_page(request, default=per_page)
+    page = _paginate(qs, request.GET.get("page"), per_page=effective_per_page, base_default=per_page)
     for row in page.object_list:
         row.op_used = bool(row._has_cm_link or (row.authorization_code or "").strip())
 
@@ -1062,7 +1116,7 @@ def build_operator_view_data(
 
 
 def build_transbank_view_data(
-    request, process: Optional[ReconciliationProcess] = None, per_page: int = 30
+    request, process: Optional[ReconciliationProcess] = None, per_page: int = 25
 ) -> Dict[str, Any]:
     """Builds filtered, paginated Transbank Detallado table context for one closing or consolidated."""
     q = (request.GET.get("q") or "").strip()
@@ -1124,7 +1178,8 @@ def build_transbank_view_data(
         net_usd=Sum("net_deposit_amount", filter=Q(process__process_currency="USD")),
     )
 
-    page = _paginate(qs, request.GET.get("page"), per_page=per_page)
+    effective_per_page = resolve_per_page(request, default=per_page)
+    page = _paginate(qs, request.GET.get("page"), per_page=effective_per_page, base_default=per_page)
     resolved_ids = [
         row.id
         for row in page.object_list

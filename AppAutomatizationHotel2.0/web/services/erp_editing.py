@@ -13,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Tuple
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -26,7 +26,7 @@ from ..models import (
     ReconciliationStatus,
 )
 from .erp_corrections import CORRECTABLE_FIELDS
-from .voucher_recross import NOT_LINKED_RESULTS, fmt_clp, recross_voucher
+from .voucher_recross import NOT_LINKED_RESULTS, fmt_clp, recalculate_process_summaries, recross_voucher
 
 FIELD_LABELS = {
     "amount": "Monto",
@@ -64,9 +64,15 @@ def payment_code_choices(currency: str) -> List[Tuple[str, str, Optional[CardTyp
     card_types = {c.id: c for c in CardType.objects.all()}
     card_by_code = {c.code: c for c in card_types.values()}
     seen: Dict[str, Optional[CardType]] = {}
+    default_codes = tuple(DEFAULT_PAYMENT_CODES.get(currency, {}).keys())
     rows = (
-        ErpTransaction.objects.filter(source_currency=currency).exclude(payment_code__isnull=True).exclude(payment_code="")
-        .values("payment_code", "card_type_id").annotate(n=Count("id")).order_by("-n")
+        ErpTransaction.objects.filter(source_currency=currency)
+        .filter(Q(card_type__isnull=False) | Q(payment_code__in=default_codes))
+        .exclude(payment_code__isnull=True)
+        .exclude(payment_code="")
+        .values("payment_code", "card_type_id")
+        .annotate(n=Count("id"))
+        .order_by("-n")
     )
     for row in rows:
         seen.setdefault(row["payment_code"], card_types.get(row["card_type_id"]))
@@ -88,13 +94,13 @@ def _card_type_for(currency: str, payment_code: str) -> Tuple[bool, Optional[Car
     return False, None
 
 
-def default_payment_code(match: CrossMatchResult) -> str:
+def default_payment_code(match: CrossMatchResult, choices: Optional[List[Tuple[str, str, Optional[CardType]]]] = None) -> str:
     """Payment code a hand-added row of this voucher should carry."""
     currency = match.process.process_currency
     tbk = match.transbank_transaction
     if currency == "CLP" and tbk and tbk.payment_modality in ("DEBIT", "PREPAID"):
         return "RCO"
-    for code, _, card in payment_code_choices(currency):
+    for code, _, card in (choices if choices is not None else payment_code_choices(currency)):
         if code != "RCO" and card and card.id == match.card_type_id:
             return code
     return ""
@@ -203,9 +209,18 @@ def _settle_case(match: CrossMatchResult, user, summary: str, previous_result: O
 def _settle_all(
     row: ErpTransaction, match: Optional[CrossMatchResult], user, summary: str, previous_result: Optional[str] = None
 ) -> Dict[str, Any]:
+    affected = _affected_matches(row, match)
     results = [
-        _settle_case(m, user, summary, previous_result if m is match else None) for m in _affected_matches(row, match)
+        _settle_case(m, user, summary, previous_result if m is match else None) for m in affected
     ]
+    seen_procs = {}
+    for m in affected:
+        if m.process_id:
+            seen_procs[m.process_id] = m.process
+    if row.process_id and row.process_id not in seen_procs:
+        seen_procs[row.process_id] = row.process
+    for proc in seen_procs.values():
+        recalculate_process_summaries(proc)
     return results[0] if results else {"match": None, "matched": False}
 
 
@@ -329,27 +344,68 @@ def soft_delete_row(row: ErpTransaction, user, reason: str, match: Optional[Cros
     return _settle_all(row, match, user, summary)
 
 
+def candidate_rows_by_match(matches: List[CrossMatchResult], limit: int = 4) -> Dict[int, List[ErpTransaction]]:
+    """
+    Batched version of `candidate_rows`: resolves ERP candidate rows for a whole page of CrossMatchResult
+    items in at most 3 SQL queries instead of N*3 queries.
+    """
+    from .column_detector import normalize_auth_code
+
+    if not matches:
+        return {}
+
+    linked_ids = {m.erp_transaction_id for m in matches if m.erp_transaction_id}
+    proposed_ids = {
+        p["erp_id"]
+        for m in matches
+        if (p := (getattr(m, "proposed_change", None) or {})) and p.get("erp_id")
+    }
+    direct_ids = linked_ids | proposed_ids
+    direct_map: Dict[int, ErpTransaction] = {}
+    if direct_ids:
+        for row in ErpTransaction.objects.filter(pk__in=direct_ids).select_related("card_type"):
+            direct_map[row.pk] = row
+
+    codes_by_currency: Dict[str, set] = {"CLP": set(), "USD": set()}
+    for m in matches:
+        curr = m.process.process_currency if m.process_id else "CLP"
+        code = normalize_auth_code(m.authorization_code or "")
+        if code:
+            codes_by_currency.setdefault(curr, set()).add(code)
+
+    rows_by_curr_and_code: Dict[Tuple[str, str], List[ErpTransaction]] = {}
+    for curr, codes in codes_by_currency.items():
+        if not codes:
+            continue
+        q = Q()
+        for c in codes:
+            q |= Q(authorization_code__icontains=c)
+        for row in ErpTransaction.objects.filter(source_currency=curr).filter(q).select_related("card_type").order_by("id"):
+            norm = normalize_auth_code(row.authorization_code or "")
+            if norm in codes:
+                rows_by_curr_and_code.setdefault((curr, norm), []).append(row)
+
+    result: Dict[int, List[ErpTransaction]] = {}
+    for m in matches:
+        seen: Dict[int, ErpTransaction] = {}
+        if m.erp_transaction_id and m.erp_transaction_id in direct_map:
+            seen[m.erp_transaction_id] = direct_map[m.erp_transaction_id]
+        proposed = (getattr(m, "proposed_change", None) or {}).get("erp_id")
+        if proposed and proposed not in seen and proposed in direct_map:
+            seen[proposed] = direct_map[proposed]
+        curr = m.process.process_currency if m.process_id else "CLP"
+        code = normalize_auth_code(m.authorization_code or "")
+        for row in rows_by_curr_and_code.get((curr, code), []):
+            if len(seen) >= limit:
+                break
+            seen.setdefault(row.pk, row)
+        result[m.pk] = list(seen.values())[:limit]
+    return result
+
+
 def candidate_rows(match: CrossMatchResult, limit: int = 4) -> List[ErpTransaction]:
     """
     ERP rows the accountant may want to fix for this case: the row it was crossed with, the row the
     suggestion points to, then rows of the same voucher code. Only active rows.
     """
-    from .column_detector import normalize_auth_code
-    from .voucher_recross import _rows_with_code
-
-    currency = match.process.process_currency
-    seen: Dict[int, ErpTransaction] = {}
-    if match.erp_transaction_id:
-        linked = ErpTransaction.objects.filter(pk=match.erp_transaction_id).select_related("card_type").first()
-        if linked:
-            seen[linked.pk] = linked
-    proposed = (getattr(match, "proposed_change", None) or {}).get("erp_id")
-    if proposed and proposed not in seen:
-        row = ErpTransaction.objects.filter(pk=proposed).select_related("card_type").first()
-        if row:
-            seen[row.pk] = row
-    for row in _rows_with_code(currency, normalize_auth_code(match.authorization_code or "")):
-        if len(seen) >= limit:
-            break
-        seen.setdefault(row.pk, row)
-    return list(seen.values())[:limit]
+    return candidate_rows_by_match([match], limit=limit).get(match.pk, [])

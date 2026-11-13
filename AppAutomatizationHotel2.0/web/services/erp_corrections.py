@@ -73,22 +73,34 @@ def _corrected_rows_by_key(source_currency: str, keys: Iterable[str]) -> Dict[st
     keys = [k for k in set(keys) if k]
     if not keys:
         return {}
-    rows = (
-        ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=keys)
-        .filter(changes__isnull=False)
-        .distinct()
-    )
-    return {row.source_key: row for row in rows}
+    result: Dict[str, ErpTransaction] = {}
+    for start in range(0, len(keys), 900):
+        chunk = keys[start : start + 900]
+        rows = (
+            ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=chunk)
+            .filter(changes__isnull=False)
+            .distinct()
+        )
+        for row in rows:
+            result[row.source_key] = row
+    return result
 
 
 def _manual_rows_for_codes(source_currency: str, voucher_codes: Optional[Set[str]]) -> List[ErpTransaction]:
     """Active hand-added rows whose authorization code belongs to one of the uploaded vouchers."""
-    if not voucher_codes:
+    clean_codes = {c for c in (voucher_codes or set()) if c}
+    if not clean_codes:
         return []
-    rows = ErpTransaction.objects.filter(
-        source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL
-    ).select_related("card_type")
-    return [r for r in rows if normalize_auth_code(r.authorization_code or "") in voucher_codes]
+    from django.db.models import Q
+    q = Q()
+    for c in clean_codes:
+        q |= Q(authorization_code__icontains=c)
+    rows = (
+        ErpTransaction.objects.filter(source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL)
+        .filter(q)
+        .select_related("card_type")
+    )
+    return [r for r in rows if normalize_auth_code(r.authorization_code or "") in clean_codes]
 
 
 def _same_sale(a_code: Any, a_amount: Any, a_date: Any, row: ErpTransaction) -> bool:
@@ -106,12 +118,22 @@ def _possible_duplicates(
     candidates = (source_key, code, amount, date, excel_label) of the uploaded rows.
     A NEW Excel row (fingerprint not in the DB) that matches a hand-added row is a possible duplicate.
     """
-    manual = list(ErpTransaction.objects.filter(source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL))
+    if not candidates:
+        return []
+    cand_dates = {d for _, _, _, raw_d, _ in candidates if (d := safe_date(raw_d)) is not None}
+    manual_qs = ErpTransaction.objects.filter(source_currency=source_currency, origin=ErpTransaction.ORIGIN_MANUAL)
+    if cand_dates:
+        manual_qs = manual_qs.filter(transaction_date__in=cand_dates)
+    manual = list(manual_qs)
     if not manual:
         return []
-    known = set(
-        ErpTransaction.all_objects.filter(source_key__in=[c[0] for c in candidates]).values_list("source_key", flat=True)
-    )
+    all_cand_keys = [c[0] for c in candidates if c[0]]
+    known: set = set()
+    for start in range(0, len(all_cand_keys), 900):
+        known.update(
+            ErpTransaction.all_objects.filter(source_key__in=all_cand_keys[start : start + 900])
+            .values_list("source_key", flat=True)
+        )
     duplicates = []
     for key, code, amount, tx_date, excel_label in candidates:
         if key in known:

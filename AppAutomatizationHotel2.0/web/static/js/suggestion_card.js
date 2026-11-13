@@ -26,24 +26,15 @@ const SC_RESULT_LABELS = {
   MATCHED: 'Cuadrado'
 };
 
-function scEsc(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+const scEsc = window.escapeHtmlStr;
 
 function scPresent(value) {
   const s = String(value ?? '').trim();
   return Boolean(s && !s.startsWith('—'));
 }
 
-function scClp(value) {
-  return '$' + Math.round(Number(value) || 0).toLocaleString('es-CL');
-}
-
-function scUsd(value) {
-  return 'US$ ' + (Number(value) || 0).toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+const scClp = window.formatClpClient;
+const scUsd = window.formatUsdClient;
 
 function scNormCode(value) {
   return String(value ?? '').trim().toUpperCase().replace(/^0+/, '');

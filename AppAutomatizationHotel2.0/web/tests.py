@@ -979,7 +979,7 @@ class ErpCorrectionsSurviveReuploadTests(TestCase):
         for row in rows:
             self.assertEqual(row.origin, ErpTransaction.ORIGIN_EXCEL)
             self.assertEqual(row.source_key, erp_source_key(
-                "CLP", row.document_number, row.invoice_number, row.authorization_code,
+                row.source_currency or "CLP", row.document_number, row.invoice_number, row.authorization_code,
                 row.amount, row.transaction_date, row.transaction_time,
             ))
 
@@ -1512,7 +1512,8 @@ class ReadOnlyTableVisualizationPanelsTests(TestCase):
             self.assertNotContains(html, "solo lectura")
             self.assertNotContains(html, "Solo visualización")
             self.assertNotContains(html, "solo visualización")
-            self.assertNotContains(html, 'method="post"')
+            main_section = html.content.decode("utf-8").split("<main", 1)[-1]
+            self.assertNotIn('method="post"', main_section.lower())
             if url == erp_url:
                 self.assertContains(html, "Huésped")
                 self.assertContains(html, "Habitación")
@@ -2051,3 +2052,273 @@ class UserManagementTests(TestCase):
         guest_client.post(reverse("login"), {"username": "jperez", "password": "NuevaClave!9876"})
         self.assertEqual(guest_client.get(reverse("dashboard")).status_code, 200)
         self.assertEqual(guest_client.get(reverse("users_manage")).status_code, 200)
+
+
+class FullErpIngestionAndCumulativeUploadTests(TestCase):
+    """
+    Verifies that ALL valid movement rows from a Borderó ERP file (USD cards, CLP cards,
+    cash, room charges HOA, taxes IVA including 1-digit shifted Valor rows, restaurant/bar
+    charges, and same-second duplicate room charges) are persisted in ErpTransaction, and
+    that cumulative multi-month ERP uploads deduplicate cleanly while preserving historical
+    closings, manual edits, and soft-deletes.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user("auditor_full_erp", password="ClaveFuerte!2026")
+        self.client.force_login(self.user)
+
+    def test_all_bordero_movements_stored_including_shifted_and_same_second_rows(self):
+        # build_clp_files() contains:
+        # - 1 CNBQ food charge (row 6: 20900)
+        # - 8 CLP card payments (MC$ + RCO)
+        # - 1 USD card payment (VUS$: -107984)
+        # - 1 Cash payment (E$: -50000)
+        # Plus we add a 1-digit shifted IVA row (col I=None, col J=0, col K="UH: 822", col L="05/09/2026")
+        # and two identical same-second CNBQ charges in the same room.
+        header = {
+            "A": "Hab", "B": "Tipo Hab", "C": "Reserva", "D": "Cuenta", "E": "Cod. Deb.", "F": "Descripción",
+            "H": "Factura", "I": "Valor", "J": "Documento", "K": "Fecha", "L": "Hora", "M": "Usuario", "N": "Designación",
+        }
+        rows = {
+            1: {"A": "HOTELERA SAN FRANCISCO S.A"},
+            2: {"A": "Cargos de Débitos y Créditos"},
+            4: {"A": "Periodo de:", "B": "04/09/2026", "C": "hasta", "D": "07/09/2026"},
+            5: header,
+            # Standard non-card charge
+            6: {"A": 1002, "D": 1785942, "E": "HOA", "F": "Hospedaje Automático", "I": 117985, "J": "UH: 1002", "K": "05/09/2026", "L": "02:30:10", "M": "NCAMPOS", "N": "CARLOS SOTO"},
+            # Shifted 1-digit Valor=0 row (I is empty, J=0, K=Doc, L=Fecha, M=Hora, N=Usuario, O=Designación)
+            7: {"A": 1002, "D": 1785942, "E": "IVA", "F": "IVA Débito Fiscal", "G": 259901, "J": 0, "K": "UH: 1002", "L": "05/09/2026", "M": "02:30:11", "N": "NCAMPOS", "O": "CARLOS SOTO"},
+            # Two identical same-second CNBQ charges in the same room (2 guests sharing room 1103)
+            8: {"A": 1103, "D": 1785999, "E": "CNBQ", "F": "1/2 Pension Alimentos", "I": 22900, "J": "UH: 1103", "K": "05/09/2026", "L": "01:12:11", "M": "NCAMPOS", "N": "HUESPED UNO"},
+            9: {"A": 1103, "D": 1785999, "E": "CNBQ", "F": "1/2 Pension Alimentos", "I": 22900, "J": "UH: 1103", "K": "05/09/2026", "L": "01:12:11", "M": "NCAMPOS", "N": "HUESPED DOS"},
+            10: {"A": "Total VHF:", "B": 163785},
+        }
+        for offset, (hab, cuenta, cod, desc, factura, valor, documento, fecha, hora, usuario, huesped) in enumerate(BORDERO_PAYMENTS):
+            rows[11 + offset] = {
+                "A": hab, "D": cuenta, "E": cod, "F": desc, "G": factura, "I": valor,
+                "J": documento, "K": fecha, "L": hora, "M": usuario, "N": huesped,
+            }
+
+        files = build_clp_files()
+        files["erp_file"] = _xlsx("BORDERO COMPLETO.xlsx", rows)
+        preview = calculate_clp_preview(**files)
+        # In-memory CLP preview only cross-matches the 8 CLP card rows
+        self.assertEqual(len(preview["erp_transactions"]), 8)
+
+        process = commit_clp_preview_to_database(self.user, preview)
+        # Database stores ALL 14 valid movements (8 CLP cards + 1 USD card + 1 E$ cash + 1 HOA + 1 shifted IVA + 2 same-second CNBQ)
+        self.assertEqual(ErpTransaction.objects.count(), 14)
+        self.assertTrue(ErpTransaction.objects.filter(payment_code="HOA", payment_description="Hospedaje Automático").exists())
+        self.assertTrue(ErpTransaction.objects.filter(payment_code="IVA", payment_description="IVA Débito Fiscal", amount=Decimal("0.00")).exists())
+        self.assertTrue(ErpTransaction.objects.filter(payment_code="E$", payment_description="Efectivo $", amount=Decimal("-50000.00")).exists())
+        self.assertTrue(ErpTransaction.objects.filter(payment_code="VUS$", source_currency="USD", amount=Decimal("107984.00")).exists())
+        self.assertEqual(ErpTransaction.objects.filter(payment_code="CNBQ", account_code="1785999").count(), 2)
+
+        # Consolidated ERP table renders payment_description and supports ALL_CARDS / RCO / NON_CARD filters
+        resp_all = self.client.get(reverse("consolidated_erp"))
+        self.assertContains(resp_all, "Hospedaje Automático")
+        self.assertContains(resp_all, "IVA Débito Fiscal")
+        self.assertContains(resp_all, "Red Compra")
+
+        resp_cards = self.client.get(reverse("consolidated_erp"), {"tarjeta": "ALL_CARDS"})
+        self.assertEqual(resp_cards.context["kpis"]["total"], 9)  # 8 CLP cards + 1 USD card
+
+        resp_rco = self.client.get(reverse("consolidated_erp"), {"tarjeta": "RCO"})
+        self.assertEqual(resp_rco.context["kpis"]["total"], 7)
+
+        resp_non_card = self.client.get(reverse("consolidated_erp"), {"tarjeta": "NON_CARD"})
+        self.assertEqual(resp_non_card.context["kpis"]["total"], 5)  # HOA + IVA + 2 CNBQ + E$
+
+    def test_cumulative_multi_month_upload_preserves_closings_edits_and_reconciles_pending(self):
+        # Month 1 (September): commit initial CLP closing
+        sep_files = build_clp_files()
+        sep_process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**sep_files))
+        initial_total = ErpTransaction.all_objects.count()
+        self.assertEqual(initial_total, 11)  # 8 CLP cards + 1 CNBQ + 1 VUS$ + 1 E$
+
+        # Reconciled row in Month 1 (405544) belongs to sep_process with reconciled=True
+        rec_row = ErpTransaction.objects.get(authorization_code="405544")
+        self.assertTrue(rec_row.reconciled)
+        self.assertEqual(rec_row.process_id, sep_process.id)
+
+        # Manually edit 007626 in Month 1 so it becomes reconciled & corrected
+        case_7626 = sep_process.cross_match_results.get(authorization_code="007626")
+        edit_row(case_7626.erp_transaction, {"amount": "115204"}, self.user, match=case_7626, reason="Ajuste mes 1")
+
+        # Soft-delete the E$ cash row in Month 1
+        cash_row = ErpTransaction.objects.get(payment_code="E$")
+        cash_row.is_deleted = True
+        cash_row.save()
+
+        # Also add an unreconciled September card sale (auth 909090) that wasn't in September's Transbank settlement
+        sep_plus_pending = BORDERO_PAYMENTS + [
+            (501, 1789001, "MC$", "Master Card $", 54001, -75000, 909090, "07/09/2026", "21:00:00", "CDAZA", "PEDRO PENDIENTE"),
+        ]
+        sep_files_with_pending = build_clp_files()
+        sep_files_with_pending["erp_file"] = build_bordero(sep_plus_pending)
+        commit_clp_preview_to_database(self.user, calculate_clp_preview(**sep_files_with_pending))
+        pending_row = ErpTransaction.objects.get(authorization_code="909090")
+        self.assertFalse(pending_row.reconciled)
+        self.assertEqual(pending_row.process_id, sep_process.id)
+
+        # Month 2 (October): User uploads a CUMULATIVE Borderó containing all September rows + new October rows,
+        # and a new October Transbank settlement that settles both 909090 (from Sep) and 808080 (from Oct).
+        cumulative_payments = sep_plus_pending + [
+            (701, 1795001, "MC$", "Master Card $", 61001, -92000, 808080, "15/10/2026", "14:20:00", "SCORREA", "CLIENTE OCTUBRE"),
+            (701, 1795001, "HOA", "Hospedaje Automático", None, 92000, "UH: 701", "15/10/2026", "02:10:00", "NCAMPOS", "CLIENTE OCTUBRE"),
+        ]
+        oct_credit_sales = [
+            ("07 septiembre 2026", "HOTEL PLAZA SAN FRANCISCO", 75000, "Venta $", "S/C", 75000, 1500, 285, "5525 61** **** 5410", "909090"),
+            ("15 octubre 2026", "HOTEL PLAZA SAN FRANCISCO", 92000, "Venta $", "S/C", 92000, 1840, 350, "5525 61** **** 5410", "808080"),
+        ]
+        oct_files = {
+            "erp_file": build_bordero(cumulative_payments),
+            "bank_statement_file": build_cartola([
+                ("16/10/2026", "Pago: Abono Comer. Tc Tbk 0966893109", _deposit(oct_credit_sales)),
+            ]),
+            "transbank_credit_file": build_tbk_settlement("CREDITOS OCT.xlsx", "Crédito", oct_credit_sales),
+            "transbank_debit_file": build_tbk_settlement("DEBITOS OCT.xlsx", "Débito", []),
+            "transbank_prepaid_file": build_tbk_settlement("PREPAGO OCT.xlsx", "Prepago", []),
+        }
+        oct_process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**oct_files))
+        self.assertNotEqual(oct_process.id, sep_process.id)
+
+        # 1) Total rows in DB increased by ONLY the 2 new October rows (12 -> 14), zero duplicates!
+        self.assertEqual(ErpTransaction.all_objects.count(), 14)
+
+        # 2) Historical reconciled row 405544 kept reconciled=True AND stayed in sep_process
+        rec_row.refresh_from_db()
+        self.assertTrue(rec_row.reconciled)
+        self.assertEqual(rec_row.process_id, sep_process.id)
+
+        # 3) Edited row 7626 kept its corrected amount 115204.00 and stayed in sep_process
+        edited_row = ErpTransaction.objects.get(authorization_code="7626")
+        self.assertEqual(edited_row.amount, Decimal("115204.00"))
+        self.assertTrue(edited_row.reconciled)
+        self.assertEqual(edited_row.process_id, sep_process.id)
+
+        # 4) Soft-deleted E$ row stayed deleted
+        cash_row.refresh_from_db()
+        self.assertTrue(cash_row.is_deleted)
+
+        # 5) Previously pending row 909090 is now reconciled in oct_process!
+        pending_row.refresh_from_db()
+        self.assertTrue(pending_row.reconciled)
+        self.assertEqual(pending_row.process_id, oct_process.id)
+
+        # 6) New October rows (808080 and HOA) belong to oct_process
+        oct_card = ErpTransaction.objects.get(authorization_code="808080")
+        self.assertTrue(oct_card.reconciled)
+        self.assertEqual(oct_card.process_id, oct_process.id)
+        oct_hoa = ErpTransaction.objects.get(payment_code="HOA", account_code="1795001")
+        self.assertEqual(oct_hoa.process_id, oct_process.id)
+
+
+class UnifiedPaginationTests(TestCase):
+    """
+    Verifies that Consultas tables (consolidated views, closing detail, closings list, audit trail)
+    and Step 2 loaded source tables share the same page-size selector + windowed numbered pagination UI.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user("auditor_pag", password="ClaveFuerte!2026")
+        self.client.force_login(self.user)
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        # Ensure we have > 30 ERP rows so 10/page produces 4+ pages and 30/page produces 2 pages
+        extra = [
+            ErpTransaction(
+                process=self.process,
+                account_code=f"9900{idx:03d}",
+                document_number=f"9900{idx:03d}",
+                authorization_code=f"AUTH{idx:03d}",
+                payment_code="HOA",
+                payment_description="Hospedaje Automático",
+                amount=Decimal("10000.00"),
+                source_currency="CLP",
+                reconciled=False,
+                origin=ErpTransaction.ORIGIN_EXCEL,
+                source_key=f"pag-test-key-{idx}",
+            )
+            for idx in range(25)
+        ]
+        ErpTransaction.objects.bulk_create(extra)
+
+    def test_build_page_items_window_and_ellipses(self):
+        from .services.tables_viewer import build_page_items
+
+        self.assertEqual(build_page_items(1, 1), [])
+        two_pages = build_page_items(1, 2)
+        self.assertEqual([i["number"] for i in two_pages], [1, 2])
+        self.assertTrue(two_pages[0]["active"])
+
+        mid = build_page_items(5, 10)
+        # Expect: 1, ..., 4, 5(active), 6, ..., 10
+        self.assertEqual(
+            [(i["kind"], i.get("number"), i.get("active", False)) for i in mid],
+            [
+                ("page", 1, False),
+                ("ellipsis", None, False),
+                ("page", 4, False),
+                ("page", 5, True),
+                ("page", 6, False),
+                ("ellipsis", None, False),
+                ("page", 10, False),
+            ],
+        )
+
+    def test_consultas_pagination_bar_supports_page_size_and_numbered_links(self):
+        # Total rows = 11 (from build_clp_files) + 25 = 36 rows
+        resp = self.client.get(reverse("consolidated_erp"), {"por_pagina": "10", "page": "2"})
+        self.assertEqual(resp.status_code, 200)
+        page = resp.context["page"]
+        self.assertEqual(page.paginator.per_page, 10)
+        self.assertEqual(page.paginator.num_pages, 4)
+        self.assertEqual(len(resp.context["erp_rows"]), 10)
+        self.assertContains(resp, "voucher-pagination-bar")
+        self.assertContains(resp, "voucher-page-size-select")
+        self.assertContains(resp, '<option value="10" selected>Página 10</option>', html=True)
+        self.assertContains(resp, "por_pagina=10&page=1")
+        self.assertContains(resp, "por_pagina=10&page=3")
+        self.assertContains(resp, "por_pagina=10&page=4")
+
+        # Invalid por_pagina falls back safely to default 25
+        resp_invalid = self.client.get(reverse("consolidated_erp"), {"por_pagina": "9999"})
+        self.assertEqual(resp_invalid.context["page"].paginator.per_page, 25)
+        self.assertContains(resp_invalid, '<option value="25" selected>Página 25</option>', html=True)
+
+        # Single-page result with por_pagina=50 STILL shows the page-size dropdown
+        resp_single = self.client.get(reverse("consolidated_erp"), {"por_pagina": "50"})
+        self.assertEqual(resp_single.context["page"].paginator.num_pages, 1)
+        self.assertContains(resp_single, '<option value="50" selected>Página 50</option>', html=True)
+
+        # Same behavior on closing_detail (?vista=erp), closings_list, and audit_trail
+        detail_resp = self.client.get(
+            reverse("closing_detail", args=[self.process.id]),
+            {"vista": "erp", "por_pagina": "10"},
+        )
+        self.assertEqual(detail_resp.status_code, 200)
+        self.assertEqual(detail_resp.context["page"].paginator.per_page, 10)
+        self.assertContains(detail_resp, "voucher-page-size-select")
+        self.assertContains(detail_resp, "Mostrando <strong>1–10</strong> de <strong>36</strong>", html=True)
+
+        closings_resp = self.client.get(reverse("closings_list"))
+        self.assertEqual(closings_resp.status_code, 200)
+        self.assertEqual(closings_resp.context["page"].paginator.per_page, 25)
+        self.assertContains(closings_resp, '<option value="25" selected>Página 25</option>', html=True)
+
+    def test_preview_source_tables_render_page_size_selector(self):
+        clp_preview = calculate_clp_preview(**build_clp_files())
+        session = self.client.session
+        session["clp_reconciliation_preview"] = clp_preview
+        session["usd_reconciliation_preview"] = calculate_usd_preview(**_build_usd_files())
+        session.save()
+
+        for route_name in ("clp_preview", "usd_preview"):
+            resp = self.client.get(reverse(route_name))
+            self.assertEqual(resp.status_code, 200)
+            self.assertContains(resp, 'id="srcPageSizeSelect"')
+            self.assertContains(resp, '<option value="25" selected>Página 25</option>', html=True)
+            self.assertContains(resp, '<option value="ALL">Todas</option>', html=True)
+            self.assertContains(resp, "source_tables_viewer.js?v=5")
+
+

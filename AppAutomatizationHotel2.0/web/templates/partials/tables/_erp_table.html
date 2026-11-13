@@ -38,7 +38,7 @@
           <td class="small text-nowrap">
             {% if row.payment_code %}<span class="badge bg-secondary-subtle text-secondary-emphasis">{{ row.payment_code }}</span>{% else %}—{% endif %}
           </td>
-          <td class="small text-nowrap">{{ row.card_type.name|default:"—" }}</td>
+          <td class="small text-nowrap">{{ row.card_type.name|default:row.payment_description|default:"—" }}</td>
           <td class="small text-nowrap">{{ row.transaction_date|date:"d/m/Y"|default:"—" }}</td>
           <td class="small text-muted text-nowrap">{{ row.transaction_time|time:"H:i"|default:"—" }}</td>
           <td class="small font-mono text-nowrap">{{ row.cashier_username|default:"—" }}</td>

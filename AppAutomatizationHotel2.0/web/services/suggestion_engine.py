@@ -491,7 +491,8 @@ def _find_db_suggestion_for_orphan(
             db_candidates = list(
                 ErpTransaction.objects.filter(
                     reconciled=False,
-                    source_currency="USD"
+                    source_currency="USD",
+                    card_type__isnull=False,
                 ).select_related("process", "card_type").order_by("-transaction_date")[:300]
             )
         except Exception:
@@ -669,7 +670,8 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
         db_candidates = list(
             ErpTransaction.objects.filter(
                 reconciled=False,
-                source_currency="USD"
+                source_currency="USD",
+                card_type__isnull=False,
             ).select_related("process", "card_type").order_by("-transaction_date")[:300]
         )
     except Exception:

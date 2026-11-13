@@ -2,6 +2,7 @@
 
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
+from django.views.decorators.http import require_POST
 from axes.handlers.proxy import AxesProxyHandler
 from axes.helpers import get_credentials, get_failure_limit
 
@@ -31,6 +32,7 @@ def login_view(request):
     return render(request, "login.html", context)
 
 
+@require_POST
 def logout_view(request):
     logout(request)
     return redirect("login")

@@ -56,16 +56,6 @@ const VOUCHER_PAGINATION_CONFIG = {
   }
 };
 
-
-function escapeHtmlStr(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function toggleFullscreenTable() {
   const isFocus = document.body.classList.toggle('table-focus-mode');
   const icon = document.getElementById('iconFullscreen');
@@ -486,8 +476,7 @@ function applyVoucherFilters() {
 
   let totalVisible = 0;
   document.querySelectorAll('tbody[data-voucher-tab]').forEach(tbody => {
-    const visible = filterSingleTab(tbody.id, tbody.dataset.noMatchRow, tbody.dataset.countBadge);
-    if (tbody.dataset.voucherTab !== 'aux') totalVisible += visible;
+    totalVisible += filterSingleTab(tbody.id, tbody.dataset.noMatchRow, tbody.dataset.countBadge);
   });
 
   const totalBadge = document.getElementById('visibleTotalBadge');

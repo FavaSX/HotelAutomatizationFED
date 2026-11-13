@@ -10,6 +10,7 @@ import openpyxl
 from openpyxl.styles import Font
 
 from ..models import ReconciliationProcess
+from .clp_reconciliation import MODALITY_LABELS as BASE_MODALITY_LABELS
 from .excel_styles import (
     GOLD_FILL,
     LIGHT_FILL,
@@ -29,18 +30,14 @@ EXCEPTION_ORDER = {
 }
 
 MODALITY_LABELS = {
-    "CLP_CREDIT": "Crédito",
-    "CLP_DEBIT": "Débito",
-    "CLP_PREPAID": "Prepago",
-    "CREDIT": "Crédito",
-    "DEBIT": "Débito",
-    "PREPAID": "Prepago",
+    **BASE_MODALITY_LABELS,
+    **{f"CLP_{k}": v for k, v in BASE_MODALITY_LABELS.items()},
 }
 
 
 def _split_status_detail(detail: str):
     """system_status_detail is stored as 'Medio · Tipo de error · Acción sugerida'."""
-    parts = (detail or "").split(" · ", 2)
+    parts = [p.strip() for p in (detail or "").split(" · ", 2)]
     return (parts + ["", "", ""])[:3]
 
 
