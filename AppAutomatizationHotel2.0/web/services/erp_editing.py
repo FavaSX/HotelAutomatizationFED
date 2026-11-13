@@ -8,14 +8,14 @@ Every operation runs as ONE transaction that:
      and moves each case to "Corregido en ERP" when it now matches, or back to Pendiente when it does not.
 """
 
-from datetime import date
+from datetime import date, time
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Tuple
 
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_time
 
 from ..models import (
     AuditResolutionLog,
@@ -34,7 +34,22 @@ FIELD_LABELS = {
     "transaction_date": "Fecha",
     "payment_code": "Medio de pago",
     "document_number": "Documento",
+    "transaction_time": "Hora",
+    "invoice_number": "Factura",
+    "account_code": "Cuenta",
+    "reservation_number": "Reserva",
+    "room_type": "Tipo de habitación",
+    "cashier_username": "Cajero",
 }
+# Optional text fields of the Bordero row: max length; an empty value clears them
+OPTIONAL_TEXT_FIELDS = {
+    "invoice_number": 50,
+    "account_code": 50,
+    "reservation_number": 50,
+    "room_type": 20,
+    "cashier_username": 50,
+}
+CLEARABLE_FIELDS = (*OPTIONAL_TEXT_FIELDS, "transaction_time")
 RESULT_LABELS = {
     "MATCHED": "Cuadrado",
     "AMOUNT_MISMATCH": "Diferencia de monto",
@@ -132,7 +147,21 @@ def _parse_value(field_name: str, raw: Any, currency: str):
         if parsed is None:
             raise CorrectionError("Indica una fecha válida.")
         return parsed
+    if field_name == "transaction_time":
+        if isinstance(raw, time):
+            return raw
+        text = str(raw or "").strip()
+        if not text:
+            return None
+        parsed = parse_time(text)
+        if parsed is None:
+            raise CorrectionError("Indica una hora válida (HH:MM).")
+        return parsed
     text = str(raw or "").strip()
+    if field_name in OPTIONAL_TEXT_FIELDS:
+        if field_name == "cashier_username":
+            text = " ".join(text.upper().split())  # the Bordero writes user codes in capitals
+        return text[:OPTIONAL_TEXT_FIELDS[field_name]] or None
     if field_name == "authorization_code":
         return text.upper()
     if field_name == "document_number":
@@ -150,7 +179,7 @@ def _parse_value(field_name: str, raw: Any, currency: str):
 def _as_text(value: Any) -> str:
     if value is None:
         return ""
-    if isinstance(value, date):
+    if isinstance(value, (date, time)):
         return value.isoformat()
     return str(value)
 
@@ -163,6 +192,9 @@ def display_value(field_name: str, value: Any, currency: str) -> str:
     if field_name == "transaction_date":
         parsed = value if isinstance(value, date) else parse_date(str(value))
         return parsed.strftime("%d/%m/%Y") if parsed else str(value)
+    if field_name == "transaction_time":
+        parsed = value if isinstance(value, time) else parse_time(str(value))
+        return parsed.strftime("%H:%M") if parsed else str(value)
     return str(value)
 
 
@@ -253,8 +285,10 @@ def edit_row(
     for field_name, raw in values.items():
         if field_name not in CORRECTABLE_FIELDS:
             raise CorrectionError(f"El campo {field_name} no se puede corregir.")
-        if raw is None or (isinstance(raw, str) and not raw.strip()):
+        if raw is None:
             continue
+        if isinstance(raw, str) and not raw.strip() and field_name not in CLEARABLE_FIELDS:
+            continue  # blank required field: keep the current value
         new_value = _parse_value(field_name, raw, currency)
         old_value = getattr(row, field_name)
         if _as_text(old_value) == _as_text(new_value):
@@ -264,10 +298,13 @@ def edit_row(
         raise CorrectionError("No cambiaste ningún dato de la fila.")
 
     history = []
+    changed_fields = {f for f, _, _ in changes}
     for field_name, old_value, new_value in changes:
         setattr(row, field_name, new_value)
-        if field_name == "document_number" and row.account_code == old_value:
-            row.account_code = new_value  # in the CLP Bordero the account is the document
+        if field_name == "document_number" and (row.account_code or "") == (old_value or "") and "account_code" not in changed_fields:
+            row.account_code = new_value  # in the Bordero, Col. D ("Cuenta") mirrors document_number
+        if field_name == "account_code" and (row.document_number or "") == (old_value or "") and "document_number" not in changed_fields and new_value:
+            row.document_number = new_value
         if field_name == "payment_code":
             _, row.card_type = _card_type_for(currency, new_value)
         history.append(_record(row, user, field_name, old_value, new_value, source, match, reason))
@@ -285,27 +322,46 @@ def edit_row(
 def add_row(match: CrossMatchResult, values: Dict[str, Any], user, reason: str = "") -> Dict[str, Any]:
     """Opción B "la fila no existe": adds a Bordero row by hand, prefilled from the Transbank voucher."""
     currency = match.process.process_currency
-    amount = _parse_value("amount", values.get("amount"), currency)
-    if amount <= 0:
-        raise CorrectionError("El monto de la fila debe ser mayor a cero.")
+    # The Bordero shows payments as negative values (-15572): accept it as written or as a positive amount
+    amount = abs(_parse_value("amount", values.get("amount"), currency))
+    if amount == 0:
+        raise CorrectionError("El valor de la fila no puede ser cero.")
     code = _parse_value("authorization_code", values.get("authorization_code"), currency)
     if not code:
-        raise CorrectionError("Indica el código de autorización del voucher.")
-    document = _parse_value("document_number", values.get("document_number"), currency)
-    account = _parse_value("document_number", values.get("account_code"), currency) if str(values.get("account_code") or "").strip() else document
+        raise CorrectionError("Indica el Documento (código de autorización del voucher).")
+    # Bordero Col. D ("Cuenta") is stored as both account_code and document_number; it is optional
+    raw_acc = str(values.get("account_code") or "").strip()
+    raw_doc = str(values.get("document_number") or "").strip()
+    if raw_doc and raw_acc:
+        document = _parse_value("document_number", raw_doc, currency)
+        account = _parse_value("account_code", raw_acc, currency)
+    elif raw_acc:
+        document = _parse_value("document_number", raw_acc, currency)
+        account = document
+    elif raw_doc:
+        document = _parse_value("document_number", raw_doc, currency)
+        account = document
+    else:
+        document = ""
+        account = None
     tx_date = _parse_value("transaction_date", values.get("transaction_date"), currency)
     payment_code = _parse_value("payment_code", values.get("payment_code"), currency)
     _, card_type = _card_type_for(currency, payment_code)
+    optional = {f: _parse_value(f, values.get(f), currency) for f in CLEARABLE_FIELDS}
 
     row = ErpTransaction.objects.create(
         process=match.process,
         card_type=card_type,
         account_code=account,
         document_number=document,
-        invoice_number=str(values.get("invoice_number") or "").strip()[:50],
+        invoice_number=optional["invoice_number"] or "",
         payment_code=payment_code,
         authorization_code=code,
         transaction_date=tx_date,
+        transaction_time=optional["transaction_time"],
+        cashier_username=optional["cashier_username"],
+        reservation_number=optional["reservation_number"],
+        room_type=optional["room_type"],
         guest_name=None,
         room_number=None,
         amount=amount,
@@ -313,12 +369,13 @@ def add_row(match: CrossMatchResult, values: Dict[str, Any], user, reason: str =
         origin=ErpTransaction.ORIGIN_MANUAL,
         source_key=None,
     )
+    account_label = account or document or "—"
     ErpTransactionChange.objects.create(
         erp_transaction=row, field_name=ErpTransactionChange.FIELD_CREATED, old_value="",
-        new_value=f"Doc {document} · {code} · {display_value('amount', amount, currency)} · {tx_date:%d/%m/%Y} · {payment_code}",
+        new_value=f"Cta {account_label} · Doc {code} · {display_value('amount', amount, currency)} · {tx_date:%d/%m/%Y} · {payment_code}",
         user=user, source=ErpTransactionChange.SOURCE_MANUAL, cross_match_result=match, reason=(reason or "").strip() or None,
     )
-    summary = f"Fila agregada a mano en ERP: Doc {document}, código {code}, {display_value('amount', amount, currency)}"
+    summary = f"Fila agregada a mano en ERP: Cuenta {account_label}, Documento {code}, {display_value('amount', amount, currency)}"
     return _settle_all(row, match, user, summary)
 
 

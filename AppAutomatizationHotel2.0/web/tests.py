@@ -1065,6 +1065,29 @@ class ErpManualCorrectionTests(TestCase):
         self.assertEqual((case.system_result, case.management_status.code), ("AMOUNT_MISMATCH", "PENDING"))
         self.assertIn("Aún hay diferencia de $3.204", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
 
+    def test_any_erp_field_can_be_corrected_cleared_and_survives_a_reupload(self):
+        case = self._case("007626")
+        row = case.erp_transaction
+        with self.assertRaises(CorrectionError):
+            edit_row(row, {"guest_name": "No permitido"}, self.user, match=case)
+        with self.assertRaises(CorrectionError):
+            edit_row(row, {"room_number": "1204"}, self.user, match=case)
+        edit_row(row, {
+            "reservation_number": "RES-901", "room_type": "SUIT", "invoice_number": "F-778",
+            "transaction_time": "14:35:10", "cashier_username": "", "amount": "",  # blank optional field clears; blank amount is kept
+        }, self.user, match=case)
+        row.refresh_from_db()
+        self.assertEqual(
+            (row.reservation_number, row.room_type, row.invoice_number, row.transaction_time.isoformat()),
+            ("RES-901", "SUIT", "F-778", "14:35:10"),
+        )
+        self.assertEqual(row.amount, Decimal("113700.00"))
+        self.assertIsNone(row.cashier_username)
+
+        commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        row = ErpTransaction.objects.filter(source_key=row.source_key).order_by("-pk").first()
+        self.assertEqual((row.reservation_number, row.room_type, row.invoice_number), ("RES-901", "SUIT", "F-778"))
+
     def test_unknown_or_unchanged_values_are_rejected(self):
         case = self._case("007626")
         row = case.erp_transaction
@@ -1093,6 +1116,42 @@ class ErpManualCorrectionTests(TestCase):
         case.refresh_from_db()
         self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
         self.assertEqual(ErpTransaction.all_objects.count(), erp_count)
+
+    def test_adding_a_row_keeps_every_bordero_column(self):
+        case = self._case("F0FUAZ")
+        add_row(case, {
+            "account_code": "C-555", "payment_code": "RCO", "invoice_number": "F-9", "amount": "106999",
+            "transaction_date": "2026-09-06", "transaction_time": "13:45:20", "cashier_username": "mrojas",
+            "reservation_number": "RES-77", "room_type": "KING", "authorization_code": "F0FUAZ",
+        }, self.user)
+        manual = ErpTransaction.objects.get(origin=ErpTransaction.ORIGIN_MANUAL)
+        self.assertEqual(
+            (manual.account_code, manual.invoice_number, manual.reservation_number, manual.room_type,
+             manual.transaction_time.isoformat(), manual.cashier_username, manual.guest_name, manual.room_number),
+            ("C-555", "F-9", "RES-77", "KING", "13:45:20", "MROJAS", None, None),
+        )
+
+    def test_adding_a_row_as_written_in_the_bordero(self):
+        """Cuenta is the row's document, Documento the voucher code, Valor negative like the Excel."""
+        case = self._case("F0FUAZ")
+        outcome = add_row(case, {
+            "account_code": "1787015", "payment_code": "RCO", "amount": "-106999", "authorization_code": "F0FUAZ",
+            "transaction_date": "2026-09-06", "cashier_username": "  c  daza ",
+        }, self.user)
+        self.assertTrue(outcome["matched"])
+        manual = ErpTransaction.objects.get(origin=ErpTransaction.ORIGIN_MANUAL)
+        self.assertEqual((manual.document_number, manual.account_code, manual.amount), ("1787015", "1787015", Decimal("106999.00")))
+        self.assertEqual((manual.cashier_username, manual.guest_name, manual.room_number), ("C DAZA", None, None))
+
+    def test_adding_a_row_without_cuenta(self):
+        case = self._case("F0FUAZ")
+        outcome = add_row(case, {
+            "account_code": "  ", "payment_code": "RCO", "amount": "-106999", "authorization_code": "F0FUAZ",
+            "transaction_date": "2026-09-06",
+        }, self.user)
+        self.assertTrue(outcome["matched"])
+        manual = ErpTransaction.objects.get(origin=ErpTransaction.ORIGIN_MANUAL)
+        self.assertEqual((manual.document_number, manual.account_code), ("", None))
 
     def test_deleting_needs_a_reason_and_crosses_the_linked_voucher_again(self):
         case = self._case("112233")
@@ -1131,7 +1190,7 @@ class ErpCorrectionInboxViewTests(TestCase):
 
     def test_inbox_shows_the_correction_panel(self):
         response = self.client.get(reverse("exceptions") + "?moneda=clp")
-        self.assertContains(response, "Corregir el ERP")
+        self.assertContains(response, "Corregir fila del ERP")
         self.assertContains(response, reverse("exception_erp_edit", args=[self.case.id, self.case.erp_transaction_id]))
 
     def test_posting_a_fix_matches_and_the_case_moves_to_resolved(self):
@@ -1146,7 +1205,7 @@ class ErpCorrectionInboxViewTests(TestCase):
         self.assertEqual(self.case.management_status.code, "RESOLVED_ERP_FIXED")
         resolved = self.client.get(reverse("exceptions") + "?moneda=clp&estado=resueltas")
         self.assertContains(resolved, "007626")
-        self.assertContains(resolved, "Cambios en el ERP")
+        self.assertContains(resolved, "Corrección en ERP: Monto")
 
     def test_a_bad_value_shows_an_error_and_changes_nothing(self):
         response = self.client.post(

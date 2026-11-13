@@ -257,231 +257,319 @@
   {% endif %}
 </section>
 
-<!-- One modal per row: detail, history and resolution form -->
+<!-- One modal per row: what happened, what to do, what was done -->
 {% for e in rows %}
-<div class="modal fade" id="exc-{{ e.id }}" tabindex="-1" aria-labelledby="exc-{{ e.id }}-title" aria-hidden="true">
+<div class="modal fade exc-modal" id="exc-{{ e.id }}" tabindex="-1" aria-labelledby="exc-{{ e.id }}-title" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title fw-bold" id="exc-{{ e.id }}-title">
-          Voucher <span class="font-mono">{{ e.authorization_code|default:"—" }}</span>
-          <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %} ms-2">{{ e.type_label }}</span>
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body">
-        <div class="row g-3 small mb-3">
-          <div class="col-6 col-md-3"><div class="text-muted">Cierre</div><div class="fw-semibold">#{{ e.process_id }} · {{ e.process.execution_date|date:"d/m/Y" }}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Cuenta (Col. D)</div><div class="fw-semibold font-mono">{{ e.display_account_code|default:"—" }}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Documento</div><div class="fw-semibold font-mono">{{ e.display_document_number|default:"—" }}</div></div>
-          <div class="col-6 col-md-3"><div class="text-muted">Tarjeta</div><div class="fw-semibold">{{ e.card_type.name }}</div></div>
-          <div class="col-6 col-md-4"><div class="text-muted">Fecha venta</div><div class="fw-semibold">{{ e.sale_date|date:"d/m/Y"|default:"—" }}</div></div>
-          <div class="col-6 col-md-4"><div class="text-muted">Cajero</div><div class="fw-semibold">{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}Sin cajero{% endif %}</div></div>
-          <div class="col-6 col-md-4"><div class="text-muted">Días pendiente</div><div><span class="age-pill age-{{ e.age_level }}">{{ e.days_open }}</span></div></div>
+    <div class="modal-content border-0 rounded-4 overflow-hidden">
+
+      <div class="modal-header border-0 text-white px-4 py-3 modal-header-navy-gold">
+        <div class="d-flex align-items-center gap-3 min-w-0">
+          <div class="rounded-circle d-flex align-items-center justify-content-center modal-icon-gold flex-shrink-0">
+            <i class="bi bi-receipt fs-5"></i>
+          </div>
+          <div class="min-w-0">
+            <h5 class="modal-title fw-bold mb-0" id="exc-{{ e.id }}-title">Voucher <span class="font-mono">{{ e.authorization_code|default:"—" }}</span></h5>
+            <div class="exc-header-sub">{{ e.type_label }} · {{ e.card_type.name }} · Cierre #{{ e.process_id }} del {{ e.process.execution_date|date:"d/m/Y" }}</div>
+          </div>
         </div>
+        <div class="d-flex align-items-center gap-3 ms-auto">
+          <span class="age-pill age-{{ e.age_level }}" title="Días desde el cierre">{{ e.days_open }} {{ e.days_open|pluralize:"día,días" }}</span>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+      </div>
 
-        <table class="table table-sm small mb-3">
-          <tbody>
+      <div class="modal-body px-4 py-4">
+
+        <!-- 1. What happened -->
+        <section class="exc-section">
+          <div class="exc-amounts">
             {% if e.is_clp %}
-            <tr><td class="text-muted">Monto Transbank</td><td class="text-end fw-semibold">$ {{ e.transbank_amount|num_clp }}</td></tr>
-            <tr><td class="text-muted">Monto ERP</td><td class="text-end fw-semibold">$ {{ e.erp_amount_clp|num_clp }}</td></tr>
-            <tr><td class="text-muted">Diferencia</td><td class="text-end fw-bold">$ {{ e.difference_clp|num_clp }}</td></tr>
+            <div class="exc-amount"><div class="kpi-label">Transbank</div><div class="exc-amount-value">$ {{ e.transbank_amount|num_clp }}</div></div>
+            <div class="exc-amount"><div class="kpi-label">ERP</div><div class="exc-amount-value">{% if not e.erp_transaction_id %}<span class="text-muted">No está</span>{% else %}$ {{ e.erp_amount_clp|num_clp }}{% endif %}</div></div>
+            <div class="exc-amount exc-amount-diff"><div class="kpi-label">Diferencia</div><div class="exc-amount-value">$ {{ e.difference_clp|num_clp }}</div></div>
             {% else %}
-            <tr><td class="text-muted">Monto Transbank</td><td class="text-end fw-semibold">US$ {{ e.transbank_amount|num_usd }}</td></tr>
-            <tr><td class="text-muted">Monto Posición por Clientes</td><td class="text-end fw-semibold">US$ {{ e.operator_amount_usd|num_usd }}</td></tr>
-            <tr><td class="text-muted">Diferencia USD</td><td class="text-end fw-bold">US$ {{ e.difference_usd|num_usd }}</td></tr>
-            <tr><td class="text-muted">Monto ERP (CLP)</td><td class="text-end fw-semibold">$ {{ e.erp_amount_clp|num_clp }}</td></tr>
+            <div class="exc-amount"><div class="kpi-label">Transbank</div><div class="exc-amount-value">US$ {{ e.transbank_amount|num_usd }}</div></div>
+            <div class="exc-amount"><div class="kpi-label">Posición por clientes</div><div class="exc-amount-value">US$ {{ e.operator_amount_usd|num_usd }}</div></div>
+            <div class="exc-amount exc-amount-diff"><div class="kpi-label">Diferencia</div><div class="exc-amount-value">US$ {{ e.difference_usd|num_usd }}</div></div>
             {% endif %}
-          </tbody>
-        </table>
+          </div>
 
-        {% if e.system_observation %}
-        <p class="small mb-2"><span class="text-muted">Diagnóstico del sistema:</span> {{ e.system_observation|format_observation }}</p>
-        {% endif %}
-        {% if e.suggestion %}
-        <div class="mb-3" data-suggestion-case="{{ e.id }}" data-suffix="m"></div>
-        {% elif e.action %}
-        <div class="alert alert-info small py-2"><i class="bi bi-lightbulb me-1"></i><strong>Acción sugerida:</strong> {{ e.action }}</div>
-        {% endif %}
-        {% if e.is_rejected %}
-        <div class="alert alert-secondary small py-2"><i class="bi bi-x-circle me-1"></i>La sugerencia se rechazó y el ERP no se tocó. Puedes corregir el ERP a mano aquí abajo o marcar el caso como resuelto.</div>
+          <dl class="exc-facts">
+            <div><dt>Cuenta (Col. D)</dt><dd class="font-mono">{{ e.display_account_code|default:"—" }}</dd></div>
+            <div><dt>Documento</dt><dd class="font-mono">{{ e.display_document_number|default:"—" }}</dd></div>
+            <div><dt>Fecha venta</dt><dd>{{ e.sale_date|date:"d/m/Y"|default:"—" }}</dd></div>
+            <div><dt>Cajero</dt><dd>{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}<span class="text-muted fw-normal">Sin cajero</span>{% endif %}</dd></div>
+            {% if not e.is_clp %}<div><dt>ERP (CLP)</dt><dd>$ {{ e.erp_amount_clp|num_clp }}</dd></div>{% endif %}
+          </dl>
+
+          {% if e.system_observation and not e.suggestion %}
+          <p class="exc-diagnosis"><i class="bi bi-info-circle me-2"></i>{{ e.system_observation|format_observation }}</p>
+          {% endif %}
+        </section>
+
+        <!-- 2. What the system proposes -->
+        {% if e.suggestion or e.action or e.is_rejected %}
+        <section class="exc-section">
+          <h6 class="exc-section-title">Sugerencia del sistema</h6>
+          {% if e.suggestion %}
+          <div data-suggestion-case="{{ e.id }}" data-suffix="m"></div>
+          {% elif e.action %}
+          <div class="exc-callout"><i class="bi bi-lightbulb me-2"></i>{{ e.action }}</div>
+          {% endif %}
+          {% if e.is_rejected %}
+          <p class="small text-muted mt-2 mb-0"><i class="bi bi-x-circle me-1"></i>Se rechazó la sugerencia y el ERP no se tocó. Puedes corregirlo a mano o cerrar el caso abajo.</p>
+          {% endif %}
+        </section>
         {% endif %}
 
-        {% if e.can_correct %}
-        <div class="erp-correction border-top pt-3 mt-3">
-          <h6 class="fw-bold mb-1"><i class="bi bi-pencil-square me-1"></i>Corregir el ERP</h6>
-          <p class="text-muted small mb-2">El cambio se guarda en la fila del Borderó con su historial, el voucher se vuelve a cruzar y, si cuadra, queda como “Corregido en ERP”. Una nueva carga del Excel no lo deshace.</p>
+        <!-- 3. What to do -->
+        {% if e.is_pending %}
+        <section class="exc-section">
+          <h6 class="exc-section-title">{% if e.proposal %}¿O lo resuelves a mano?{% else %}¿Cómo lo resuelves?{% endif %}</h6>
+          <div class="segmented exc-tabs" role="tablist">
+            {% if e.can_correct and e.erp_rows %}
+            <button type="button" class="segmented-item active" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id }}-fix" role="tab" aria-selected="true"><i class="bi bi-pencil-square"></i>Corregir fila del ERP</button>
+            {% endif %}
+            {% if e.can_correct %}
+            <button type="button" class="segmented-item {% if not e.erp_rows %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id }}-add" role="tab" aria-selected="{% if e.erp_rows %}false{% else %}true{% endif %}"><i class="bi bi-plus-circle"></i>Agregar fila al ERP</button>
+            {% endif %}
+            <button type="button" class="segmented-item {% if not e.can_correct %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id }}-close" role="tab" aria-selected="{% if e.can_correct %}false{% else %}true{% endif %}"><i class="bi bi-check2-circle"></i>Cerrar sin cambiar el ERP</button>
+          </div>
 
-          {% for row in e.erp_rows %}
-          <div class="erp-row-card border rounded-3 p-2 mb-2">
-            <div class="d-flex flex-wrap align-items-center gap-2 small">
-              <span class="font-mono fw-semibold">{% if row.account_code %}Cta {{ row.account_code }} · {% endif %}Doc {{ row.document_number|default:"—" }}</span>
-              <span class="text-muted">·</span>
-              <span>Cód. <span class="font-mono">{{ row.authorization_code|default:"sin código" }}</span></span>
-              <span class="text-muted">·</span>
-              <span class="fw-semibold">$ {{ row.amount|num_clp }}</span>
-              <span class="text-muted">·</span>
-              <span>{{ row.transaction_date|date:"d/m/Y"|default:"—" }}</span>
-              <span class="text-muted">·</span>
-              <span>{{ row.payment_code|default:"—" }}</span>
-              {% if row.id == e.erp_transaction_id %}<span class="status-chip status-muted">Cruzada con este voucher</span>{% endif %}
-              {% if row.origin == "MANUAL" %}<span class="status-chip status-warning">Agregada a mano</span>{% endif %}
+          <div class="tab-content pt-3">
+            {% if e.can_correct and e.erp_rows %}
+            <!-- 3a. Fix an existing Bordero row -->
+            <div class="tab-pane fade show active" id="exc-{{ e.id }}-fix" role="tabpanel">
+              <p class="exc-hint">Elige la fila del Borderó que está mal. Al guardar, el voucher se vuelve a cruzar y, si cuadra, queda como “Corregido en ERP”.</p>
+              {% for row in e.erp_rows %}
+              <div class="erp-row-card">
+                <div class="erp-row-head">
+                  <div class="min-w-0">
+                    <div class="erp-row-title">
+                      <span><span class="erp-row-key">Cuenta</span> <span class="font-mono">{{ row.account_code|default:row.document_number|default:"—" }}</span></span>
+                      <span class="erp-row-amount">$ {{ row.amount|num_clp }}</span>
+                    </div>
+                    <div class="erp-row-meta">
+                      <span>Documento <span class="font-mono">{{ row.authorization_code|default:"—" }}</span></span>
+                      <span>{{ row.transaction_date|date:"d/m/Y"|default:"sin fecha" }}</span>
+                      <span>{{ row.payment_code|default:"—" }}</span>
+                      {% if row.id == e.erp_transaction_id %}<span class="status-chip status-muted">Cruzada con este voucher</span>{% endif %}
+                      {% if row.origin == "MANUAL" %}<span class="status-chip status-warning">Agregada a mano</span>{% endif %}
+                    </div>
+                  </div>
+                  <div class="erp-row-actions">
+                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-toggle="collapse" data-bs-target="#edit-{{ e.id }}-{{ row.id }}" aria-expanded="false" aria-controls="edit-{{ e.id }}-{{ row.id }}"><i class="bi bi-pencil me-1"></i>Editar</button>
+                    <button type="button" class="btn btn-link btn-sm text-danger text-decoration-none px-2" data-bs-toggle="collapse" data-bs-target="#del-{{ e.id }}-{{ row.id }}" aria-expanded="false" aria-controls="del-{{ e.id }}-{{ row.id }}" title="La fila sobra en el ERP"><i class="bi bi-trash"></i><span class="visually-hidden">Eliminar fila</span></button>
+                  </div>
+                </div>
+
+                <div class="collapse" id="edit-{{ e.id }}-{{ row.id }}" data-bs-parent="#exc-{{ e.id }}-fix">
+                  <form method="post" action="{% url 'exception_erp_edit' e.id row.id %}" class="erp-row-form row g-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small mb-0" for="doc-{{ e.id }}-{{ row.id }}">Cuenta (Col. D)</label>
+                      <input id="doc-{{ e.id }}-{{ row.id }}" name="document_number" class="form-control form-control-sm font-mono" value="{{ row.account_code|default:row.document_number }}">
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small mb-0" for="pay-{{ e.id }}-{{ row.id }}">Cod. Deb.</label>
+                      <select id="pay-{{ e.id }}-{{ row.id }}" name="payment_code" class="form-select form-select-sm">
+                        {% for code, label, card in e.payment_choices %}<option value="{{ code }}" {% if code == row.payment_code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small mb-0" for="amt-{{ e.id }}-{{ row.id }}">Valor ($)</label>
+                      <input id="amt-{{ e.id }}-{{ row.id }}" name="amount" class="form-control form-control-sm font-mono text-end" inputmode="decimal" value="{{ row.amount|unlocalize }}">
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small mb-0" for="auth-{{ e.id }}-{{ row.id }}">Documento</label>
+                      <input id="auth-{{ e.id }}-{{ row.id }}" name="authorization_code" class="form-control form-control-sm font-mono" value="{{ row.authorization_code|default:'' }}" title="Código de autorización del voucher">
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small mb-0" for="date-{{ e.id }}-{{ row.id }}">Fecha</label>
+                      <input id="date-{{ e.id }}-{{ row.id }}" type="date" name="transaction_date" class="form-control form-control-sm" value="{{ row.transaction_date|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small mb-0" for="time-{{ e.id }}-{{ row.id }}">Hora</label>
+                      <input id="time-{{ e.id }}-{{ row.id }}" type="time" step="1" name="transaction_time" class="form-control form-control-sm" value="{{ row.transaction_time|time:'H:i:s' }}">
+                    </div>
+
+                    <div class="col-12">
+                      <button type="button" class="btn btn-link btn-sm px-0 text-decoration-none exc-more" data-bs-toggle="collapse" data-bs-target="#more-{{ e.id }}-{{ row.id }}" aria-expanded="false" aria-controls="more-{{ e.id }}-{{ row.id }}">
+                        <i class="bi bi-chevron-right me-1"></i>Más datos del Borderó
+                      </button>
+                    </div>
+                    <div class="collapse col-12" id="more-{{ e.id }}-{{ row.id }}">
+                      <div class="row g-2">
+                        <div class="col-6 col-md-3">
+                          <label class="form-label small mb-0" for="rtype-{{ e.id }}-{{ row.id }}">Tipo Hab</label>
+                          <input id="rtype-{{ e.id }}-{{ row.id }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20" value="{{ row.room_type|default:'' }}">
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <label class="form-label small mb-0" for="res-{{ e.id }}-{{ row.id }}">Reserva</label>
+                          <input id="res-{{ e.id }}-{{ row.id }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50" value="{{ row.reservation_number|default:'' }}">
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <label class="form-label small mb-0" for="inv-{{ e.id }}-{{ row.id }}">Factura</label>
+                          <input id="inv-{{ e.id }}-{{ row.id }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50" value="{{ row.invoice_number|default:'' }}">
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <label class="form-label small mb-0" for="cash-{{ e.id }}-{{ row.id }}">Usuario</label>
+                          <input id="cash-{{ e.id }}-{{ row.id }}" name="cashier_username" class="form-control form-control-sm font-mono text-uppercase" maxlength="50" value="{{ row.cashier_username|default:'' }}">
+                        </div>
+                        <div class="col-12 exc-hint mb-0">Un campo opcional que dejes vacío se borra de la fila.</div>
+                      </div>
+                    </div>
+
+                    <div class="col-12 exc-form-footer">
+                      <input name="reason" class="form-control form-control-sm" maxlength="500" placeholder="Motivo (opcional). Ej.: voucher físico dice $115.204" aria-label="Motivo de la corrección">
+                      <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 text-nowrap"><i class="bi bi-arrow-repeat me-1"></i>Guardar y cruzar</button>
+                    </div>
+                  </form>
+                </div>
+
+                <div class="collapse" id="del-{{ e.id }}-{{ row.id }}" data-bs-parent="#exc-{{ e.id }}-fix">
+                  <form method="post" action="{% url 'exception_erp_delete' e.id row.id %}" class="erp-row-form erp-row-form-danger">
+                    {% csrf_token %}
+                    <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+                    <label class="form-label small fw-semibold mb-1" for="delwhy-{{ e.id }}-{{ row.id }}">¿Por qué sobra esta fila?</label>
+                    <div class="exc-form-footer">
+                      <input id="delwhy-{{ e.id }}-{{ row.id }}" name="reason" class="form-control form-control-sm" maxlength="500" required placeholder="Ej.: fila duplicada del mismo pago">
+                      <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3 text-nowrap"><i class="bi bi-trash me-1"></i>Eliminar fila</button>
+                    </div>
+                    <div class="exc-hint mb-0 mt-1">No se borra de la base: queda marcada como eliminada en el historial.</div>
+                  </form>
+                </div>
+              </div>
+              {% endfor %}
             </div>
-            <details class="mt-2">
-              <summary class="small fw-semibold">Corregir esta fila</summary>
-              <form method="post" action="{% url 'exception_erp_edit' e.id row.id %}" class="row g-2 mt-1">
+            {% endif %}
+
+            {% if e.can_correct %}
+            <!-- 3b. Add the missing Bordero row -->
+            <div class="tab-pane fade {% if not e.erp_rows %}show active{% endif %}" id="exc-{{ e.id }}-add" role="tabpanel">
+              <p class="exc-hint">Úsalo si el pago no quedó registrado en el Borderó. Los campos siguen el orden de las columnas del Excel; Valor, Documento, Fecha y Cod. Deb. vienen de Transbank. <span class="text-danger">*</span> obligatorio.</p>
+              <form method="post" action="{% url 'exception_erp_add' e.id %}" class="row g-2 bordero-form">
                 {% csrf_token %}
                 <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="amt-{{ e.id }}-{{ row.id }}">Monto ($)</label>
-                  <input id="amt-{{ e.id }}-{{ row.id }}" name="amount" class="form-control form-control-sm" inputmode="decimal" value="{{ row.amount|unlocalize }}">
+                  <label class="form-label small mb-0" for="nacc-{{ e.id }}">Cuenta (Col. D)</label>
+                  <input id="nacc-{{ e.id }}" name="account_code" class="form-control form-control-sm font-mono" maxlength="50">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="auth-{{ e.id }}-{{ row.id }}">Código de autorización</label>
-                  <input id="auth-{{ e.id }}-{{ row.id }}" name="authorization_code" class="form-control form-control-sm font-mono" value="{{ row.authorization_code|default:'' }}">
-                </div>
-                <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="date-{{ e.id }}-{{ row.id }}">Fecha</label>
-                  <input id="date-{{ e.id }}-{{ row.id }}" type="date" name="transaction_date" class="form-control form-control-sm" value="{{ row.transaction_date|date:'Y-m-d' }}">
-                </div>
-                <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="pay-{{ e.id }}-{{ row.id }}">Medio de pago</label>
-                  <select id="pay-{{ e.id }}-{{ row.id }}" name="payment_code" class="form-select form-select-sm">
-                    {% for code, label, card in e.payment_choices %}<option value="{{ code }}" {% if code == row.payment_code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                  <label class="form-label small mb-0" for="npay-{{ e.id }}">Cod. Deb. <span class="text-danger" aria-hidden="true">*</span></label>
+                  <select id="npay-{{ e.id }}" name="payment_code" class="form-select form-select-sm font-mono js-erp-paycode" data-desc-target="ndesc-{{ e.id }}" required>
+                    {% for code, label, card in e.payment_choices %}<option value="{{ code }}" data-desc="{% if code == 'RCO' %}Red Compra{% elif card %}{{ card.name }} {% if e.process.process_currency == 'USD' %}US${% else %}${% endif %}{% endif %}" {% if code == e.new_row.payment_code %}selected{% endif %}>{{ code }}</option>{% endfor %}
                   </select>
                 </div>
-                <div class="col-12 col-md-8">
-                  <label class="form-label small mb-0" for="doc-{{ e.id }}-{{ row.id }}">Documento</label>
-                  <input id="doc-{{ e.id }}-{{ row.id }}" name="document_number" class="form-control form-control-sm font-mono" value="{{ row.document_number }}">
+                <div class="col-12 col-md-4">
+                  <label class="form-label small mb-0" for="ndesc-{{ e.id }}">Descripción</label>
+                  <input id="ndesc-{{ e.id }}" class="form-control form-control-sm" readonly tabindex="-1" title="Se completa según el Cod. Deb.">
                 </div>
-                <div class="col-12">
-                  <label class="form-label small mb-0" for="why-{{ e.id }}-{{ row.id }}">Motivo (opcional)</label>
-                  <input id="why-{{ e.id }}-{{ row.id }}" name="reason" class="form-control form-control-sm" maxlength="500" placeholder="Ej.: voucher físico dice $115.204">
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="namt-{{ e.id }}">Valor <span class="text-danger" aria-hidden="true">*</span></label>
+                  <input id="namt-{{ e.id }}" name="amount" class="form-control form-control-sm font-mono text-end" inputmode="decimal" required value="{{ e.new_row.bordero_amount }}" title="Como en el Borderó: los pagos van en negativo">
                 </div>
-                <div class="col-12 d-flex justify-content-end">
-                  <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-arrow-repeat me-1"></i>Guardar y volver a cruzar</button>
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="nauth-{{ e.id }}">Documento <span class="text-danger" aria-hidden="true">*</span></label>
+                  <input id="nauth-{{ e.id }}" name="authorization_code" class="form-control form-control-sm font-mono" maxlength="50" required value="{{ e.new_row.authorization_code|default:'' }}" title="Código de autorización del voucher">
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="ndate-{{ e.id }}">Fecha <span class="text-danger" aria-hidden="true">*</span></label>
+                  <input id="ndate-{{ e.id }}" type="date" name="transaction_date" class="form-control form-control-sm" required value="{{ e.new_row.transaction_date|date:'Y-m-d' }}">
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="ntime-{{ e.id }}">Hora</label>
+                  <input id="ntime-{{ e.id }}" type="time" step="1" name="transaction_time" class="form-control form-control-sm">
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="ninv-{{ e.id }}">Factura</label>
+                  <input id="ninv-{{ e.id }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50">
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="ncash-{{ e.id }}">Usuario</label>
+                  <input id="ncash-{{ e.id }}" name="cashier_username" class="form-control form-control-sm font-mono text-uppercase" maxlength="50">
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="nres-{{ e.id }}">Reserva</label>
+                  <input id="nres-{{ e.id }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50">
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label small mb-0" for="nrtype-{{ e.id }}">Tipo Hab</label>
+                  <input id="nrtype-{{ e.id }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20">
+                </div>
+                <div class="col-12 exc-form-footer">
+                  <input name="reason" class="form-control form-control-sm" maxlength="500" placeholder="Motivo (opcional). Ej.: cajero no registró el pago" aria-label="Motivo">
+                  <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 text-nowrap"><i class="bi bi-plus-circle me-1"></i>Agregar y cruzar</button>
                 </div>
               </form>
-            </details>
-            <details class="mt-1">
-              <summary class="small fw-semibold text-danger">Eliminar esta fila (sobra)</summary>
-              <form method="post" action="{% url 'exception_erp_delete' e.id row.id %}" class="mt-1">
+            </div>
+            {% endif %}
+
+            <!-- 3c. Close without touching the ERP -->
+            <div class="tab-pane fade {% if not e.can_correct %}show active{% endif %}" id="exc-{{ e.id }}-close" role="tabpanel">
+              <p class="exc-hint">Para casos que se arreglaron fuera del sistema o en que la diferencia se acepta.</p>
+              <form method="post" action="{% url 'exception_resolve' e.id %}" class="row g-2">
                 {% csrf_token %}
                 <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
-                <label class="form-label small mb-0" for="del-{{ e.id }}-{{ row.id }}">¿Por qué se elimina? (obligatorio)</label>
-                <input id="del-{{ e.id }}-{{ row.id }}" name="reason" class="form-control form-control-sm mb-2" maxlength="500" required placeholder="Ej.: fila duplicada del mismo pago">
-                <div class="d-flex justify-content-between align-items-center gap-2">
-                  <span class="text-muted small">No se borra de la base: queda marcada como eliminada.</span>
-                  <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-trash me-1"></i>Eliminar fila</button>
+                <div class="col-12">
+                  <label class="form-label small mb-0" for="status-{{ e.id }}">{{ form.status.label }}</label>
+                  <select name="status" id="status-{{ e.id }}" class="form-select form-select-sm" required>
+                    {% for value, label in form.fields.status.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small mb-0" for="comment-{{ e.id }}">{{ form.comment.label }}</label>
+                  <textarea name="comment" id="comment-{{ e.id }}" class="form-control form-control-sm" rows="2" maxlength="1000" placeholder="Qué se hizo, N° del ajuste, quién lo informó… (obligatorio si aceptas la diferencia)"></textarea>
+                </div>
+                <div class="col-12 d-flex justify-content-end">
+                  <button type="submit" class="btn btn-success btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-check2-circle me-1"></i>Marcar como resuelto</button>
                 </div>
               </form>
-            </details>
+            </div>
           </div>
-          {% endfor %}
+        </section>
+        {% else %}
+        <section class="exc-section">
+          <h6 class="exc-section-title">Caso cerrado</h6>
+          <p class="small mb-3">
+            <span class="status-chip status-success me-1">{{ e.management_status.display_name }}</span>
+            {% if e.resolved_by %}por {{ e.resolved_by.first_name|default:e.resolved_by.username }}{% endif %}
+            {% if e.resolution_date %}el {{ e.resolution_date|date:"d/m/Y H:i" }}{% endif %}
+          </p>
+          <form method="post" action="{% url 'exception_reopen' e.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+            <label class="form-label small mb-1" for="reopen-{{ e.id }}">¿Hay que volver a revisarlo? Indica por qué.</label>
+            <div class="exc-form-footer">
+              <input name="comment" id="reopen-{{ e.id }}" class="form-control form-control-sm" maxlength="1000" required>
+              <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3 text-nowrap"><i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir</button>
+            </div>
+          </form>
+        </section>
+        {% endif %}
 
-          <details class="border rounded-3 p-2" {% if not e.erp_rows %}open{% endif %}>
-            <summary class="small fw-semibold">La fila no está en el ERP: agregarla a mano</summary>
-            <form method="post" action="{% url 'exception_erp_add' e.id %}" class="row g-2 mt-1">
-              {% csrf_token %}
-              <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
-              <div class="col-12 small text-muted">Datos rellenados desde Transbank; revisa y completa el documento.</div>
-              <div class="col-6 col-md-4">
-                <label class="form-label small mb-0" for="namt-{{ e.id }}">Monto ($)</label>
-                <input id="namt-{{ e.id }}" name="amount" class="form-control form-control-sm" inputmode="decimal" required value="{{ e.new_row.amount|default_if_none:''|unlocalize }}">
-              </div>
-              <div class="col-6 col-md-4">
-                <label class="form-label small mb-0" for="nauth-{{ e.id }}">Código de autorización</label>
-                <input id="nauth-{{ e.id }}" name="authorization_code" class="form-control form-control-sm font-mono" required value="{{ e.new_row.authorization_code|default:'' }}">
-              </div>
-              <div class="col-6 col-md-4">
-                <label class="form-label small mb-0" for="ndate-{{ e.id }}">Fecha</label>
-                <input id="ndate-{{ e.id }}" type="date" name="transaction_date" class="form-control form-control-sm" required value="{{ e.new_row.transaction_date|date:'Y-m-d' }}">
-              </div>
-              <div class="col-6 col-md-4">
-                <label class="form-label small mb-0" for="npay-{{ e.id }}">Medio de pago</label>
-                <select id="npay-{{ e.id }}" name="payment_code" class="form-select form-select-sm" required>
-                  {% for code, label, card in e.payment_choices %}<option value="{{ code }}" {% if code == e.new_row.payment_code %}selected{% endif %}>{{ label }}</option>{% endfor %}
-                </select>
-              </div>
-              <div class="col-6 col-md-4">
-                <label class="form-label small mb-0" for="ndoc-{{ e.id }}">Documento</label>
-                <input id="ndoc-{{ e.id }}" name="document_number" class="form-control form-control-sm font-mono" required placeholder="N° de cuenta o documento">
-              </div>
-              <div class="col-6 col-md-4">
-                <label class="form-label small mb-0" for="ninv-{{ e.id }}">Factura (opcional)</label>
-                <input id="ninv-{{ e.id }}" name="invoice_number" class="form-control form-control-sm font-mono">
-              </div>
-              <div class="col-12">
-                <label class="form-label small mb-0" for="nwhy-{{ e.id }}">Motivo (opcional)</label>
-                <input id="nwhy-{{ e.id }}" name="reason" class="form-control form-control-sm" maxlength="500" placeholder="Ej.: cajero no registró el pago">
-              </div>
-              <div class="col-12 d-flex justify-content-end">
-                <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-plus-circle me-1"></i>Agregar y volver a cruzar</button>
-              </div>
-            </form>
+        <!-- 4. What was done -->
+        <section class="exc-section">
+          {% if e.history %}
+          <details class="exc-history" {% if not e.is_pending %}open{% endif %}>
+            <summary class="exc-section-title mb-0">Historial <span class="segmented-count ms-1">{{ e.history|length }}</span></summary>
+            <ul class="list-unstyled small exception-history mt-3 mb-0">
+              {% for log in e.history %}
+              <li>
+                <div><strong>{{ log.previous_status.display_name|default:"—" }} → {{ log.new_status.display_name }}</strong></div>
+                {% if log.comment %}<div>{{ log.comment }}</div>{% endif %}
+                {% if log.reason %}<div class="text-muted">Motivo: {{ log.reason }}</div>{% endif %}
+                <div class="text-muted">{{ log.user.first_name|default:log.user.username }} · {{ log.created_at|date:"d/m/Y H:i" }}</div>
+              </li>
+              {% endfor %}
+            </ul>
           </details>
-        </div>
-        {% endif %}
-
-        {% if e.erp_changes_list %}
-        <h6 class="fw-bold mt-3">Cambios en el ERP</h6>
-        <ul class="list-unstyled small exception-history mb-3">
-          {% for c in e.erp_changes_list %}
-          <li>
-            <div><strong>{{ c.user.first_name|default:c.user.username }}</strong> · <span class="text-muted">{{ c.created_at|date:"d/m/Y H:i" }}</span> · <span class="text-muted">{{ c.get_source_display }}</span></div>
-            {% if c.field_name == "__created__" %}<div>Fila agregada a mano: {{ c.new_value }}</div>
-            {% elif c.field_name == "__deleted__" %}<div>Fila eliminada (Doc {{ c.erp_transaction.document_number }})</div>
-            {% else %}<div>{{ c.field_label }}: {{ c.old_display }} → <strong>{{ c.new_display }}</strong></div>{% endif %}
-            {% if c.reason %}<div class="text-muted">{{ c.reason }}</div>{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-        {% endif %}
-
-        <h6 class="fw-bold mt-3">Historial</h6>
-        {% if e.history %}
-        <ul class="list-unstyled small exception-history mb-3">
-          {% for log in e.history %}
-          <li>
-            <div><strong>{{ log.user.first_name|default:log.user.username }}</strong> · <span class="text-muted">{{ log.created_at|date:"d/m/Y H:i" }}</span></div>
-            <div>{{ log.previous_status.display_name|default:"—" }} → <strong>{{ log.new_status.display_name }}</strong></div>
-            {% if log.comment %}<div class="text-muted">{{ log.comment }}</div>{% endif %}
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="text-muted small">Sin movimientos todavía.</p>
-        {% endif %}
-
-        {% if e.is_pending %}
-        <form method="post" action="{% url 'exception_resolve' e.id %}" class="border-top pt-3">
-          {% csrf_token %}
-          <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
-          <div class="mb-2">
-            <label class="form-label small fw-semibold" for="status-{{ e.id }}">{{ form.status.label }}</label>
-            <select name="status" id="status-{{ e.id }}" class="form-select" required>
-              {% for value, label in form.fields.status.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small fw-semibold" for="comment-{{ e.id }}">{{ form.comment.label }}</label>
-            <textarea name="comment" id="comment-{{ e.id }}" class="form-control" rows="3" maxlength="1000" placeholder="Qué se hizo, N° de documento del ajuste, quién lo informó… (obligatorio si aceptas la diferencia)"></textarea>
-          </div>
-          <div class="d-flex justify-content-end">
-            <button type="submit" class="btn btn-success rounded-pill px-4 fw-semibold"><i class="bi bi-check2-circle me-1"></i>Marcar como resuelto</button>
-          </div>
-        </form>
-        {% else %}
-        <form method="post" action="{% url 'exception_reopen' e.id %}" class="border-top pt-3">
-          {% csrf_token %}
-          <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
-          <label class="form-label small fw-semibold" for="reopen-{{ e.id }}">¿Por qué se reabre?</label>
-          <textarea name="comment" id="reopen-{{ e.id }}" class="form-control mb-3" rows="2" maxlength="1000" required></textarea>
-          <div class="d-flex justify-content-end">
-            <button type="submit" class="btn btn-outline-danger rounded-pill px-4 fw-semibold"><i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir caso</button>
-          </div>
-        </form>
-        {% endif %}
+          {% else %}
+          <p class="exc-hint mb-0"><i class="bi bi-clock-history me-1"></i>Sin movimientos todavía.</p>
+          {% endif %}
+        </section>
       </div>
     </div>
   </div>
@@ -492,4 +580,14 @@
 {% block extra_js %}
 {{ suggestion_cards|json_script:"inboxSuggestionData" }}
 <script src="{% static 'js/suggestion_card.js' %}?v=6"></script>
+<script>
+  // "Agregar a mano": the Descripción column follows the chosen Cod. Deb.
+  document.querySelectorAll(".js-erp-paycode").forEach((select) => {
+    const target = document.getElementById(select.dataset.descTarget);
+    if (!target) return;
+    const sync = () => { target.value = select.selectedOptions[0]?.dataset.desc || ""; };
+    select.addEventListener("change", sync);
+    sync();
+  });
+</script>
 {% endblock %}

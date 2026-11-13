@@ -18,8 +18,13 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from ..models import ErpTransaction
 from .column_detector import normalize_auth_code, safe_date, safe_time
 
-# Fields the accountant may correct; their DB value replaces the Excel value on a new upload
-CORRECTABLE_FIELDS = ("amount", "authorization_code", "transaction_date", "payment_code", "document_number")
+# Fields the accountant may correct; their DB value replaces the Excel value on a new upload.
+# Guest name and room number stay excluded to preserve Pendientes/Conciliación privacy.
+CORRECTABLE_FIELDS = (
+    "amount", "authorization_code", "transaction_date", "payment_code", "document_number",
+    "transaction_time", "invoice_number", "account_code", "reservation_number",
+    "room_type", "cashier_username",
+)
 MANUAL_SOURCE_LABEL = "Agregada a mano"
 
 
@@ -235,8 +240,14 @@ def _overlay_db_values(e_data: Dict[str, Any], db_row: ErpTransaction, doc_field
     e_data["amount"] = float(db_row.amount)
     e_data["authorization_code"] = db_row.authorization_code or ""
     e_data["transaction_date"] = db_row.transaction_date.strftime("%d/%m/%Y") if db_row.transaction_date else None
+    e_data["transaction_time"] = db_row.transaction_time.strftime("%H:%M:%S") if db_row.transaction_time else None
     e_data["payment_code"] = db_row.payment_code or ""
-    e_data[doc_field] = db_row.document_number
+    e_data["account_code"] = db_row.account_code or db_row.document_number
+    e_data["invoice_number"] = db_row.invoice_number or ""
+    e_data["reservation_number"] = db_row.reservation_number or ""
+    e_data["room_type"] = db_row.room_type or ""
+    e_data["cashier_username"] = db_row.cashier_username or ""
+    e_data[doc_field] = (db_row.account_code or db_row.document_number) if doc_field == "account_code" else db_row.document_number
     if "is_reversal" in e_data:
         e_data["is_reversal"] = db_row.amount < 0
     if "payment_group" in e_data:
