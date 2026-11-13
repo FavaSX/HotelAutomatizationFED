@@ -15,7 +15,7 @@ Read-only (GET-only) views for visualizing all reconciliation tables and audit t
 """
 
 from decimal import Decimal
-from typing import Any, Callable, Dict, Iterable
+from typing import Any, Callable, Dict, Iterable, List, Tuple
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, render
@@ -59,6 +59,27 @@ def _clean_query_string(request, exclude: Iterable[str] = ("page",)) -> str:
     return params.urlencode()
 
 
+def _preserved_query_params(
+    request, exclude: Iterable[str] = ("page", "por_pagina")
+) -> List[Tuple[str, str]]:
+    """Extracts active GET params as (key, value) pairs so the page-size form preserves filters."""
+    excluded = set(exclude)
+    return [
+        (key, val)
+        for key in request.GET
+        if key not in excluded
+        for val in request.GET.getlist(key)
+    ]
+
+
+def _pagination_query_context(request) -> Dict[str, Any]:
+    """Shared GET query context used by paginated Consultas templates."""
+    return {
+        "query_string": _clean_query_string(request),
+        "preserved_query_params": _preserved_query_params(request),
+    }
+
+
 def _render_consolidated(
     request,
     *,
@@ -82,7 +103,7 @@ def _render_consolidated(
         "badge_icon": badge_icon,
         "reset_url_name": reset_url_name,
         "nav_counts": get_consultas_nav_counts(),
-        "query_string": _clean_query_string(request),
+        **_pagination_query_context(request),
         **data,
     }
     return render(request, "tables/consolidated.html", context)
@@ -262,7 +283,7 @@ def closings_list_view(request):
         "nav_counts": nav_counts,
         "page": page,
         "processes": page.object_list,
-        "query_string": _clean_query_string(request),
+        **_pagination_query_context(request),
         "filters": {
             "moneda": moneda,
             "q": q,
@@ -343,8 +364,8 @@ def closing_detail_view(request, process_id: int):
     cruce_total = cruce_agg["total"] or 0
     matched_total = cruce_agg["matched"] or 0
     erp_qs_base = process_erp_queryset(process)
-    linked_erp_ids = set(
-        process.cross_match_results.exclude(erp_transaction__isnull=True).values_list("erp_transaction_id", flat=True)
+    linked_erp_ids = (
+        process.cross_match_results.exclude(erp_transaction__isnull=True).values("erp_transaction_id")
     )
     erp_agg = erp_qs_base.aggregate(
         total=Count("id"),
@@ -381,7 +402,7 @@ def closing_detail_view(request, process_id: int):
             "operadoras": op_total,
             "transbank": tbk_total,
         },
-        "query_string": _clean_query_string(request),
+        **_pagination_query_context(request),
         **tab_data,
     }
     return render(request, "tables/closing_detail.html", context)
@@ -491,6 +512,6 @@ def audit_trail_view(request):
             "desde": request.GET.get("desde", ""),
             "hasta": request.GET.get("hasta", ""),
         },
-        "query_string": _clean_query_string(request),
+        **_pagination_query_context(request),
     }
     return render(request, "tables/audit_trail.html", context)

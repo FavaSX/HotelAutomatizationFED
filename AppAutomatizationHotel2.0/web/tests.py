@@ -2294,12 +2294,15 @@ class UnifiedPaginationTests(TestCase):
         # Same behavior on closing_detail (?vista=erp), closings_list, and audit_trail
         detail_resp = self.client.get(
             reverse("closing_detail", args=[self.process.id]),
-            {"vista": "erp", "por_pagina": "10"},
+            {"vista": "erp", "cruce": "solo_erp", "por_pagina": "10"},
         )
         self.assertEqual(detail_resp.status_code, 200)
         self.assertEqual(detail_resp.context["page"].paginator.per_page, 10)
         self.assertContains(detail_resp, "voucher-page-size-select")
-        self.assertContains(detail_resp, "Mostrando <strong>1–10</strong> de <strong>36</strong>", html=True)
+        self.assertContains(detail_resp, "js-db-page-size-form")
+        self.assertContains(detail_resp, '<input type="hidden" name="vista" value="erp">', html=True)
+        self.assertContains(detail_resp, '<input type="hidden" name="cruce" value="solo_erp">', html=True)
+        self.assertContains(detail_resp, "app.js?v=6")
 
         closings_resp = self.client.get(reverse("closings_list"))
         self.assertEqual(closings_resp.status_code, 200)
@@ -2320,5 +2323,18 @@ class UnifiedPaginationTests(TestCase):
             self.assertContains(resp, '<option value="25" selected>Página 25</option>', html=True)
             self.assertContains(resp, '<option value="ALL">Todas</option>', html=True)
             self.assertContains(resp, "source_tables_viewer.js?v=5")
+
+    def test_db_pagination_bar_unlocalizes_page_numbers_over_1000(self):
+        from django.template.loader import render_to_string
+        from .services.tables_viewer import _paginate
+
+        page = _paginate(list(range(20454)), 999, per_page=10, base_default=25)
+        html = render_to_string(
+            "partials/db_pagination_bar.html",
+            {"page": page, "query_string": "por_pagina=10", "aria_label": "Paginación de movimientos ERP"},
+        )
+        self.assertIn('href="?por_pagina=10&page=1000"', html)
+        self.assertIn('href="?por_pagina=10&page=2046"', html)
+        self.assertNotIn("\xa0", html.split("<nav")[1])
 
 

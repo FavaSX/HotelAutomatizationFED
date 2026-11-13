@@ -217,3 +217,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   el.textContent = 'N/D';
 });
 
+// Delegated page-size selector for Consultas SSR pagination bars (db_pagination_bar.html)
+document.addEventListener('change', (event) => {
+  const select = event.target.closest('.js-db-page-size-select');
+  if (!select) return;
+  const form = select.form || select.closest('form');
+  if (form) {
+    form.submit();
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set('por_pagina', select.value);
+  url.searchParams.set('page', '1');
+  window.location.assign(url.toString());
+});
+
+
