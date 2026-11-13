@@ -9,6 +9,7 @@ It never reconciles anything automatically: suggestions are a reference for the 
 """
 
 from typing import Any, Dict, List, Optional, Tuple
+from django.db.models import Q
 
 from ..models import ErpTransaction
 from ..templatetags.currency_filters import fmt_clp
@@ -187,7 +188,10 @@ def _find_db_suggestion_for_clp_voucher(
                 ErpTransaction.objects.filter(
                     reconciled=False,
                     source_currency="CLP",
-                ).select_related("process", "card_type").order_by("-transaction_date")[:500]
+                )
+                .filter(Q(card_type__isnull=False) | Q(payment_code__in=("RCO", "RC", "REDCOMPRA", "V$", "MC$", "AME$", "DIN$")))
+                .select_related("process", "card_type")
+                .order_by("-transaction_date")[:500]
             )
         except Exception:
             return None
@@ -329,7 +333,6 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
         return preview_data
 
     erp_rows: List[Dict[str, Any]] = preview_data.get("erp_transactions", [])
-    aux_erp_rows: List[Dict[str, Any]] = preview_data.get("auxiliary_erp_transactions", [])
     orphans = preview_data.get("orphan_vouchers", [])
     discrepancies = preview_data.get("discrepancy_vouchers", [])
     out_of_period = preview_data.get("out_of_period_vouchers", [])
@@ -528,7 +531,10 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
             ErpTransaction.objects.filter(
                 reconciled=False,
                 source_currency="CLP",
-            ).select_related("process", "card_type").order_by("-transaction_date")[:500]
+            )
+            .filter(Q(card_type__isnull=False) | Q(payment_code__in=("RCO", "RC", "REDCOMPRA", "V$", "MC$", "AME$", "DIN$")))
+            .select_related("process", "card_type")
+            .order_by("-transaction_date")[:500]
         )
     except Exception:
         db_candidates = []

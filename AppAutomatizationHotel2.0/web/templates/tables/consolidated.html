@@ -161,6 +161,7 @@
 
 <!-- Filters (GET only) -->
 <form method="get" class="card card-executive p-3 mb-3">
+  {% if request.GET.por_pagina %}<input type="hidden" name="por_pagina" value="{{ page.paginator.per_page }}">{% endif %}
   <div class="row g-2 align-items-end">
     {% if tab_key != "operadoras" %}
     <div class="col-6 col-md-2">
@@ -196,9 +197,12 @@
       <label class="form-label small fw-semibold mb-1" for="f-card">Tarjeta</label>
       <select id="f-card" name="tarjeta" class="form-select form-select-sm">
         <option value="">Todas</option>
+        <option value="ALL_CARDS" {% if filters.tarjeta == "ALL_CARDS" %}selected{% endif %}>Solo tarjetas</option>
         {% for card in card_types %}
         <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
         {% endfor %}
+        <option value="RCO" {% if filters.tarjeta == "RCO" %}selected{% endif %}>Red Compra</option>
+        <option value="NON_CARD" {% if filters.tarjeta == "NON_CARD" %}selected{% endif %}>Otros cargos / sin tarjeta</option>
       </select>
     </div>
     {% elif tab_key == "transbank" %}

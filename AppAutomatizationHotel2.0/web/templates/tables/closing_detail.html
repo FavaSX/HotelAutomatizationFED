@@ -148,7 +148,7 @@
           <thead>
             <tr>
               <th class="ps-4">Franquicia</th>
-              <th class="text-end">ERP (US$)</th>
+              <th class="text-end">Transbank (US$)</th>
               <th class="text-end">Operadora (US$)</th>
               <th class="text-end">Dif. USD</th>
               <th class="text-end">ERP (CLP)</th>
@@ -230,6 +230,7 @@
 <!-- ================= TAB 2: RESULTADOS DEL CRUCE ================= -->
 <form method="get" class="card card-executive p-3 mb-3">
   <input type="hidden" name="vista" value="cruce">
+  {% if request.GET.por_pagina %}<input type="hidden" name="por_pagina" value="{{ page.paginator.per_page }}">{% endif %}
   <div class="row g-2 align-items-end">
     <div class="col-12 col-md-4">
       <label class="form-label small fw-semibold mb-1" for="c-q">Buscar</label>
@@ -274,6 +275,7 @@
 <!-- ================= TAB 3: BORDERÓ ERP (INCLUYE SOLO EN ERP) ================= -->
 <form method="get" class="card card-executive p-3 mb-3">
   <input type="hidden" name="vista" value="erp">
+  {% if request.GET.por_pagina %}<input type="hidden" name="por_pagina" value="{{ page.paginator.per_page }}">{% endif %}
   <div class="row g-2 align-items-end">
     <div class="col-12 col-md-4">
       <label class="form-label small fw-semibold mb-1" for="e-q">Buscar</label>
@@ -301,9 +303,12 @@
       <label class="form-label small fw-semibold mb-1" for="e-card">Tarjeta</label>
       <select id="e-card" name="tarjeta" class="form-select form-select-sm">
         <option value="">Todas</option>
+        <option value="ALL_CARDS" {% if filters.tarjeta == "ALL_CARDS" %}selected{% endif %}>Solo tarjetas</option>
         {% for card in card_types %}
         <option value="{{ card.code }}" {% if filters.tarjeta == card.code %}selected{% endif %}>{{ card.name }}</option>
         {% endfor %}
+        <option value="RCO" {% if filters.tarjeta == "RCO" %}selected{% endif %}>Red Compra</option>
+        <option value="NON_CARD" {% if filters.tarjeta == "NON_CARD" %}selected{% endif %}>Otros cargos / sin tarjeta</option>
       </select>
     </div>
     <div class="col-6 col-md-2 d-flex gap-2 justify-content-end">
@@ -318,6 +323,7 @@
 <!-- ================= TAB 4: CARTOLA BANCARIA ================= -->
 <form method="get" class="card card-executive p-3 mb-3">
   <input type="hidden" name="vista" value="cartola">
+  {% if request.GET.por_pagina %}<input type="hidden" name="por_pagina" value="{{ page.paginator.per_page }}">{% endif %}
   <div class="row g-2 align-items-end">
     <div class="col-12 col-md-6">
       <label class="form-label small fw-semibold mb-1" for="b-q">Buscar</label>
@@ -343,6 +349,7 @@
 <!-- ================= TAB 5: POSICIÓN POR CLIENTES (USD) ================= -->
 <form method="get" class="card card-executive p-3 mb-3">
   <input type="hidden" name="vista" value="operadoras">
+  {% if request.GET.por_pagina %}<input type="hidden" name="por_pagina" value="{{ page.paginator.per_page }}">{% endif %}
   <div class="row g-2 align-items-end">
     <div class="col-12 col-md-5">
       <label class="form-label small fw-semibold mb-1" for="o-q">Buscar</label>
@@ -377,6 +384,7 @@
 <!-- ================= TAB 6: TRANSBANK DETALLADO ================= -->
 <form method="get" class="card card-executive p-3 mb-3">
   <input type="hidden" name="vista" value="transbank">
+  {% if request.GET.por_pagina %}<input type="hidden" name="por_pagina" value="{{ page.paginator.per_page }}">{% endif %}
   <div class="row g-2 align-items-end">
     <div class="col-12 col-md-4">
       <label class="form-label small fw-semibold mb-1" for="tb-q">Buscar</label>

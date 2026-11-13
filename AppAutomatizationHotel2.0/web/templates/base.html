@@ -75,9 +75,12 @@
             </div>
           </div>
           <div class="dropdown-divider"></div>
-          <a href="{% url 'logout' %}" class="dropdown-item profile-logout">
-            <i class="bi bi-box-arrow-right me-2"></i> Cerrar Sesión
-          </a>
+          <form method="post" action="{% url 'logout' %}" class="m-0">
+            {% csrf_token %}
+            <button type="submit" class="dropdown-item profile-logout w-100 text-start">
+              <i class="bi bi-box-arrow-right me-2"></i> Cerrar Sesión
+            </button>
+          </form>
         </div>
       </div>
     </div>

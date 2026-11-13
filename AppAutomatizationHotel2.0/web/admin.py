@@ -40,7 +40,7 @@ class SystemConfigurationAdmin(admin.ModelAdmin):
 
 @admin.register(ReconciliationProcess)
 class ReconciliationProcessAdmin(admin.ModelAdmin):
-    list_display = ('id', 'process_currency', 'accounting_period', 'user', 'execution_date', 'daily_dollar_rate', 'tolerance_applied')
+    list_display = ('id', 'process_currency', 'accounting_period', 'user', 'execution_date', 'tolerance_applied')
     list_filter = ('process_currency', 'execution_date')
     search_fields = ('accounting_period', 'user__username')
 

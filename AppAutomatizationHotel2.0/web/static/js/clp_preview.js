@@ -31,99 +31,8 @@ let currentClpSugWithPage = 1;
 let currentClpSugWithoutPage = 1;
 const CLP_WITHOUT_PAGE_SIZE = 25;
 
-function formatClpClient(val) {
-  const num = Math.round(Number(val) || 0);
-  return '$' + num.toLocaleString('es-CL');
-}
-
-function renderClpKv(label, value, tone) {
-  const strVal = String(value ?? '').trim() || '—';
-  const toneClass = tone === 'diff' ? 'suggestion-kv-row suggestion-kv-diff' : 'suggestion-kv-row';
-  const icon = tone === 'match'
-    ? '<i class="bi bi-check2 text-success fw-bold ms-1" title="Coincide entre archivos"></i>'
-    : (tone === 'diff' ? '<i class="bi bi-exclamation-triangle-fill ms-1" title="Dato con diferencia"></i>' : '');
-  return (
-    `<div class="${toneClass}">` +
-      `<span class="suggestion-kv-label">${escapeHtmlStr(label)}</span>` +
-      `<span class="suggestion-kv-val" title="${escapeHtmlStr(strVal)}">${escapeHtmlStr(strVal)}${icon}</span>` +
-    `</div>`
-  );
-}
-
 function renderClpSuggestionCard(voucher, idx) {
-  // Same component as the Pendientes inbox (suggestion_card.js)
-  if (typeof renderSuggestionCard === 'function') return renderSuggestionCard(voucher, 'CLP', { mode: 'preview', index: idx });
-  const sug = voucher.suggestion || {};
-  const erp = sug.erp_row || {};
-  const files = sug.files_involved || {};
-  const sameAmount = Math.abs(Number(voucher.tbk_amount) - Number(erp.amount)) < 1;
-  const sameDate = voucher.sale_date === erp.transaction_date;
-  const sameCode = String(voucher.authorization_code || '').replace(/^0+/, '') === String(erp.authorization_code || '').replace(/^0+/, '');
-  const sameMedium = (voucher.modality_label === 'Crédito' && erp.payment_group === 'CREDIT') ||
-                     (voucher.modality_label !== 'Crédito' && erp.payment_group === 'REDCOMPRA');
-
-  // Symmetrical 5 rows aligned horizontally:
-  // Row 1: Voucher TBK      <-> Documento Borderó
-  // Row 2: Monto TBK        <-> Monto ERP
-  // Row 3: Fecha Venta      <-> Fecha Venta
-  // Row 4: Medio / Marca    <-> Medio / Marca
-  // Row 5: Local / Terminal <-> Cuenta / Factura
-  const colTbk = (
-    renderClpKv('Voucher TBK', voucher.authorization_code, sameCode ? 'match' : 'diff') +
-    renderClpKv('Monto TBK', formatClpClient(voucher.tbk_amount), sameAmount ? 'match' : 'diff') +
-    renderClpKv('Fecha Venta', voucher.sale_date || '—', sameDate ? 'match' : '') +
-    renderClpKv('Medio / Marca', `${voucher.modality_label} · ${voucher.card_name}`, sameMedium ? 'match' : 'diff') +
-    renderClpKv('Local / Terminal', voucher.merchant_location || '—', '')
-  );
-
-  const colErp = (
-    renderClpKv('Documento Borderó', erp.authorization_code || '— (sin código)', sameCode ? 'match' : 'diff') +
-    renderClpKv('Monto ERP', formatClpClient(erp.amount), sameAmount ? 'match' : 'diff') +
-    renderClpKv('Fecha Venta', `${erp.transaction_date || '—'}${erp.transaction_time ? ' ' + erp.transaction_time : ''}`, sameDate ? 'match' : '') +
-    renderClpKv('Medio / Marca', `${erp.payment_code || '—'} · ${erp.card_name || '—'}`, sameMedium ? 'match' : 'diff') +
-    renderClpKv('Cuenta / Factura', `Cta: ${erp.account_code || '—'}${erp.invoice_number && erp.invoice_number !== '—' ? ' · Fact: ' + erp.invoice_number : ''}`, '')
-  );
-
-  const cashierBadge = erp.cashier_username
-    ? `<span class="text-muted">·</span><span class="badge bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-person me-1"></i>Cajero: ${escapeHtmlStr(erp.cashier_username)}</span>`
-    : '';
-
-  const causeChip = (Array.isArray(sug.reasons) ? sug.reasons : []).find(r => r.tone === 'gold')
-    || (Array.isArray(sug.reasons) ? sug.reasons : []).find(r => r.tone === 'emerald');
-  const causeBadgeHtml = causeChip
-    ? `<span class="reason-chip reason-${escapeHtmlStr(causeChip.tone || 'gold')}"><i class="bi ${escapeHtmlStr(causeChip.icon || 'bi-exclamation-triangle-fill')} me-1"></i>${escapeHtmlStr(causeChip.label)}</span>`
-    : `<span class="suggestion-confidence ${sug.confidence === 'ALTA' ? 'suggestion-confidence-alta' : ''}">Confianza ${escapeHtmlStr(sug.confidence || 'MEDIA')}</span>`;
-
-  const actionText = sug.action || voucher.action || '';
-  const actionHtml = actionText ? (
-    `<div class="px-3 py-2 border-top small fw-semibold text-primary">` +
-      `<i class="bi bi-arrow-right-circle me-1"></i>Acción sugerida: <span class="text-dark">${escapeHtmlStr(actionText)}</span>` +
-    `</div>`
-  ) : '';
-
-  return (
-    `<div class="rounded-3 border overflow-hidden shadow-sm">` +
-      `<div class="px-3 py-2 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2 suggestion-manual-box rounded-0">` +
-        `<div class="d-flex flex-wrap align-items-center gap-2 small">` +
-          `<span class="fw-bold font-monospace">#${idx} · Voucher ${escapeHtmlStr(voucher.authorization_code)}</span>` +
-          `<span class="text-muted">·</span><span class="fw-semibold">${escapeHtmlStr(voucher.modality_label)}</span>` +
-          `<span class="text-muted">·</span><span class="fw-bold">${escapeHtmlStr(formatClpClient(voucher.tbk_amount))}</span>` +
-          cashierBadge +
-        `</div>` +
-        `<div>${causeBadgeHtml}</div>` +
-      `</div>` +
-      `<div class="suggestion-2col-grid">` +
-        `<div class="suggestion-col-box suggestion-col-tbk">` +
-          `<div class="suggestion-col-title">1. Transbank (${escapeHtmlStr(files.tbk || 'TBK')})</div>${colTbk}` +
-        `</div>` +
-        `<div class="suggestion-col-box">` +
-          `<div class="suggestion-col-title">2. Borderó ERP (${escapeHtmlStr(erp.source_file || files.erp || 'BORDERO')}) · Fila ${escapeHtmlStr(erp.excel_row || '—')}</div>${colErp}` +
-        `</div>` +
-      `</div>` +
-      `${actionHtml}` +
-      `${typeof renderProposalBlock === 'function' ? renderProposalBlock(voucher) : ''}` +
-    `</div>`
-  );
+  return renderSuggestionCard(voucher, 'CLP', { mode: 'preview', index: idx });
 }
 
 function resetClpSugFilterButtons(activeBtn) {
@@ -316,11 +225,6 @@ function openClpSuggestionsModal(sectionKey = 'orphans') {
 
   const titleEl = document.getElementById('clpSugModalTitle');
   if (titleEl) titleEl.textContent = cfg.title;
-
-  const badgeEl = document.getElementById('clpSugStatsBadge');
-  if (badgeEl) {
-    badgeEl.textContent = `${countWith} con sugerencia · ${countWithout} sin coincidencia`;
-  }
 
   const countAllEl = document.getElementById('clpSugCountAll');
   if (countAllEl) countAllEl.textContent = total;

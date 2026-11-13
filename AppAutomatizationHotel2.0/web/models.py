@@ -35,7 +35,7 @@ class ReconciliationStatus(models.Model):
 
 
 class SystemConfiguration(models.Model):
-    """Single-row table with the reconciliation tolerances, editable by superusers from /settings/."""
+    """Single-row table with the reconciliation tolerances, editable by authenticated users from /settings/."""
     usd_rounding_tolerance = models.DecimalField(
         max_digits=6,
         decimal_places=2,
@@ -80,7 +80,6 @@ class ReconciliationProcess(models.Model):
     execution_date = models.DateTimeField(auto_now_add=True)
     process_currency = models.CharField(max_length=5, choices=CURRENCY_CHOICES)
     accounting_period = models.CharField(max_length=50, blank=True, null=True)
-    daily_dollar_rate = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
 
     # Uploaded source Excel file names
     erp_file_name = models.CharField(max_length=255, blank=True, null=True)
@@ -96,10 +95,6 @@ class ReconciliationProcess(models.Model):
 
     # Tolerance snapshot used when this process was reconciled (USD or CLP depending on process_currency)
     tolerance_applied = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
-
-    # Generated output Excel paths
-    matched_transactions_file_path = models.CharField(max_length=255, blank=True, null=True)
-    unmatched_transactions_file_path = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         db_table = 'reconciliation_process'
@@ -199,6 +194,7 @@ class ErpTransaction(models.Model):
     reservation_number = models.CharField(max_length=50, blank=True, null=True)
     account_code = models.CharField(max_length=50, blank=True, null=True)
     payment_code = models.CharField(max_length=20, blank=True, null=True)
+    payment_description = models.CharField(max_length=100, blank=True, null=True)
     invoice_number = models.CharField(max_length=50, blank=True, null=True)
     document_number = models.CharField(max_length=50)
     authorization_code = models.CharField(max_length=50, blank=True, null=True)
@@ -349,7 +345,7 @@ class CrossMatchResult(models.Model):
     difference_usd = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     difference_clp = models.DecimalField(max_digits=14, decimal_places=2, default=0)
 
-    # System diagnosis: MATCHED, AMOUNT_MISMATCH, NOT_FOUND_IN_ERP, GHOST_IN_ERP, CARD_TYPE_MISMATCH
+    # System diagnosis: MATCHED, AMOUNT_MISMATCH, NOT_FOUND_IN_ERP, CARD_TYPE_MISMATCH
     system_result = models.CharField(max_length=40)
     system_status_detail = models.CharField(max_length=255, blank=True, null=True)
     system_observation = models.CharField(max_length=255, blank=True, null=True)

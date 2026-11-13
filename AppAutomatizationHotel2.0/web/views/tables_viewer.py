@@ -17,7 +17,6 @@ Read-only (GET-only) views for visualizing all reconciliation tables and audit t
 from decimal import Decimal
 from typing import Any, Callable, Dict, Iterable
 from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
@@ -32,6 +31,7 @@ from ..models import (
 from ..services.erp_editing import OPEN_STATUS_CODES
 from ..services.tables_viewer import (
     MODALITY_LABELS,
+    _paginate,
     build_bank_view_data,
     build_cruce_view_data,
     build_erp_view_data,
@@ -44,11 +44,12 @@ from ..services.tables_viewer import (
     process_erp_queryset,
     process_operator_queryset,
     process_transbank_queryset,
+    resolve_per_page,
 )
 
 
-PAGE_SIZE_CLOSINGS = 20
-PAGE_SIZE_ROWS = 30
+PAGE_SIZE_CLOSINGS = 25
+PAGE_SIZE_ROWS = 25
 
 
 def _clean_query_string(request, exclude: Iterable[str] = ("page",)) -> str:
@@ -56,10 +57,6 @@ def _clean_query_string(request, exclude: Iterable[str] = ("page",)) -> str:
     for key in exclude:
         params.pop(key, None)
     return params.urlencode()
-
-
-def _paginate(queryset_or_list, page_num: Any, per_page: int = PAGE_SIZE_ROWS):
-    return Paginator(queryset_or_list, per_page).get_page(page_num)
 
 
 def _render_consolidated(
@@ -212,7 +209,13 @@ def closings_list_view(request):
             q_filter |= Q(id=int(q))
         processes = processes.filter(q_filter)
 
-    page = _paginate(processes, request.GET.get("page"), per_page=PAGE_SIZE_CLOSINGS)
+    closings_per_page = resolve_per_page(request, default=PAGE_SIZE_CLOSINGS)
+    page = _paginate(
+        processes,
+        request.GET.get("page"),
+        per_page=closings_per_page,
+        base_default=PAGE_SIZE_CLOSINGS,
+    )
     page_ids = [p.id for p in page.object_list]
 
     pending_by_proc = {
@@ -252,11 +255,11 @@ def closings_list_view(request):
         usd=Count("id", filter=Q(process_currency="USD")),
         clp=Count("id", filter=Q(process_currency="CLP")),
     )
-    total_vouchers = CrossMatchResult.objects.count()
+    nav_counts = get_consultas_nav_counts()
 
     context = {
         "active_nav": "cierres",
-        "nav_counts": get_consultas_nav_counts(),
+        "nav_counts": nav_counts,
         "page": page,
         "processes": page.object_list,
         "query_string": _clean_query_string(request),
@@ -270,7 +273,7 @@ def closings_list_view(request):
             "total": all_totals["total"] or 0,
             "usd": all_totals["usd"] or 0,
             "clp": all_totals["clp"] or 0,
-            "vouchers": total_vouchers,
+            "vouchers": nav_counts["cruces"],
         },
     }
     return render(request, "tables/closings_list.html", context)
@@ -333,14 +336,22 @@ def closing_detail_view(request, process_id: int):
     if active_tab not in valid_tabs:
         active_tab = "resumen"
 
-    cruce_total = process.cross_match_results.count()
-    matched_total = process.cross_match_results.filter(system_result="MATCHED").count()
+    cruce_agg = process.cross_match_results.aggregate(
+        total=Count("id"),
+        matched=Count("id", filter=Q(system_result="MATCHED")),
+    )
+    cruce_total = cruce_agg["total"] or 0
+    matched_total = cruce_agg["matched"] or 0
     erp_qs_base = process_erp_queryset(process)
-    erp_total = erp_qs_base.count()
     linked_erp_ids = set(
         process.cross_match_results.exclude(erp_transaction__isnull=True).values_list("erp_transaction_id", flat=True)
     )
-    erp_unlinked_count = erp_qs_base.filter(reconciled=False).exclude(id__in=linked_erp_ids).count()
+    erp_agg = erp_qs_base.aggregate(
+        total=Count("id"),
+        unlinked=Count("id", filter=Q(reconciled=False) & ~Q(id__in=linked_erp_ids)),
+    )
+    erp_total = erp_agg["total"] or 0
+    erp_unlinked_count = erp_agg["unlinked"] or 0
     bank_total = process_bank_movements_queryset(process).count()
     op_total = process_operator_queryset(process).count() if is_usd else 0
     tbk_total = process_transbank_queryset(process).count()
@@ -453,15 +464,16 @@ def audit_trail_view(request):
             | Q(cross_match_result__erp_transaction__account_code__icontains=q)
         )
 
+    audit_per_page = resolve_per_page(request, default=PAGE_SIZE_ROWS)
     if vista == "erp":
         if fuente in (ErpTransactionChange.SOURCE_SUGGESTION, ErpTransactionChange.SOURCE_MANUAL):
             erp_changes_qs = erp_changes_base.filter(source=fuente)
         else:
             erp_changes_qs = erp_changes_base
-        page = _paginate(erp_changes_qs, request.GET.get("page"))
+        page = _paginate(erp_changes_qs, request.GET.get("page"), per_page=audit_per_page, base_default=PAGE_SIZE_ROWS)
         rows = [format_erp_change_row(c) for c in page.object_list]
     else:
-        page = _paginate(resolutions_base, request.GET.get("page"))
+        page = _paginate(resolutions_base, request.GET.get("page"), per_page=audit_per_page, base_default=PAGE_SIZE_ROWS)
         rows = list(page.object_list)
 
     context = {

@@ -24,6 +24,7 @@ from ..models import (
 )
 from .column_detector import safe_date, safe_time
 from .erp_corrections import source_key_for_raw
+from .excel_parsers import get_additional_erp_movements
 
 
 def to_decimal(value: Any) -> Decimal:
@@ -42,13 +43,17 @@ def sync_bank_statement_movements(
     movements_raw: List[Dict[str, Any]],
 ) -> List[BankStatementMovement]:
     """
-    Deduplicates and bulk-creates BankStatementMovement rows using their natural key:
+    Deduplicates and bulk-creates BankStatementMovement rows using their natural key
+    scoped by process currency:
     (movement_date, description, document_number, charge_amount, deposit_amount, balance_amount).
-    Returns the aligned list of BankStatementMovement instances in the same order as movements_raw.
+    Re-links existing movements to `process` so they remain visible in the new closing's Cartola tab.
     """
     incoming_dates = {d for m in movements_raw if (d := safe_date(m.get("movement_date"))) is not None}
     existing_qs = (
-        BankStatementMovement.objects.filter(movement_date__in=incoming_dates)
+        BankStatementMovement.objects.filter(
+            process__process_currency=process.process_currency,
+            movement_date__in=incoming_dates,
+        )
         if incoming_dates
         else BankStatementMovement.objects.none()
     )
@@ -59,6 +64,8 @@ def sync_bank_statement_movements(
 
     bank_models: List[BankStatementMovement] = []
     new_movements: List[BankStatementMovement] = []
+    movements_to_update: List[BankStatementMovement] = []
+    seen_update_ids: set = set()
 
     for m_data in movements_raw:
         natural_key = (
@@ -69,7 +76,8 @@ def sync_bank_statement_movements(
             to_decimal(m_data.get("deposit_amount")),
             to_decimal(m_data.get("balance_amount")),
         )
-        if natural_key not in existing_map:
+        existing_obj = existing_map.get(natural_key)
+        if existing_obj is None:
             new_obj = BankStatementMovement(
                 process=process,
                 bank_account_number=account_number,
@@ -84,10 +92,24 @@ def sync_bank_statement_movements(
             )
             existing_map[natural_key] = new_obj
             new_movements.append(new_obj)
-        bank_models.append(existing_map[natural_key])
+            bank_models.append(new_obj)
+        else:
+            changed = False
+            if existing_obj.process_id != process.id:
+                existing_obj.process = process
+                changed = True
+            if account_number and not existing_obj.bank_account_number:
+                existing_obj.bank_account_number = account_number
+                changed = True
+            if changed and existing_obj.pk and existing_obj.pk not in seen_update_ids:
+                seen_update_ids.add(existing_obj.pk)
+                movements_to_update.append(existing_obj)
+            bank_models.append(existing_obj)
 
     if new_movements:
         BankStatementMovement.objects.bulk_create(new_movements)
+    if movements_to_update:
+        BankStatementMovement.objects.bulk_update(movements_to_update, ["process", "bank_account_number"])
     return bank_models
 
 
@@ -105,26 +127,38 @@ def sync_erp_transactions_by_currency(
     Excel values; a soft-deleted row is found too and stays deleted.
     """
     manual_rows = ErpTransaction.all_objects.in_bulk([e["manual_id"] for e in erp_raw if e.get("manual_id")])
-    incoming_keys = {source_key_for_raw(e, source_currency, doc_field) for e in erp_raw if not e.get("manual_id")}
-    existing_qs = (
-        ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=incoming_keys)
-        if incoming_keys
-        else ErpTransaction.all_objects.none()
-    )
+    incoming_keys = [source_key_for_raw(e, source_currency, doc_field) for e in erp_raw if not e.get("manual_id")]
+    unique_keys = list(dict.fromkeys(k for k in incoming_keys if k))
     existing_map: Dict[str, ErpTransaction] = {}
-    for existing in existing_qs.order_by("id"):
-        existing_map.setdefault(existing.source_key, existing)  # oldest wins if old uploads left duplicates
+    for start in range(0, len(unique_keys), 900):
+        chunk = unique_keys[start : start + 900]
+        qs = (
+            ErpTransaction.all_objects.select_related("process")
+            .filter(source_currency=source_currency, source_key__in=chunk)
+            .order_by("id")
+        )
+        for existing in qs:
+            existing_map.setdefault(existing.source_key, existing)  # oldest wins if old uploads left duplicates
 
     erp_models: List[ErpTransaction] = []
     new_erp: List[ErpTransaction] = []
     erp_to_update: List[ErpTransaction] = []
+    seen_erp_update_ids: set = set()
 
     for e_data in erp_raw:
         manual_obj = manual_rows.get(e_data.get("manual_id"))
         if manual_obj is not None:
-            # Hand-added row taking part in this upload's cross-match: it already exists, only its flag changes
+            # Hand-added row taking part in this upload's cross-match: it already exists, update its process/flag
+            changed = False
             if e_data.get("reconciled") and not manual_obj.reconciled:
                 manual_obj.reconciled = True
+                manual_obj.process = process
+                changed = True
+            elif not manual_obj.reconciled and manual_obj.process_id != process.id:
+                manual_obj.process = process
+                changed = True
+            if changed and manual_obj.pk and manual_obj.pk not in seen_erp_update_ids:
+                seen_erp_update_ids.add(manual_obj.pk)
                 erp_to_update.append(manual_obj)
             erp_models.append(manual_obj)
             continue
@@ -136,12 +170,31 @@ def sync_erp_transactions_by_currency(
         date_val = safe_date(e_data.get("transaction_date"))
         time_val = safe_time(e_data.get("transaction_time"))
         rec_val = e_data.get("reconciled", False)
+        desc_val = (e_data.get("payment_description") or "").strip()[:100] or None
 
         natural_key = source_key_for_raw(e_data, source_currency, doc_field)
         existing_obj = existing_map.get(natural_key)
         if existing_obj is not None:
+            changed = False
             if rec_val and not existing_obj.reconciled:
                 existing_obj.reconciled = True
+                if existing_obj.process_id != process.id:
+                    existing_obj.process = process
+                changed = True
+            elif (
+                not existing_obj.reconciled
+                and existing_obj.process_id != process.id
+                and existing_obj.process.process_currency != process.process_currency
+                and existing_obj.source_currency == process.process_currency
+            ):
+                # Pre-loaded as an auxiliary row during the other currency's upload; adopt into native currency closing
+                existing_obj.process = process
+                changed = True
+            if desc_val and not existing_obj.payment_description:
+                existing_obj.payment_description = desc_val
+                changed = True
+            if changed and existing_obj.pk and existing_obj.pk not in seen_erp_update_ids:
+                seen_erp_update_ids.add(existing_obj.pk)
                 erp_to_update.append(existing_obj)
             erp_models.append(existing_obj)
             continue
@@ -154,6 +207,7 @@ def sync_erp_transactions_by_currency(
             reservation_number=e_data.get("reservation_number"),
             account_code=e_data.get("account_code") or doc_val,
             payment_code=e_data.get("payment_code"),
+            payment_description=desc_val,
             invoice_number=inv_val,
             document_number=doc_val,
             authorization_code=auth_val,
@@ -172,10 +226,84 @@ def sync_erp_transactions_by_currency(
         erp_models.append(new_obj)
 
     if new_erp:
-        ErpTransaction.objects.bulk_create(new_erp)
+        ErpTransaction.objects.bulk_create(new_erp, batch_size=1000)
     if erp_to_update:
-        ErpTransaction.objects.bulk_update(erp_to_update, ["reconciled"])
+        ErpTransaction.objects.bulk_update(
+            erp_to_update, ["process", "reconciled", "payment_description"], batch_size=1000
+        )
     return erp_models
+
+
+def sync_additional_erp_movements(
+    process: ReconciliationProcess,
+    token: Optional[str],
+    card_types: Dict[str, CardType],
+) -> int:
+    """
+    Bulk-syncs all remaining Bordero movements (other currency's cards + non-card hotel movements
+    such as HOA, IVA, BAR, PROP, E$, EUS$) into ErpTransaction without duplicating existing rows
+    or altering historical closings, edits, or soft-deletes.
+    """
+    additional_rows = get_additional_erp_movements(token)
+    if not additional_rows:
+        return 0
+
+    unique_keys = list(dict.fromkeys(r.get("source_key") for r in additional_rows if r.get("source_key")))
+    existing_by_key: Dict[str, ErpTransaction] = {}
+    for start in range(0, len(unique_keys), 900):
+        chunk = unique_keys[start : start + 900]
+        for existing in ErpTransaction.all_objects.filter(source_key__in=chunk).order_by("id"):
+            existing_by_key.setdefault(existing.source_key, existing)
+
+    new_erp: List[ErpTransaction] = []
+    to_update: List[ErpTransaction] = []
+    seen_update_ids: set = set()
+
+    for m_data in additional_rows:
+        skey = m_data.get("source_key")
+        if not skey:
+            continue
+        desc_val = (m_data.get("payment_description") or "").strip()[:100] or None
+        existing_obj = existing_by_key.get(skey)
+        if existing_obj is not None:
+            if desc_val and not existing_obj.payment_description and existing_obj.pk and existing_obj.pk not in seen_update_ids:
+                existing_obj.payment_description = desc_val
+                seen_update_ids.add(existing_obj.pk)
+                to_update.append(existing_obj)
+            continue
+
+        doc_val = m_data.get("document_number") or m_data.get("account_code") or ""
+        card_code = m_data.get("card_code") or ""
+        new_obj = ErpTransaction(
+            process=process,
+            card_type=card_types.get(card_code) if card_code else None,
+            room_number=m_data.get("room_number"),
+            room_type=m_data.get("room_type"),
+            reservation_number=m_data.get("reservation_number"),
+            account_code=m_data.get("account_code") or doc_val,
+            payment_code=m_data.get("payment_code"),
+            payment_description=desc_val,
+            invoice_number=m_data.get("invoice_number") or "",
+            document_number=doc_val,
+            authorization_code=m_data.get("authorization_code") or "",
+            transaction_date=safe_date(m_data.get("transaction_date")),
+            transaction_time=safe_time(m_data.get("transaction_time")),
+            cashier_username=m_data.get("cashier_username"),
+            guest_name=m_data.get("guest_name"),
+            amount=to_decimal(m_data.get("amount")),
+            source_currency=m_data.get("source_currency") or process.process_currency,
+            reconciled=False,
+            origin=ErpTransaction.ORIGIN_EXCEL,
+            source_key=skey,
+        )
+        existing_by_key[skey] = new_obj
+        new_erp.append(new_obj)
+
+    if new_erp:
+        ErpTransaction.objects.bulk_create(new_erp, batch_size=1000)
+    if to_update:
+        ErpTransaction.objects.bulk_update(to_update, ["payment_description"], batch_size=1000)
+    return len(new_erp)
 
 
 def sync_transbank_transactions_for_process(
@@ -192,14 +320,22 @@ def sync_transbank_transactions_for_process(
     tbk_models: List[TransbankTransaction] = []
     new_tbk: List[TransbankTransaction] = []
     tbk_to_update: List[TransbankTransaction] = []
+    seen_tbk_update_ids: set = set()
 
     for t_data in tbk_raw:
         natural_key = natural_key_fn(t_data)
         t_rec = t_data.get("reconciled", False)
         existing_tbk = existing_tbk_map.get(natural_key)
         if existing_tbk is not None:
+            changed = False
             if existing_tbk.reconciled != t_rec:
                 existing_tbk.reconciled = t_rec
+                changed = True
+            if existing_tbk.process_id != process.id:
+                existing_tbk.process = process
+                changed = True
+            if changed and existing_tbk.pk and existing_tbk.pk not in seen_tbk_update_ids:
+                seen_tbk_update_ids.add(existing_tbk.pk)
                 tbk_to_update.append(existing_tbk)
             tbk_models.append(existing_tbk)
             continue
@@ -230,7 +366,7 @@ def sync_transbank_transactions_for_process(
     if new_tbk:
         TransbankTransaction.objects.bulk_create(new_tbk)
     if tbk_to_update:
-        TransbankTransaction.objects.bulk_update(tbk_to_update, ["reconciled"])
+        TransbankTransaction.objects.bulk_update(tbk_to_update, ["process", "reconciled"])
     return tbk_models
 
 

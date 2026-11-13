@@ -22,13 +22,15 @@ from .column_detector import (
     safe_cell,
     safe_date,
     safe_decimal,
-    safe_time,
 )
 from .excel_parsers import (
     card_code_from_masked_number,
+    parse_all_bordero_movements,
     parse_and_validate_bank_deposits,
     parse_card_operator_statements,
     parse_erp_transactions,
+    read_excel_or_html_df,
+    store_additional_erp_movements,
 )
 from .suggestion_engine import enrich_preview_with_suggestions
 
@@ -41,17 +43,7 @@ BANK_KEYWORDS = (
 
 def _read_transbank_dataframe(transbank_file: Any) -> pd.DataFrame:
     """Reads a Transbank USD settlement file (.xlsx, BIFF .xls, or HTML-table .xls) with raw row indexing."""
-    if isinstance(transbank_file, pd.DataFrame):
-        return transbank_file
-    if hasattr(transbank_file, "seek"):
-        transbank_file.seek(0)
-    try:
-        return pd.read_excel(transbank_file, header=None)
-    except Exception:
-        if hasattr(transbank_file, "seek"):
-            transbank_file.seek(0)
-        tables = pd.read_html(transbank_file)
-        return tables[0] if tables else pd.DataFrame()
+    return read_excel_or_html_df(transbank_file, header=None)
 
 
 def _find_tbk_usd_detail_header_row(df: pd.DataFrame) -> Tuple[int, Dict[str, int]]:
@@ -249,7 +241,7 @@ def _build_summary_tables(
         card_model = card_types.get(code)
         card_name = card_model.name if card_model else code
         acc = summary_accumulators[code]
-        diff_usd = round(acc["usd_tbk_total"] - acc["usd_erp_total"], 2)
+        diff_usd = round(acc["usd_erp_total"] - acc["usd_tbk_total"], 2)
         diff_clp = round(acc["clp_tbk_total"] - acc["clp_erp_total"], 0)
 
         usd_table.append({
@@ -272,7 +264,7 @@ def _build_summary_tables(
     usd_totals = {
         "erp": float(round(tot_usd_erp, 2)),
         "tbk": float(round(tot_usd_tbk, 2)),
-        "diff": float(round(tot_usd_tbk - tot_usd_erp, 2)),
+        "diff": float(round(tot_usd_erp - tot_usd_tbk, 2)),
     }
     clp_totals = {
         "erp": float(round(tot_clp_erp, 0)),
@@ -333,6 +325,7 @@ def calculate_usd_preview(
 
     # Collect all ERP files (primary + optional extra files)
     extra_erp_names: List[str] = []
+    failed_extra_erp_files: List[str] = []
     primary_erp_name = os.path.basename(getattr(erp_file, "name", "TERJETAS ERP.xlsx"))
     all_erp_dfs: List[Tuple[str, pd.DataFrame]] = [(primary_erp_name, erp_df)]
 
@@ -348,6 +341,7 @@ def calculate_usd_preview(
                 all_erp_dfs.append((extra_name, extra_df))
                 extra_erp_names.append(extra_name)
         except Exception:
+            failed_extra_erp_files.append(extra_name)
             continue
 
     # 1. Detect Transbank Detail Header & Extract Bank Statement Abono / Metadata
@@ -397,6 +391,18 @@ def calculate_usd_preview(
     erp_instances, erp_corrections = overlay_on_instances(
         erp_instances, source_currency="USD", voucher_codes=voucher_codes - {""}
     )
+
+    active_usd_keys = {inst.source_key for inst in erp_instances if getattr(inst, "source_key", None)}
+    seen_additional_keys = set(active_usd_keys)
+    additional_erp_rows: List[Dict[str, Any]] = []
+    for source_name, df in all_erp_dfs:
+        for mov in parse_all_bordero_movements(df, source_file=source_name):
+            skey = mov.get("source_key")
+            if not skey or skey in seen_additional_keys:
+                continue
+            seen_additional_keys.add(skey)
+            additional_erp_rows.append(mov)
+    additional_erp_token = store_additional_erp_movements(additional_erp_rows)
 
     for inst in erp_instances:
         if inst.authorization_code:
@@ -474,7 +480,10 @@ def calculate_usd_preview(
                 for erp_rec in active_erp_records
             ]
             single_match = next(
-                (c for c in resolved_candidates if c[1] is not None and abs(round(gross_amount_usd - c[2], 2)) <= usd_tolerance),
+                (
+                    c for c in resolved_candidates
+                    if c[0]["amount_clp"] > 0 and c[1] is not None and abs(round(gross_amount_usd - c[2], 2)) <= usd_tolerance
+                ),
                 None,
             )
 
@@ -493,7 +502,8 @@ def calculate_usd_preview(
                 if selected_op and operator_index is not None:
                     card_operator_transactions_data[operator_index]["authorization_code"] = auth_code
             else:
-                primary_erp, selected_op, _, _, _ = resolved_candidates[0]
+                primary_cand = next((c for c in resolved_candidates if c[0]["amount_clp"] > 0), resolved_candidates[0])
+                primary_erp, selected_op, _, _, _ = primary_cand
                 erp_item = primary_erp["instance"]
                 erp_index = getattr(erp_item, "_memory_index", None)
                 operator_index = selected_op["operator_index"] if selected_op else None
@@ -600,7 +610,8 @@ def calculate_usd_preview(
             "card_code": e.card_type.code if e.card_type else "VI",
             "room_number": e.room_number, "room_type": e.room_type,
             "reservation_number": e.reservation_number, "account_code": e.account_code,
-            "payment_code": e.payment_code, "invoice_number": e.invoice_number,
+            "payment_code": e.payment_code, "payment_description": e.payment_description,
+            "invoice_number": e.invoice_number,
             "document_number": e.document_number, "authorization_code": e.authorization_code,
             "transaction_date": e.transaction_date.strftime("%d/%m/%Y") if e.transaction_date else None,
             "transaction_time": e.transaction_time.strftime("%H:%M:%S") if e.transaction_time else None,
@@ -629,6 +640,7 @@ def calculate_usd_preview(
             "mastercard": getattr(mastercard_file, "name", "MASTERCARD DOLAR.XLS"),
         },
         "extra_erp_files": extra_erp_names,
+        "failed_extra_erp_files": failed_extra_erp_files,
         "bank_validation": {
             "deposit_modality": "USD_GENERAL",
             "bank_name": bank_name or "Banco Cuenta Corriente",
@@ -644,6 +656,7 @@ def calculate_usd_preview(
         },
         "bank_movements": first_bv.get("movements_data", []),
         "erp_transactions": erp_transactions_data,
+        "additional_erp_token": additional_erp_token,
         "transbank_transactions": tbk_txs_data,
         "card_operator_transactions": card_operator_transactions_data,
         "usd_table": usd_table, "clp_table": clp_table,

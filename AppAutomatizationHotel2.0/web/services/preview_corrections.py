@@ -167,13 +167,193 @@ def _refresh_clp_totals(preview: Dict[str, Any]) -> None:
             counts[f"{key}_without"] = len(items) - with_sug
 
 
-def _refresh_usd_counts(preview: Dict[str, Any]) -> None:
+def _recross_usd_in_preview(preview: Dict[str, Any], voucher: Dict[str, Any]) -> None:
+    """Crosses one USD voucher again inside the in-memory preview after an ERP row correction."""
+    erp_rows = preview["erp_transactions"]
+    op_rows = preview.get("card_operator_transactions", [])
+    tbk = preview["transbank_transactions"][voucher["tbk_index"]]
+    gross_usd = Decimal(str(tbk["original_sale_amount"]))
+    card_code = voucher["card_code"]
+    tolerance = Decimal(str(preview.get("tolerance", "0.50")))
+    code = normalize_auth_code(tbk["authorization_code"])
+
+    prev_erp_idx = voucher.get("erp_index")
+    if prev_erp_idx is not None and 0 <= prev_erp_idx < len(erp_rows):
+        erp_rows[prev_erp_idx]["reconciled"] = False
+
+    candidates = [
+        (idx, row) for idx, row in enumerate(erp_rows)
+        if code and normalize_auth_code(row.get("authorization_code") or "") == code
+    ]
+    active = [c for c in candidates if c[1].get("invoice_number")] or candidates
+
+    def _match_op(e_row: Dict[str, Any]):
+        doc_num = e_row.get("document_number") or e_row.get("account_code") or ""
+        erp_clp = Decimal(str(e_row.get("amount", 0)))
+        op_cands = [
+            (o_idx, o) for o_idx, o in enumerate(op_rows)
+            if o.get("card_code") == card_code and (o.get("document_number") or "") == doc_num
+        ]
+        chosen_idx, chosen_op, obs = None, None, "No encontrado en Posición por Clientes"
+        for o_idx, o in op_cands:
+            bal = Decimal(str(o.get("balance_amount", 0)))
+            corr = Decimal(str(o.get("corrected_balance_amount", 0)))
+            if bal == erp_clp:
+                chosen_idx, chosen_op, obs = o_idx, o, f"Coincide con SALDO {bal}"
+                break
+            if corr == erp_clp:
+                chosen_idx, chosen_op, obs = o_idx, o, f"Coincide con SALDO CORREGIDO {corr}"
+                break
+        if chosen_op is None and op_cands:
+            chosen_idx, chosen_op = op_cands[0]
+        op_usd = Decimal(str(chosen_op.get("foreign_currency_amount", 0))) if chosen_op else Decimal("0.00")
+        op_clp = (
+            Decimal(str(chosen_op.get("balance_amount", 0)))
+            if chosen_op and Decimal(str(chosen_op.get("balance_amount", 0))) > 0
+            else (Decimal(str(chosen_op.get("corrected_balance_amount", 0))) if chosen_op else Decimal("0.00"))
+        )
+        return chosen_idx, chosen_op, op_usd, op_clp, obs
+
+    if not active:
+        voucher.update({
+            "erp_index": None,
+            "operator_index": None,
+            "erp_authorization_code": "",
+            "account_code": "",
+            "document_number": "",
+            "operator_document_number": "",
+            "cashier_username": "—",
+            "operator_amount_usd": 0.0,
+            "erp_amount_clp": 0.0,
+            "operator_amount_clp": 0.0,
+            "difference_usd": float(gross_usd),
+            "difference_clp": 0.0,
+            "system_result": "NOT_FOUND_IN_ERP",
+            "observation": f"Voucher {tbk['authorization_code']} no encontrado en ERP Hotel",
+        })
+        tbk["reconciled"] = False
+        return
+
+    resolved = [(idx, e_row, *_match_op(e_row)) for idx, e_row in active]
+    single = next(
+        (
+            c for c in resolved
+            if Decimal(str(c[1].get("amount", 0))) > 0
+            and c[3] is not None
+            and abs(round(gross_usd - c[4], 2)) <= tolerance
+        ),
+        None,
+    )
+    if single is not None or len(resolved) == 1:
+        erp_idx, e_row, op_idx, op_row, op_usd, op_clp, obs = single if single is not None else resolved[0]
+        e_row["reconciled"] = True
+        if op_row is not None:
+            op_row["authorization_code"] = tbk["authorization_code"]
+        erp_clp = Decimal(str(e_row.get("amount", 0)))
+        acc_code = e_row.get("account_code") or e_row.get("document_number") or ""
+        doc_num = e_row.get("document_number") or acc_code
+        op_doc = op_row.get("document_number", "") if op_row else ""
+        cashier = e_row.get("cashier_username") or "—"
+        erp_auth = e_row.get("authorization_code") or tbk["authorization_code"]
+    else:
+        primary_cand = next((c for c in resolved if Decimal(str(c[1].get("amount", 0))) > 0), resolved[0])
+        erp_idx, e_row, op_idx, op_row, _, _, _ = primary_cand
+        doc_nums, op_docs = [], []
+        erp_clp = op_usd = op_clp = Decimal("0.00")
+        all_ops = True
+        for _, r_erp, r_op_idx, r_op, r_usd, r_clp, _ in resolved:
+            r_erp["reconciled"] = True
+            r_acc = r_erp.get("account_code") or r_erp.get("document_number") or ""
+            if r_acc and r_acc not in doc_nums:
+                doc_nums.append(r_acc)
+            erp_clp += Decimal(str(r_erp.get("amount", 0)))
+            op_usd += r_usd
+            op_clp += r_clp
+            if r_op is not None:
+                r_op["authorization_code"] = tbk["authorization_code"]
+                if r_op.get("document_number") and r_op["document_number"] not in op_docs:
+                    op_docs.append(r_op["document_number"])
+            else:
+                all_ops = False
+        acc_code = " / ".join(doc_nums)[:50]
+        doc_num = acc_code
+        op_doc = " / ".join(op_docs)[:50]
+        cashier = e_row.get("cashier_username") or "—"
+        erp_auth = e_row.get("authorization_code") or tbk["authorization_code"]
+        obs = (
+            f"Voucher dividido en {len(resolved)} facturas (Cta. {acc_code}) | Suma SALDO {op_clp}"
+            if all_ops else "No encontrado en Posición por Clientes"
+        )
+
+    diff_usd = round(gross_usd - op_usd, 2)
+    diff_clp = round(op_clp - erp_clp, 2)
+    matched = abs(diff_usd) <= tolerance and op_row is not None
+    tbk["reconciled"] = matched
+    voucher.update({
+        "erp_index": erp_idx,
+        "operator_index": op_idx,
+        "erp_authorization_code": erp_auth,
+        "account_code": acc_code,
+        "document_number": doc_num,
+        "operator_document_number": op_doc,
+        "cashier_username": cashier,
+        "operator_amount_usd": float(op_usd),
+        "erp_amount_clp": float(erp_clp),
+        "operator_amount_clp": float(op_clp),
+        "difference_usd": float(diff_usd),
+        "difference_clp": float(diff_clp),
+        "system_result": "MATCHED" if matched else "AMOUNT_MISMATCH",
+        "observation": obs,
+    })
+
+
+def _refresh_usd_totals(preview: Dict[str, Any]) -> None:
+    """Refreshes counts, USD/CLP summary tables, and suggestion counts in the USD preview."""
+    usd_buckets = ("matched_vouchers", "discrepancy_vouchers", "orphan_vouchers")
+    vouchers = [v for b in usd_buckets for v in preview.get(b, [])]
     preview["counts"] = {
         "matched": len(preview.get("matched_vouchers", [])),
         "discrepancies": len(preview.get("discrepancy_vouchers", [])),
         "orphans": len(preview.get("orphan_vouchers", [])),
-        "total": sum(len(preview.get(b, [])) for b in ("matched_vouchers", "discrepancy_vouchers", "orphan_vouchers")),
+        "total": len(vouchers),
     }
+    for row in preview.get("usd_table", []):
+        group = [v for v in vouchers if v.get("card_code") == row.get("card_code")]
+        tbk_usd = round(sum((Decimal(str(v.get("gross_amount_usd", 0))) for v in group), Decimal("0")), 2)
+        op_usd = round(sum((Decimal(str(v.get("operator_amount_usd", 0))) for v in group), Decimal("0")), 2)
+        row["erp_sales"] = float(tbk_usd)
+        row["tbk_sales"] = float(op_usd)
+        row["difference"] = float(round(tbk_usd - op_usd, 2))
+    for row in preview.get("clp_table", []):
+        group = [v for v in vouchers if v.get("card_code") == row.get("card_code")]
+        erp_clp = round(sum((Decimal(str(v.get("erp_amount_clp", 0))) for v in group), Decimal("0")), 0)
+        op_clp = round(sum((Decimal(str(v.get("operator_amount_clp", 0))) for v in group), Decimal("0")), 0)
+        row["erp_sales"] = float(erp_clp)
+        row["tbk_sales"] = float(op_clp)
+        row["difference"] = float(round(op_clp - erp_clp, 0))
+    if preview.get("usd_table"):
+        tot_u_erp = round(sum((Decimal(str(r["erp_sales"])) for r in preview["usd_table"]), Decimal("0")), 2)
+        tot_u_tbk = round(sum((Decimal(str(r["tbk_sales"])) for r in preview["usd_table"]), Decimal("0")), 2)
+        preview["usd_totals"] = {
+            "erp": float(tot_u_erp),
+            "tbk": float(tot_u_tbk),
+            "diff": float(round(tot_u_erp - tot_u_tbk, 2)),
+        }
+    if preview.get("clp_table"):
+        tot_c_erp = round(sum((Decimal(str(r["erp_sales"])) for r in preview["clp_table"]), Decimal("0")), 0)
+        tot_c_tbk = round(sum((Decimal(str(r["tbk_sales"])) for r in preview["clp_table"]), Decimal("0")), 0)
+        preview["clp_totals"] = {
+            "erp": float(tot_c_erp),
+            "tbk": float(tot_c_tbk),
+            "diff": float(round(tot_c_tbk - tot_c_erp, 0)),
+        }
+    counts = preview.get("suggestion_counts")
+    if counts is not None:
+        for key, b in (("discrepancies", "discrepancy_vouchers"), ("orphans", "orphan_vouchers")):
+            items = preview.get(b, [])
+            with_sug = sum(1 for v in items if v.get("suggestion"))
+            counts[f"{key}_with"] = with_sug
+            counts[f"{key}_without"] = len(items) - with_sug
 
 
 # ------------------------------------------------------------------------------
@@ -205,7 +385,7 @@ def apply_preview_correction(preview: Dict[str, Any], currency: str, tbk_index: 
     erp_rows = preview.get("erp_transactions", [])
     document = proposal["label"].split(" · ")[0].removeprefix("Doc ")
     final = {**proposal, "new": new_text, "label": proposal_label(document, proposal["field"], proposal["old"], new_text, currency)}
-    in_memory = currency == "CLP" and proposal.get("erp_index") is not None
+    in_memory = proposal.get("erp_index") is not None
 
     entry = {
         "tbk_index": tbk_index,
@@ -226,14 +406,22 @@ def apply_preview_correction(preview: Dict[str, Any], currency: str, tbk_index: 
                 "proposal": voucher["suggestion"]["proposed_change"]}
 
     _set_preview_value(erp_rows[proposal["erp_index"]], proposal["field"], new_text, doc_field)
-    _recross_clp_in_preview(preview, voucher)
+    if currency == "CLP":
+        _recross_clp_in_preview(preview, voucher)
+    else:
+        _recross_usd_in_preview(preview, voucher)
     target = BUCKET_BY_RESULT[voucher["system_result"]]
     if target != bucket:
         preview[bucket].remove(voucher)
         preview.setdefault(target, []).append(voucher)
-    _refresh_clp_totals(preview)
+    if currency == "CLP":
+        _refresh_clp_totals(preview)
+        remaining = abs(voucher["difference"])
+    else:
+        _refresh_usd_totals(preview)
+        remaining = abs(voucher["difference_usd"])
     return {"result": voucher["system_result"], "matched": voucher["system_result"] == "MATCHED", "applied_on_save": False,
-            "remaining": abs(voucher["difference"]), "proposal": voucher["suggestion"]["proposed_change"]}
+            "remaining": remaining, "proposal": voucher["suggestion"]["proposed_change"]}
 
 
 # ------------------------------------------------------------------------------

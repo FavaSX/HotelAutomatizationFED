@@ -22,15 +22,13 @@ from .column_detector import (
     safe_date,
 )
 from .excel_parsers import (
-    TBK_HEADER_AMOUNT_LABELS,
-    TBK_HEADER_BELOW_LABELS,
-    card_code_from_masked_number,
+    parse_all_bordero_movements,
     parse_bank_statement_movements,
     serialize_bank_movement,
     parse_bordero_clp_transactions,
     parse_bordero_period,
-    parse_transbank_clp_settlement,
     parse_universal_transbank_clp,
+    store_additional_erp_movements,
 )
 
 # (modality, label, deposit modality, bank statement description hint)
@@ -46,7 +44,7 @@ DEFAULT_CARD_NAMES = {"VI": "Visa", "MC": "MasterCard", "AX": "American Express"
 
 
 def get_clp_tolerance() -> Decimal:
-    """CLP rounding tolerance from SystemConfiguration (editable by superusers from /settings/)."""
+    """CLP rounding tolerance from SystemConfiguration (editable from /settings/)."""
     return SystemConfiguration.get_solo().clp_rounding_tolerance
 
 
@@ -297,19 +295,23 @@ def calculate_clp_preview(
     # Optional auxiliary/historical Bordero files (e.g. BORDERO 04-07.XLS for earlier installment sales)
     auxiliary_erp_rows: List[Dict[str, Any]] = []
     extra_erp_names: List[str] = []
+    failed_extra_erp_files: List[str] = []
+    all_bordero_dfs: List[Tuple[str, pd.DataFrame]] = [(erp_file_name, bordero_dataframe)]
     for extra_file in (extra_erp_files or []):
         if not extra_file:
             continue
         if hasattr(extra_file, "seek"):
             extra_file.seek(0)
         extra_name = os.path.basename(getattr(extra_file, "name", "BORDERO_ADICIONAL.xlsx"))
-        extra_erp_names.append(extra_name)
         try:
             extra_df = pd.read_excel(extra_file, header=None)
             if len(extra_df) > 0:
                 parsed_extra, _ = parse_bordero_clp_transactions(extra_df, source_file=extra_name)
                 auxiliary_erp_rows.extend(parsed_extra)
+                extra_erp_names.append(extra_name)
+                all_bordero_dfs.append((extra_name, extra_df))
         except Exception:
+            failed_extra_erp_files.append(extra_name)
             continue
 
     # 1. Bank deposits of the 3 settlements
@@ -376,6 +378,18 @@ def calculate_clp_preview(
             norm_code = normalize_auth_code(row.get("authorization_code") or "")
             if norm_code:
                 rows_by_auth_code.setdefault(norm_code, []).append(pos)
+
+    active_clp_keys = {r.get("source_key") for r in erp_rows if r.get("source_key")}
+    seen_additional_keys = set(active_clp_keys)
+    additional_erp_rows: List[Dict[str, Any]] = []
+    for src_name, b_df in all_bordero_dfs:
+        for mov in parse_all_bordero_movements(b_df, source_file=src_name):
+            skey = mov.get("source_key")
+            if not skey or skey in seen_additional_keys:
+                continue
+            seen_additional_keys.add(skey)
+            additional_erp_rows.append(mov)
+    additional_erp_token = store_additional_erp_movements(additional_erp_rows)
 
     period = parse_bordero_period(bordero_dataframe)
     if period == (None, None):
@@ -582,10 +596,12 @@ def calculate_clp_preview(
             "tbk_debit": getattr(transbank_debit_file, "name", None) or (tbk_names[0] if tbk_names else ""),
             "tbk_prepaid": getattr(transbank_prepaid_file, "name", None) or (tbk_names[0] if tbk_names else ""),
         },
+        "failed_extra_erp_files": failed_extra_erp_files,
         "bank_account_number": detected_account or next((b["bank_account"] for b in bank_validations if b["bank_account"]), ""),
         "bank_validations": bank_validations,
         "bank_movements": bank_movements_data,
         "erp_transactions": erp_rows,
+        "additional_erp_token": additional_erp_token,
         "transbank_transactions": transbank_transactions_data,
         "modality_table": modality_table,
         "clp_table": clp_table,

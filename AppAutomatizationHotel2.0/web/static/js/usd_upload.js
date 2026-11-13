@@ -152,36 +152,41 @@ function renderAlignmentTable(data) {
     let optionsHtml = '<option value="">— Sin archivo asignado —</option>';
     data.inspected_files.forEach(f => {
       const selected = (role.file_index === f.file_index) ? 'selected' : '';
-      optionsHtml += `<option value="${f.file_index}" ${selected}>${f.file_name} (${f.row_count} filas)</option>`;
+      optionsHtml += `<option value="${Number(f.file_index)}" ${selected}>${escapeHtmlStr(f.file_name)} (${Number(f.row_count) || 0} filas)</option>`;
     });
 
     const badgeHtml = getConfidenceBadgeHtml(role.confidence);
+    const safeRoleKey = escapeHtmlStr(role.role_key);
+    const safeBadgeClass = escapeHtmlStr(role.badge_class);
+    const safeBadge = escapeHtmlStr(role.badge);
+    const safeLabel = escapeHtmlStr(role.role_label);
+    const safeEvidence = escapeHtmlStr(role.evidence);
 
     if (role.role_key === 'erp') {
       // ERP Role: Primary file select + Extra files container
       tr.innerHTML = `
         <td class="ps-3 py-3 align-top">
           <div class="d-flex align-items-center gap-2">
-            <span class="badge ${role.badge_class}">${role.badge}</span>
-            <span class="fw-bold text-dark">${role.role_label}</span>
+            <span class="badge ${safeBadgeClass}">${safeBadge}</span>
+            <span class="fw-bold text-dark">${safeLabel}</span>
           </div>
         </td>
         <td class="py-3">
           <div class="d-flex align-items-center gap-2">
-            <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
+            <select class="form-select form-select-sm role-file-select" id="select_${safeRoleKey}" data-role-key="${safeRoleKey}" onchange="onManualAlignmentChange()">
               ${optionsHtml}
             </select>
             <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir archivo principal ERP">
               <i class="bi bi-upload me-1"></i>Subir
-              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
+              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${safeRoleKey}', this)">
             </label>
           </div>
-          <small class="text-muted d-block mt-1" id="evidence_${role.role_key}">${role.evidence}</small>
+          <small class="text-muted d-block mt-1" id="evidence_${safeRoleKey}">${safeEvidence}</small>
           <div id="extraErpContainer" class="mt-2">
             <!-- Rendered by renderExtraErpWidgets() -->
           </div>
         </td>
-        <td class="text-center pe-3 py-3 align-top" id="confidence_${role.role_key}">
+        <td class="text-center pe-3 py-3 align-top" id="confidence_${safeRoleKey}">
           ${badgeHtml}
         </td>
       `;
@@ -190,26 +195,26 @@ function renderAlignmentTable(data) {
       tr.innerHTML = `
         <td class="ps-3 py-3 align-top">
           <div class="d-flex align-items-center gap-2">
-            <span class="badge ${role.badge_class}">${role.badge}</span>
-            <span class="fw-bold text-dark">${role.role_label}</span>
+            <span class="badge ${safeBadgeClass}">${safeBadge}</span>
+            <span class="fw-bold text-dark">${safeLabel}</span>
           </div>
         </td>
         <td class="py-3">
           <div class="d-flex align-items-center gap-2">
-            <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
+            <select class="form-select form-select-sm role-file-select" id="select_${safeRoleKey}" data-role-key="${safeRoleKey}" onchange="onManualAlignmentChange()">
               ${optionsHtml}
             </select>
             <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir archivo principal Transbank">
               <i class="bi bi-upload me-1"></i>Subir
-              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
+              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${safeRoleKey}', this)">
             </label>
           </div>
-          <small class="text-muted d-block mt-1" id="evidence_${role.role_key}">${role.evidence}</small>
+          <small class="text-muted d-block mt-1" id="evidence_${safeRoleKey}">${safeEvidence}</small>
           <div id="extraTbkContainer" class="mt-2">
             <!-- Rendered by renderExtraTbkWidgets() -->
           </div>
         </td>
-        <td class="text-center pe-3 py-3 align-top" id="confidence_${role.role_key}">
+        <td class="text-center pe-3 py-3 align-top" id="confidence_${safeRoleKey}">
           ${badgeHtml}
         </td>
       `;
@@ -217,23 +222,23 @@ function renderAlignmentTable(data) {
       tr.innerHTML = `
         <td class="ps-3 py-3">
           <div class="d-flex align-items-center gap-2">
-            <span class="badge ${role.badge_class}">${role.badge}</span>
-            <span class="fw-bold text-dark">${role.role_label}</span>
+            <span class="badge ${safeBadgeClass}">${safeBadge}</span>
+            <span class="fw-bold text-dark">${safeLabel}</span>
           </div>
         </td>
         <td class="py-3">
           <div class="d-flex align-items-center gap-2">
-            <select class="form-select form-select-sm role-file-select" id="select_${role.role_key}" data-role-key="${role.role_key}" onchange="onManualAlignmentChange()">
+            <select class="form-select form-select-sm role-file-select" id="select_${safeRoleKey}" data-role-key="${safeRoleKey}" onchange="onManualAlignmentChange()">
               ${optionsHtml}
             </select>
             <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir un archivo nuevo directamente para este rol">
               <i class="bi bi-upload me-1"></i>Subir
-              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${role.role_key}', this)">
+              <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${safeRoleKey}', this)">
             </label>
           </div>
-          <small class="text-muted d-block mt-1" id="evidence_${role.role_key}">${role.evidence}</small>
+          <small class="text-muted d-block mt-1" id="evidence_${safeRoleKey}">${safeEvidence}</small>
         </td>
-        <td class="text-center pe-3 py-3" id="confidence_${role.role_key}">
+        <td class="text-center pe-3 py-3" id="confidence_${safeRoleKey}">
           ${badgeHtml}
         </td>
       `;
@@ -272,8 +277,8 @@ function renderExtraFilesWidget({ containerId, indices, label, iconClass, remove
     return `
       <span class="badge bg-body-secondary text-body border px-2 py-1 d-inline-flex align-items-center gap-1">
         <i class="bi bi-file-earmark-excel ${iconClass}"></i>
-        <span>${f.file_name} (${f.row_count} filas)</span>
-        <a href="javascript:void(0)" class="text-danger ms-1 text-decoration-none fw-bold" onclick="${removeFn}(${idx})" title="Quitar">&times;</a>
+        <span>${escapeHtmlStr(f.file_name)} (${Number(f.row_count) || 0} filas)</span>
+        <a href="javascript:void(0)" class="text-danger ms-1 text-decoration-none fw-bold" onclick="${removeFn}(${Number(idx)})" title="Quitar">&times;</a>
       </span>
     `;
   }).join('');
@@ -287,7 +292,7 @@ function renderExtraFilesWidget({ containerId, indices, label, iconClass, remove
     (f.row_count || 0) > 0
   );
   const optionsHtml = candidates.map(f =>
-    `<option value="${f.file_index}">${f.file_name} (${f.row_count} filas)</option>`
+    `<option value="${Number(f.file_index)}">${escapeHtmlStr(f.file_name)} (${Number(f.row_count) || 0} filas)</option>`
   ).join('');
 
   container.innerHTML = `
@@ -500,7 +505,7 @@ function onManualAlignmentChange() {
       extraErpIndices.delete(fileIdx);
       extraTbkIndices.delete(fileIdx);
       const fileInfo = latestDetectionReport.inspected_files[fileIdx];
-      evidenceCell.innerHTML = `${fileInfo.evidence}`;
+      evidenceCell.textContent = fileInfo.evidence || '';
       confidenceCell.innerHTML = getConfidenceBadgeHtml(
         (fileInfo.detected_role === roleKey && fileInfo.confidence === 'HIGH') ? 'HIGH' : 'MANUAL'
       );

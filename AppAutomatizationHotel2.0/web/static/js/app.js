@@ -1,12 +1,36 @@
 /**
  * Global Application Shell Logic (base.html & login.html)
  * Handles:
+ *  - Shared HTML escaping & CLP/USD client-side currency formatters
  *  - Light / Dark theme toggle
  *  - Collapsible sidebar (icon rail on desktop, drawer on mobile)
  *  - Elevating Bootstrap modals to document.body to prevent stacking context locks
  *  - Live USD/CLP exchange rate badge with post-login count-up animation
  *  - Login password visibility toggle
  */
+
+function escapeHtmlStr(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatClpClient(val) {
+  const num = Math.round(Number(val) || 0);
+  return '$' + num.toLocaleString('es-CL');
+}
+
+function formatUsdClient(val) {
+  const num = Number(val) || 0;
+  return 'US$ ' + num.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+window.escapeHtmlStr = escapeHtmlStr;
+window.formatClpClient = formatClpClient;
+window.formatUsdClient = formatUsdClient;
 
 (function () {
   const btn = document.getElementById('themeToggleBtn');

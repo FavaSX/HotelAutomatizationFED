@@ -15,7 +15,7 @@
     return;
   }
 
-  const PAGE_SIZE = 15;
+  let pageSize = 25;
   let activeTab = 'erp';
   let currentPage = 1;
 
@@ -28,6 +28,7 @@
   const visibleEl = document.getElementById('srcVisibleCount');
   const rangeEl = document.getElementById('srcPageRange');
   const totalEl = document.getElementById('srcPageTotal');
+  const pageSizeEl = document.getElementById('srcPageSizeSelect');
   const navListEl = document.getElementById('srcPaginationList');
   const collapseEl = document.getElementById('sourceTablesCollapse');
   const toggleBtn = document.getElementById('btnToggleSourceTables');
@@ -231,11 +232,11 @@
     theadEl.innerHTML = TAB_HEADERS[activeTab] || '';
     const filtered = filterRows();
     const total = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(total / pageSize));
     currentPage = Math.max(1, Math.min(currentPage, totalPages));
 
-    const start = (currentPage - 1) * PAGE_SIZE;
-    const slice = filtered.slice(start, start + PAGE_SIZE);
+    const start = pageSize === Infinity ? 0 : (currentPage - 1) * pageSize;
+    const slice = pageSize === Infinity ? filtered : filtered.slice(start, start + pageSize);
 
     if (visibleEl) visibleEl.textContent = String(total);
     if (totalEl) totalEl.textContent = String(total);
@@ -306,6 +307,13 @@
   }
   if (cardEl) {
     cardEl.addEventListener('change', () => {
+      currentPage = 1;
+      render();
+    });
+  }
+  if (pageSizeEl) {
+    pageSizeEl.addEventListener('change', () => {
+      pageSize = pageSizeEl.value === 'ALL' ? Infinity : (parseInt(pageSizeEl.value, 10) || 25);
       currentPage = 1;
       render();
     });

@@ -13,32 +13,40 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..models import CardOperatorTransaction, CrossMatchResult, ErpTransaction, SystemConfiguration
+from django.db.models import Max, Min, Q
+
+from ..models import (
+    CardOperatorTransaction,
+    CrossMatchResult,
+    ErpTransaction,
+    ReconciliationProcess,
+    SystemConfiguration,
+)
+from ..templatetags.currency_filters import fmt_clp, fmt_usd
 from .clp_reconciliation import _cross_match_sale, get_clp_tolerance
 from .column_detector import normalize_auth_code
 
 NOT_LINKED_RESULTS = ("NOT_FOUND_IN_ERP", "OUT_OF_PERIOD")
 _PERIOD_RE = re.compile(r"Borderó (\d{2}/\d{2}/\d{4}) al (\d{2}/\d{2}/\d{4})")
+_SINGLE_PERIOD_RE = re.compile(r"Borderó (\d{2}/\d{2}/\d{4})")
 
 
 class RecrossError(ValueError):
     pass
 
 
-def fmt_clp(value: Any) -> str:
-    return "$" + f"{Decimal(str(value or 0)):,.0f}".replace(",", ".")
-
-
-def fmt_usd(value: Any) -> str:
-    return "US$ " + f"{Decimal(str(value or 0)):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
 def _rows_with_code(currency: str, code: str) -> List[ErpTransaction]:
-    """Active ERP rows of the currency whose normalized authorization code is `code`."""
+    """Active card ERP rows of the currency whose normalized authorization code is `code`."""
     if not code:
         return []
+    card_filter = (
+        Q(card_type__isnull=False) | Q(payment_code__in=("VUS$", "MCUS$", "MUS$", "AUS$", "DUS$"))
+        if currency == "USD"
+        else Q(card_type__isnull=False) | Q(payment_code__in=("RCO", "RC", "REDCOMPRA", "V$", "MC$", "AME$", "DIN$"))
+    )
     rows = (
         ErpTransaction.objects.filter(source_currency=currency, authorization_code__icontains=code)
+        .filter(card_filter)
         .select_related("card_type")
         .order_by("id")
     )
@@ -59,10 +67,19 @@ def _claimed_by_other_vouchers(match: CrossMatchResult, row_ids: List[int]) -> s
 # ------------------------------------------------------------------------------
 
 def _clp_period(match: CrossMatchResult):
-    found = _PERIOD_RE.search(match.process.accounting_period or "")
-    if not found:
-        return None, None
-    return tuple(datetime.strptime(d, "%d/%m/%Y").date() for d in found.groups())
+    period_text = match.process.accounting_period or ""
+    found = _PERIOD_RE.search(period_text)
+    if found:
+        return tuple(datetime.strptime(d, "%d/%m/%Y").date() for d in found.groups())
+    single = _SINGLE_PERIOD_RE.search(period_text)
+    if single:
+        d = datetime.strptime(single.group(1), "%d/%m/%Y").date()
+        return d, d
+    bounds = (
+        match.process.erp_transactions.filter(origin=ErpTransaction.ORIGIN_EXCEL, transaction_date__isnull=False)
+        .aggregate(start=Min("transaction_date"), end=Max("transaction_date"))
+    )
+    return bounds.get("start"), bounds.get("end")
 
 
 def _clp_row_view(row: ErpTransaction) -> Dict[str, Any]:
@@ -177,7 +194,11 @@ def _recross_usd(match: CrossMatchResult) -> Dict[str, Any]:
 
     resolved = [(row, *_operator_for(row, card_code)) for row in rows]
     single = next(
-        (c for c in resolved if c[1] is not None and abs(gross_usd - c[1].foreign_currency_amount) <= tolerance), None
+        (
+            c for c in resolved
+            if c[0].amount > 0 and c[1] is not None and abs(gross_usd - c[1].foreign_currency_amount) <= tolerance
+        ),
+        None,
     )
     if single is not None or len(resolved) == 1:
         row, op, observation = single if single is not None else resolved[0]
@@ -188,7 +209,8 @@ def _recross_usd(match: CrossMatchResult) -> Dict[str, Any]:
         account_code = row.account_code or row.document_number or ""
         document_number = row.authorization_code or row.document_number or ""
     else:
-        row, op, _ = resolved[0]
+        primary_cand = next((c for c in resolved if c[0].amount > 0), resolved[0])
+        row, op, _ = primary_cand
         linked = [c[0] for c in resolved]
         operator_usd = sum((c[1].foreign_currency_amount for c in resolved if c[1]), Decimal("0"))
         operator_clp = sum((_op_clp(c[1]) for c in resolved), Decimal("0"))
@@ -219,6 +241,60 @@ def _recross_usd(match: CrossMatchResult) -> Dict[str, Any]:
         },
         "remaining": fmt_usd(abs(difference_usd)),
     }
+
+
+def recalculate_process_summaries(process: ReconciliationProcess) -> None:
+    """
+    Recomputes and updates ReconciliationSummary rows of `process` from its current CrossMatchResult rows
+    so that summary tabs, Excel exports, and dashboard cards reflect post-upload ERP edits and accepted suggestions.
+    """
+    if process is None or not process.pk:
+        return
+    if process.process_currency == "CLP":
+        matches = list(process.cross_match_results.select_related("transbank_transaction"))
+        for summary in process.summaries.filter(currency_table="CLP"):
+            modality = (summary.payment_modality or "").removeprefix("CLP_")
+            group = [
+                m for m in matches
+                if m.card_type_id == summary.card_type_id
+                and (m.transbank_transaction.payment_modality if m.transbank_transaction_id else "CREDIT") == modality
+            ]
+            erp_total = sum((m.erp_amount_clp for m in group), Decimal("0")).quantize(Decimal("0.01"))
+            diff = (summary.transbank_sales_total - erp_total).quantize(Decimal("0.01"))
+            if summary.erp_sales_total != erp_total or summary.difference != diff:
+                summary.erp_sales_total = erp_total
+                summary.difference = diff
+                summary.save(update_fields=["erp_sales_total", "difference"])
+    else:
+        matches = list(process.cross_match_results.all())
+        for summary in process.summaries.all():
+            group = [m for m in matches if m.card_type_id == summary.card_type_id]
+            if summary.currency_table == "USD":
+                tbk_usd = round(sum((m.transbank_amount for m in group), Decimal("0")), 2)
+                op_usd = round(sum((m.operator_amount_usd for m in group), Decimal("0")), 2)
+                diff_usd = round(tbk_usd - op_usd, 2)
+                if (
+                    summary.erp_sales_total != tbk_usd
+                    or summary.transbank_sales_total != op_usd
+                    or summary.difference != diff_usd
+                ):
+                    summary.erp_sales_total = tbk_usd
+                    summary.transbank_sales_total = op_usd
+                    summary.difference = diff_usd
+                    summary.save(update_fields=["erp_sales_total", "transbank_sales_total", "difference"])
+            elif summary.currency_table == "CLP":
+                erp_clp = round(sum((m.erp_amount_clp for m in group), Decimal("0")), 0)
+                op_clp = round(sum((m.erp_amount_clp + m.difference_clp for m in group), Decimal("0")), 0)
+                diff_clp = round(op_clp - erp_clp, 0)
+                if (
+                    summary.erp_sales_total != erp_clp
+                    or summary.transbank_sales_total != op_clp
+                    or summary.difference != diff_clp
+                ):
+                    summary.erp_sales_total = erp_clp
+                    summary.transbank_sales_total = op_clp
+                    summary.difference = diff_clp
+                    summary.save(update_fields=["erp_sales_total", "transbank_sales_total", "difference"])
 
 
 def recross_voucher(match: CrossMatchResult) -> Dict[str, Any]:
