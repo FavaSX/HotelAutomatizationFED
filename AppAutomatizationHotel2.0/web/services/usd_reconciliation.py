@@ -11,8 +11,9 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
-from ..models import CardType, ErpTransaction, SystemConfiguration
+from ..models import CardType, ErpTransaction, ErpTransactionChange, SystemConfiguration
 from .erp_corrections import overlay_on_instances
+from .erp_coverage import db_card_candidates_for_codes, evaluate_bordero_upload_warnings
 from .column_detector import (
     TRANSBANK_USD_COLUMN_RULES,
     clean_code_string,
@@ -25,10 +26,9 @@ from .column_detector import (
 )
 from .excel_parsers import (
     card_code_from_masked_number,
-    parse_all_bordero_movements,
     parse_and_validate_bank_deposits,
+    parse_bordero_bundle,
     parse_card_operator_statements,
-    parse_erp_transactions,
     read_excel_or_html_df,
     store_additional_erp_movements,
 )
@@ -364,10 +364,14 @@ def calculate_usd_preview(
     seen_erp_signatures = set()
     erp_instances: List[ErpTransaction] = []
     erp_by_auth_code: Dict[str, List[Dict[str, Any]]] = {}
+    erp_stats_list: List[Dict[str, Any]] = []
+    raw_additional_movements: List[Dict[str, Any]] = []
 
     for source_name, df in all_erp_dfs:
-        parsed_instances, _ = parse_erp_transactions(df, card_types)
-        for inst in parsed_instances:
+        bundle = parse_bordero_bundle(df, card_types=card_types, source_file=source_name)
+        erp_stats_list.append(bundle["stats"])
+        raw_additional_movements.extend(bundle["all_movements"])
+        for inst in bundle["usd_instances"]:
             sig = (
                 inst.account_code,
                 inst.invoice_number,
@@ -382,27 +386,63 @@ def calculate_usd_preview(
             seen_erp_signatures.add(sig)
             inst.source_file = source_name
             erp_instances.append(inst)
-    # Corrections saved in the DB win over the Excel, so a re-upload does not undo them
+
+    erp_coverage_meta, erp_warnings = evaluate_bordero_upload_warnings(erp_stats_list)
+
+    # Extract Transbank voucher authorization codes & sale dates for overlay + DB card lookup
     start_row = detail_header_row + 1 if detail_header_row > 0 else 0
-    voucher_codes = {
-        normalize_auth_code(clean_code_string(safe_cell(row, tbk_cols["authorization_code"])))
-        for _, row in tbk_df.iloc[start_row:].iterrows()
-    }
+    voucher_codes = set()
+    voucher_dates_by_code: Dict[str, set] = {}
+    c_tbk_auth = tbk_cols["authorization_code"]
+    c_tbk_date = tbk_cols["sale_date"]
+    for row in tbk_df.iloc[start_row:].itertuples(index=False, name=None):
+        raw_auth = row[c_tbk_auth] if 0 <= c_tbk_auth < len(row) else None
+        norm = normalize_auth_code(clean_code_string(raw_auth))
+        if norm:
+            voucher_codes.add(norm)
+            raw_sd = row[c_tbk_date] if 0 <= c_tbk_date < len(row) else None
+            sd = safe_date(raw_sd)
+            if sd is not None:
+                voucher_dates_by_code.setdefault(norm, set()).add(sd)
+
+    # Corrections saved in the DB win over the Excel, so a re-upload does not undo them
     erp_instances, erp_corrections = overlay_on_instances(
-        erp_instances, source_currency="USD", voucher_codes=voucher_codes - {""}
+        erp_instances, source_currency="USD", voucher_codes=voucher_codes
     )
 
     active_usd_keys = {inst.source_key for inst in erp_instances if getattr(inst, "source_key", None)}
     seen_additional_keys = set(active_usd_keys)
     additional_erp_rows: List[Dict[str, Any]] = []
-    for source_name, df in all_erp_dfs:
-        for mov in parse_all_bordero_movements(df, source_file=source_name):
-            skey = mov.get("source_key")
-            if not skey or skey in seen_additional_keys:
-                continue
-            seen_additional_keys.add(skey)
-            additional_erp_rows.append(mov)
+    for mov in raw_additional_movements:
+        skey = mov.get("source_key")
+        if not skey or skey in seen_additional_keys:
+            continue
+        seen_additional_keys.add(skey)
+        additional_erp_rows.append(mov)
     additional_erp_token = store_additional_erp_movements(additional_erp_rows)
+
+    # Incorporate pending / eligible historical USD card rows already persisted in DB
+    existing_manual_ids = {inst.pk for inst in erp_instances if getattr(inst, "pk", None)}
+    db_candidates = db_card_candidates_for_codes(
+        source_currency="USD",
+        voucher_codes=voucher_codes,
+        exclude_source_keys=active_usd_keys,
+        exclude_ids=existing_manual_ids,
+        voucher_dates_by_code=voucher_dates_by_code,
+    )
+    if db_candidates:
+        corrected_db_ids = set(
+            ErpTransactionChange.objects.filter(erp_transaction_id__in=[c.id for c in db_candidates])
+            .exclude(field_name=ErpTransactionChange.FIELD_CREATED)
+            .values_list("erp_transaction_id", flat=True)
+        )
+        for cand in db_candidates:
+            cand.loaded_from_db = True
+            cand.db_id = cand.id
+            cand.db_process_id = cand.process_id
+            cand.source_file = f"Base de Datos (#{cand.process_id})"
+            cand.is_corrected = cand.id in corrected_db_ids
+            erp_instances.append(cand)
 
     for inst in erp_instances:
         if inst.authorization_code:
@@ -494,6 +534,7 @@ def calculate_usd_preview(
                 erp_item = matched_erp["instance"]
                 erp_item.reconciled = True
                 erp_index = getattr(erp_item, "_memory_index", None)
+                erp_indices = [erp_index] if erp_index is not None else []
                 account_code = matched_erp.get("account_code") or matched_erp["document_number"]
                 document_number = matched_erp["document_number"]
                 erp_amount_clp = matched_erp["amount_clp"]
@@ -506,6 +547,11 @@ def calculate_usd_preview(
                 primary_erp, selected_op, _, _, _ = primary_cand
                 erp_item = primary_erp["instance"]
                 erp_index = getattr(erp_item, "_memory_index", None)
+                erp_indices = [
+                    idx
+                    for r in resolved_candidates
+                    if (idx := getattr(r[0]["instance"], "_memory_index", None)) is not None
+                ]
                 operator_index = selected_op["operator_index"] if selected_op else None
 
                 doc_numbers: List[str] = []
@@ -545,6 +591,7 @@ def calculate_usd_preview(
             cashier_username, erp_auth_code = erp_item.cashier_username or "—", erp_item.authorization_code or auth_code
         else:
             erp_index = operator_index = None
+            erp_indices = []
             account_code = document_number = erp_auth_code = operator_doc_number = ""
             cashier_username = "—"
             operator_usd = erp_amount_clp = operator_clp = difference_clp = Decimal("0.00")
@@ -586,7 +633,7 @@ def calculate_usd_preview(
         })
 
         voucher_dict = {
-            "tbk_index": tbk_index, "erp_index": erp_index, "operator_index": operator_index,
+            "tbk_index": tbk_index, "erp_index": erp_index, "erp_indices": erp_indices, "operator_index": operator_index,
             "authorization_code": auth_code, "erp_authorization_code": erp_auth_code,
             "account_code": account_code, "document_number": document_number,
             "operator_document_number": operator_doc_number,
@@ -618,7 +665,11 @@ def calculate_usd_preview(
             "cashier_username": e.cashier_username, "guest_name": e.guest_name,
             "amount": float(e.amount), "source_currency": e.source_currency, "reconciled": e.reconciled,
             "source_key": e.source_key, "is_corrected": getattr(e, "is_corrected", False),
+            "source_file": getattr(e, "source_file", "") or primary_erp_name,
             "manual_id": e.pk if e.origin == ErpTransaction.ORIGIN_MANUAL else None,
+            "db_id": getattr(e, "db_id", None),
+            "db_process_id": getattr(e, "db_process_id", None),
+            "from_db": bool(getattr(e, "loaded_from_db", False)),
         }
         for e in erp_instances
     ]
@@ -666,6 +717,8 @@ def calculate_usd_preview(
         "orphan_vouchers": orphan_vouchers,
         "tolerance": float(usd_tolerance),
         "erp_corrections_applied": erp_corrections,
+        "erp_coverage_meta": erp_coverage_meta,
+        "erp_warnings": erp_warnings,
         "counts": {
             "matched": len(matched_vouchers),
             "discrepancies": len(discrepancy_vouchers),

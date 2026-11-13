@@ -15,6 +15,7 @@ from ..models import ErpTransaction
 from ..templatetags.currency_filters import fmt_clp
 from .clp_reconciliation import _is_compatible
 from .column_detector import clean_code_string, normalize_auth_code, safe_date
+from .erp_coverage import expand_date_window
 from .suggestion_engine import _chip, _compute_code_similarity
 
 HIGH_CONFIDENCE_SCORE = 120
@@ -226,8 +227,11 @@ def _find_db_suggestion_for_clp_voucher(
         db_date_str = db_tx.transaction_date.strftime("%d/%m/%Y") if db_tx.transaction_date else ""
         day_gap = _day_gap(voucher_date, db_date_str)
 
-        # Guard against weak matches when auth code is missing
-        if missing_code and not (compat and day_gap is not None and 0 <= day_gap <= 2):
+        # Require nearby posting date when both dates are present so unrelated months never false-match
+        if voucher_date and db_tx.transaction_date is not None:
+            if day_gap is None or not -2 <= day_gap <= 5:
+                continue
+        elif missing_code or not (exact_code or sim_ratio >= 0.75):
             continue
 
         score = (60 if exact_amount else 40) + int(sim_ratio * 65) + (20 if compat else 0)
@@ -526,16 +530,24 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
         )
 
     # 4. Database Assisted Suggestions for remaining Orphans and Out-of-Period vouchers (single pre-fetched query)
+    target_dates = expand_date_window(
+        [v.get("sale_date") for v in (*orphans, *out_of_period) if not v.get("suggestion")],
+        back_days=2,
+        forward_days=5,
+    )
     try:
-        db_candidates = list(
+        db_qs = (
             ErpTransaction.objects.filter(
                 reconciled=False,
                 source_currency="CLP",
             )
             .filter(Q(card_type__isnull=False) | Q(payment_code__in=("RCO", "RC", "REDCOMPRA", "V$", "MC$", "AME$", "DIN$")))
             .select_related("process", "card_type")
-            .order_by("-transaction_date")[:500]
         )
+        if target_dates:
+            db_candidates = list(db_qs.filter(Q(transaction_date__in=target_dates) | Q(transaction_date__isnull=True)))
+        else:
+            db_candidates = list(db_qs.order_by("-transaction_date")[:500])
     except Exception:
         db_candidates = []
     claimed_db_ids: set = set()

@@ -11,6 +11,7 @@ from collections import OrderedDict
 from datetime import date
 from decimal import Decimal
 import hashlib
+import math
 from typing import Any, Dict, List, Optional, Tuple
 import uuid
 import pandas as pd
@@ -148,6 +149,23 @@ def parse_and_validate_bank_deposits(
 # 2. USD ERP & CARD OPERATOR PARSERS (PHASE 1)
 # ==============================================================================
 
+_FAST_NOT_NA_TYPES = (str, int, Decimal, bool)
+
+
+def _tuple_cell(row_tuple: tuple, column_index: int) -> Any:
+    """Fast O(1) cell lookup on a DataFrame tuple row, avoiding pandas Series allocation."""
+    if column_index < 0 or column_index >= len(row_tuple):
+        return None
+    val = row_tuple[column_index]
+    if val is None or val is pd.NaT or val is pd.NA:
+        return None
+    if isinstance(val, _FAST_NOT_NA_TYPES):
+        return val
+    if isinstance(val, float):
+        return None if math.isnan(val) else val
+    return None if pd.isna(val) else val
+
+
 def parse_erp_transactions(
     erp_dataframe: pd.DataFrame,
     card_types: Dict[str, CardType],
@@ -156,68 +174,8 @@ def parse_erp_transactions(
     Parses the Hotel ERP / Bordero Excel file in memory using hybrid column detection,
     filters USD foreign card payments, and returns an O(1) hash map indexed by authorization_code.
     """
-    columns = resolve_dataframe_columns(erp_dataframe, ERP_COLUMN_RULES)
-    erp_by_auth_code: Dict[str, List[Dict[str, Any]]] = {}
-    erp_instances: List[ErpTransaction] = []
-
-    for _, row in erp_dataframe.iterrows():
-        payment_code = str(safe_cell(row, columns["payment_code"]) or "").strip().upper()
-        description = str(safe_cell(row, columns["payment_description"]) or "").strip()
-
-        if "US$" not in description:
-            continue
-        raw_amount = safe_decimal(safe_cell(row, columns["amount"]))
-        if raw_amount >= 0:
-            continue
-        amount_value = -raw_amount
-        upper_desc = description.upper()
-        card_code = (
-            "MC" if "MASTER" in upper_desc or payment_code in ("MCUS$", "MUS$") else
-            "VI" if "VISA" in upper_desc or payment_code == "VUS$" else
-            "AX" if "AMEX" in upper_desc or "AMERICAN" in upper_desc or payment_code == "AUS$" else
-            "DI" if "DINER" in upper_desc or payment_code == "DUS$" else
-            ""
-        )
-        if not card_code:
-            continue
-        document_number = clean_code_string(safe_cell(row, columns["account_code"]))
-        auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
-        invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"]))
-        if not invoice_number and columns["invoice_number"] - 1 > columns["payment_description"]:
-            invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"] - 1))
-
-        erp_instance = ErpTransaction(
-            card_type=card_types[card_code],
-            room_number=clean_code_string(safe_cell(row, columns["room_number"])),
-            room_type=str(safe_cell(row, columns["room_type"]) or "").strip(),
-            reservation_number=clean_code_string(safe_cell(row, columns["reservation_number"])),
-            account_code=document_number,
-            payment_code=payment_code,
-            payment_description=description[:100],
-            invoice_number=invoice_number,
-            document_number=document_number,
-            authorization_code=auth_code,
-            transaction_date=safe_date(safe_cell(row, columns["transaction_date"])),
-            transaction_time=safe_time(safe_cell(row, columns["transaction_time"])),
-            cashier_username=str(safe_cell(row, columns["cashier_username"]) or "").strip(),
-            guest_name=str(safe_cell(row, columns["guest_name"]) or "").strip(),
-            amount=amount_value,
-            source_currency="USD",
-            reconciled=False,
-        )
-        erp_instances.append(erp_instance)
-
-        if auth_code:
-            erp_by_auth_code.setdefault(auth_code, []).append({
-                "instance": erp_instance,
-                "document_number": document_number,
-                "invoice_number": erp_instance.invoice_number,
-                "amount_clp": amount_value,
-                "payment_code": payment_code,
-                "card_code": card_code,
-            })
-
-    return erp_instances, erp_by_auth_code
+    bundle = parse_bordero_bundle(erp_dataframe, card_types=card_types)
+    return bundle["usd_instances"], bundle["usd_by_auth_code"]
 
 
 def parse_card_operator_statements(
@@ -331,57 +289,8 @@ def parse_bordero_clp_transactions(
 
     Returns the serialized rows and an index {normalized_auth_code: [row positions]}.
     """
-    columns = resolve_dataframe_columns(bordero_dataframe, ERP_COLUMN_RULES)
-    rows: List[Dict[str, Any]] = []
-    rows_by_auth_code: Dict[str, List[int]] = {}
-
-    for excel_row_number, (_, row) in enumerate(bordero_dataframe.iterrows(), start=1):
-        description = str(safe_cell(row, columns["payment_description"]) or "").strip()
-        is_card_payment, payment_group, card_code = classify_bordero_clp_payment(description)
-        if not is_card_payment:
-            continue
-        raw_amount = safe_decimal(safe_cell(row, columns["amount"]))
-        if raw_amount == 0:
-            continue
-
-        # The 'Factura' header sits one column to the right of its merged data cell.
-        invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"]))
-        if not invoice_number and columns["invoice_number"] - 1 > columns["payment_description"]:
-            invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"] - 1))
-
-        raw_auth_code = clean_code_string(safe_cell(row, columns["authorization_code"]))
-        transaction_date = safe_date(safe_cell(row, columns["transaction_date"]))
-        transaction_time = safe_time(safe_cell(row, columns["transaction_time"]))
-
-        position = len(rows)
-        rows.append({
-            "excel_row": excel_row_number,
-            "source_file": source_file,
-            "card_code": card_code or "",
-            "payment_group": payment_group,
-            "payment_code": str(safe_cell(row, columns["payment_code"]) or "").strip().upper(),
-            "payment_description": description,
-            "room_number": clean_code_string(safe_cell(row, columns["room_number"])),
-            "room_type": str(safe_cell(row, columns["room_type"]) or "").strip(),
-            "reservation_number": clean_code_string(safe_cell(row, columns["reservation_number"])),
-            "account_code": clean_code_string(safe_cell(row, columns["account_code"])),
-            "invoice_number": invoice_number,
-            "authorization_code": raw_auth_code,
-            "transaction_date": transaction_date.strftime("%d/%m/%Y") if transaction_date else None,
-            "transaction_time": transaction_time.strftime("%H:%M:%S") if transaction_time else None,
-            "cashier_username": str(safe_cell(row, columns["cashier_username"]) or "").strip(),
-            "guest_name": " ".join(str(safe_cell(row, columns["guest_name"]) or "").split()),
-            # Payments are negative in the Bordero; reversals come as positive values.
-            "amount": float(-raw_amount),
-            "is_reversal": bool(raw_amount > 0),
-            "reconciled": False,
-        })
-
-        normalized_code = normalize_auth_code(raw_auth_code)
-        if normalized_code:
-            rows_by_auth_code.setdefault(normalized_code, []).append(position)
-
-    return rows, rows_by_auth_code
+    bundle = parse_bordero_bundle(bordero_dataframe, card_types=None, source_file=source_file)
+    return bundle["clp_rows"], bundle["clp_rows_by_auth_code"]
 
 
 _ADDITIONAL_ERP_CACHE: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
@@ -415,32 +324,91 @@ def parse_all_bordero_movements(
     regardless of currency or payment medium (USD cards, CLP cards, cash, room charges HOA, IVA,
     restaurant/bar charges, tips, transfers, etc.), discarding only blank rows, repeated page
     headers/footers, and subtotal/total summary lines.
-
-    Also handles the VHF BIFF5 fixed-width 1-column right shift that occurs when 'Valor' is a
-    1-digit number (e.g. 0, 1, -1), where col 8 is None and Valor..Designación shift to cols 9..14.
     """
+    bundle = parse_bordero_bundle(erp_dataframe, card_types=None, source_file=source_file)
+    return bundle["all_movements"]
+
+
+def parse_bordero_bundle(
+    erp_dataframe: pd.DataFrame,
+    card_types: Optional[Dict[str, CardType]] = None,
+    source_file: str = "",
+) -> Dict[str, Any]:
+    """
+    Single-pass Bordero extractor: in ONE fast tuple scan over the DataFrame, builds:
+      - `usd_instances` + `usd_by_auth_code` (when `card_types` is passed)
+      - `clp_rows` + `clp_rows_by_auth_code`
+      - `all_movements` (with cached `_date_obj` / `_time_obj` to avoid re-parsing during DB sync)
+      - `stats` (min/max dates, period header, card vs non-card movement counts for coverage validation)
+    """
+    empty_stats = {
+        "period_header": (None, None),
+        "min_date": None,
+        "max_date": None,
+        "total_movements": 0,
+        "card_movements": 0,
+        "non_card_movements": 0,
+        "usd_card_movements": 0,
+        "clp_card_movements": 0,
+    }
     if erp_dataframe is None or len(erp_dataframe) == 0:
-        return []
+        return {
+            "usd_instances": [],
+            "usd_by_auth_code": {},
+            "clp_rows": [],
+            "clp_rows_by_auth_code": {},
+            "all_movements": [],
+            "stats": empty_stats,
+        }
 
     columns = resolve_dataframe_columns(erp_dataframe, ERP_COLUMN_RULES)
-    movements: List[Dict[str, Any]] = []
+    c_room = columns["room_number"]
+    c_rtype = columns["room_type"]
+    c_res = columns["reservation_number"]
+    c_acc = columns["account_code"]
+    c_pcode = columns["payment_code"]
+    c_pdesc = columns["payment_description"]
+    c_inv = columns["invoice_number"]
+    c_inv_alt = c_inv - 1 if c_inv - 1 > c_pdesc else -1
+    c_amt = columns["amount"]
+    c_auth = columns["authorization_code"]
+    c_date = columns["transaction_date"]
+    c_time = columns["transaction_time"]
+    c_user = columns["cashier_username"]
+    c_guest = columns["guest_name"]
+
+    usd_instances: List[ErpTransaction] = []
+    usd_by_auth_code: Dict[str, List[Dict[str, Any]]] = {}
+    clp_rows: List[Dict[str, Any]] = []
+    clp_rows_by_auth_code: Dict[str, List[int]] = {}
+    all_movements: List[Dict[str, Any]] = []
     seen_key_counts: Dict[str, int] = {}
 
-    for excel_row_number, (_, row) in enumerate(erp_dataframe.iterrows(), start=1):
-        payment_code = str(safe_cell(row, columns["payment_code"]) or "").strip().upper()
-        if not payment_code or ("COD" in payment_code and "DEB" in payment_code):
-            continue
+    min_date: Optional[date] = None
+    max_date: Optional[date] = None
+    total_movements = 0
+    card_movements = 0
+    non_card_movements = 0
+    usd_card_movements = 0
+    clp_card_movements = 0
 
-        amt_col = columns["amount"]
-        auth_col = columns["authorization_code"]
-        date_col = columns["transaction_date"]
-        time_col = columns["transaction_time"]
-        user_col = columns["cashier_username"]
-        guest_col = columns["guest_name"]
+    for excel_row_number, row in enumerate(erp_dataframe.itertuples(index=False, name=None), start=1):
+        raw_desc = _tuple_cell(row, c_pdesc)
+        description = " ".join(str(raw_desc or "").split())
+        payment_code = str(_tuple_cell(row, c_pcode) or "").strip().upper()
+        is_header_row = not payment_code or ("COD" in payment_code and "DEB" in payment_code)
 
-        tx_date = safe_date(safe_cell(row, date_col))
-        if tx_date is None and safe_cell(row, amt_col) is None:
-            shifted_date = safe_date(safe_cell(row, date_col + 1))
+        amt_col = c_amt
+        auth_col = c_auth
+        date_col = c_date
+        time_col = c_time
+        user_col = c_user
+        guest_col = c_guest
+
+        tx_date = safe_date(_tuple_cell(row, date_col))
+        amt_cell = _tuple_cell(row, amt_col)
+        if tx_date is None and amt_cell is None:
+            shifted_date = safe_date(_tuple_cell(row, date_col + 1))
             if shifted_date is not None:
                 tx_date = shifted_date
                 amt_col += 1
@@ -449,13 +417,10 @@ def parse_all_bordero_movements(
                 time_col += 1
                 user_col += 1
                 guest_col += 1
+                amt_cell = _tuple_cell(row, amt_col)
 
-        if tx_date is None:
-            continue
-
-        description = " ".join(str(safe_cell(row, columns["payment_description"]) or "").split())
+        raw_amount = safe_decimal(amt_cell)
         upper_desc = description.upper()
-        raw_amount = safe_decimal(safe_cell(row, amt_col))
 
         usd_card_code = (
             "MC" if ("US$" in upper_desc and ("MASTER" in upper_desc or payment_code in ("MCUS$", "MUS$"))) else
@@ -464,78 +429,211 @@ def parse_all_bordero_movements(
             "DI" if ("US$" in upper_desc and ("DINER" in upper_desc or payment_code == "DUS$")) else
             ""
         )
-        is_clp_card, clp_payment_group, clp_card_code = classify_bordero_clp_payment(description)
+        is_usd_card_row = bool(usd_card_code and "US$" in description and raw_amount < 0)
+        is_clp_card_row, clp_payment_group, clp_card_code = classify_bordero_clp_payment(description)
+        is_clp_card_row = bool(is_clp_card_row and raw_amount != 0)
+        include_in_all = bool(not is_header_row and tx_date is not None)
 
-        if usd_card_code and raw_amount != 0:
-            movement_category = "USD_CARD"
-            source_currency = "USD"
-            card_code = usd_card_code
-            payment_group = "CREDIT"
-            amount_val = float(-raw_amount)
-        elif is_clp_card and raw_amount != 0:
-            movement_category = "CLP_CARD"
-            source_currency = "CLP"
-            card_code = clp_card_code or ""
-            payment_group = clp_payment_group
-            amount_val = float(-raw_amount)
-        else:
-            movement_category = "OTHER"
-            source_currency = "USD" if ("US$" in upper_desc or payment_code.endswith("US$")) else "CLP"
-            card_code = ""
-            payment_group = None
-            amount_val = float(raw_amount)
+        if not (include_in_all or (card_types is not None and is_usd_card_row) or is_clp_card_row):
+            continue
 
-        invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"]))
-        if not invoice_number and columns["invoice_number"] - 1 > columns["payment_description"]:
-            invoice_number = clean_code_string(safe_cell(row, columns["invoice_number"] - 1))
+        account_code = clean_code_string(_tuple_cell(row, c_acc))
+        auth_code = clean_code_string(_tuple_cell(row, auth_col))
+        invoice_number = clean_code_string(_tuple_cell(row, c_inv))
+        if not invoice_number and c_inv_alt >= 0:
+            invoice_number = clean_code_string(_tuple_cell(row, c_inv_alt))
 
-        account_code = clean_code_string(safe_cell(row, columns["account_code"]))
-        auth_code = clean_code_string(safe_cell(row, auth_col))
-        tx_time = safe_time(safe_cell(row, time_col))
+        tx_time = safe_time(_tuple_cell(row, time_col))
+        tx_date_str = tx_date.strftime("%d/%m/%Y") if tx_date else None
+        tx_time_str = tx_time.strftime("%H:%M:%S") if tx_time else None
 
-        base_key = erp_source_key(
-            source_currency,
-            account_code,
-            invoice_number,
-            auth_code,
-            amount_val,
-            tx_date,
-            tx_time,
-        )
-        occurrence = seen_key_counts.get(base_key, 0) + 1
-        seen_key_counts[base_key] = occurrence
-        source_key = (
-            base_key
-            if occurrence == 1
-            else hashlib.sha1(f"{base_key}|#{occurrence}".encode("utf-8")).hexdigest()
-        )
+        room_number = clean_code_string(_tuple_cell(row, c_room))
+        room_type = str(_tuple_cell(row, c_rtype) or "").strip()
+        reservation_number = clean_code_string(_tuple_cell(row, c_res))
+        cashier_username = str(_tuple_cell(row, user_col) or "").strip()
+        guest_name = " ".join(str(_tuple_cell(row, guest_col) or "").split())
 
-        movements.append({
-            "excel_row": excel_row_number,
-            "source_file": source_file,
-            "movement_category": movement_category,
-            "source_currency": source_currency,
-            "card_code": card_code,
-            "payment_group": payment_group,
-            "payment_code": payment_code[:20],
-            "payment_description": description[:100],
-            "room_number": clean_code_string(safe_cell(row, columns["room_number"]))[:20],
-            "room_type": str(safe_cell(row, columns["room_type"]) or "").strip()[:20],
-            "reservation_number": clean_code_string(safe_cell(row, columns["reservation_number"]))[:50],
-            "account_code": account_code[:50],
-            "document_number": account_code[:50],
-            "invoice_number": invoice_number[:50],
-            "authorization_code": auth_code[:50],
-            "transaction_date": tx_date.strftime("%d/%m/%Y"),
-            "transaction_time": tx_time.strftime("%H:%M:%S") if tx_time else None,
-            "cashier_username": str(safe_cell(row, user_col) or "").strip()[:50],
-            "guest_name": " ".join(str(safe_cell(row, guest_col) or "").split())[:150],
-            "amount": amount_val,
-            "reconciled": False,
-            "source_key": source_key,
-        })
+        if include_in_all:
+            if min_date is None or tx_date < min_date:
+                min_date = tx_date
+            if max_date is None or tx_date > max_date:
+                max_date = tx_date
+            total_movements += 1
 
-    return movements
+            if usd_card_code and raw_amount != 0:
+                movement_category = "USD_CARD"
+                source_currency = "USD"
+                mov_card_code = usd_card_code
+                mov_payment_group = "CREDIT"
+                mov_amount_val = float(-raw_amount)
+                card_movements += 1
+                usd_card_movements += 1
+            elif is_clp_card_row:
+                movement_category = "CLP_CARD"
+                source_currency = "CLP"
+                mov_card_code = clp_card_code or ""
+                mov_payment_group = clp_payment_group
+                mov_amount_val = float(-raw_amount)
+                card_movements += 1
+                clp_card_movements += 1
+            else:
+                movement_category = "OTHER"
+                source_currency = "USD" if ("US$" in upper_desc or payment_code.endswith("US$")) else "CLP"
+                mov_card_code = ""
+                mov_payment_group = None
+                mov_amount_val = float(raw_amount)
+                non_card_movements += 1
+
+            base_mov_key = erp_source_key(
+                source_currency,
+                account_code,
+                invoice_number,
+                auth_code,
+                mov_amount_val,
+                tx_date,
+                tx_time,
+            )
+            occurrence = seen_key_counts.get(base_mov_key, 0) + 1
+            seen_key_counts[base_mov_key] = occurrence
+            mov_source_key = (
+                base_mov_key
+                if occurrence == 1
+                else hashlib.sha1(f"{base_mov_key}|#{occurrence}".encode("utf-8")).hexdigest()
+            )
+            all_movements.append({
+                "excel_row": excel_row_number,
+                "source_file": source_file,
+                "movement_category": movement_category,
+                "source_currency": source_currency,
+                "card_code": mov_card_code,
+                "payment_group": mov_payment_group,
+                "payment_code": payment_code[:20],
+                "payment_description": description[:100],
+                "room_number": room_number[:20],
+                "room_type": room_type[:20],
+                "reservation_number": reservation_number[:50],
+                "account_code": account_code[:50],
+                "document_number": account_code[:50],
+                "invoice_number": invoice_number[:50],
+                "authorization_code": auth_code[:50],
+                "transaction_date": tx_date_str,
+                "transaction_time": tx_time_str,
+                "_date_obj": tx_date,
+                "_time_obj": tx_time,
+                "cashier_username": cashier_username[:50],
+                "guest_name": guest_name[:150],
+                "amount": mov_amount_val,
+                "reconciled": False,
+                "source_key": mov_source_key,
+            })
+
+        if card_types is not None and is_usd_card_row:
+            amount_dec = -raw_amount
+            usd_key = (
+                base_mov_key
+                if (include_in_all and movement_category == "USD_CARD" and source_currency == "USD")
+                else erp_source_key(
+                    "USD",
+                    account_code,
+                    invoice_number,
+                    auth_code,
+                    amount_dec,
+                    tx_date,
+                    tx_time,
+                )
+            )
+            erp_instance = ErpTransaction(
+                card_type=card_types[usd_card_code],
+                room_number=room_number,
+                room_type=room_type,
+                reservation_number=reservation_number,
+                account_code=account_code,
+                payment_code=payment_code,
+                payment_description=description[:100],
+                invoice_number=invoice_number,
+                document_number=account_code,
+                authorization_code=auth_code,
+                transaction_date=tx_date,
+                transaction_time=tx_time,
+                cashier_username=cashier_username,
+                guest_name=guest_name,
+                amount=amount_dec,
+                source_currency="USD",
+                reconciled=False,
+                source_key=usd_key,
+            )
+            erp_instances_append = usd_instances.append
+            erp_instances_append(erp_instance)
+            if auth_code:
+                usd_by_auth_code.setdefault(auth_code, []).append({
+                    "instance": erp_instance,
+                    "document_number": account_code,
+                    "invoice_number": invoice_number,
+                    "amount_clp": amount_dec,
+                    "payment_code": payment_code,
+                    "card_code": usd_card_code,
+                })
+
+        if is_clp_card_row:
+            clp_amount = float(-raw_amount)
+            clp_key = (
+                base_mov_key
+                if (include_in_all and movement_category == "CLP_CARD" and source_currency == "CLP")
+                else erp_source_key(
+                    "CLP",
+                    account_code,
+                    invoice_number,
+                    auth_code,
+                    clp_amount,
+                    tx_date,
+                    tx_time,
+                )
+            )
+            position = len(clp_rows)
+            clp_rows.append({
+                "excel_row": excel_row_number,
+                "source_file": source_file,
+                "card_code": clp_card_code or "",
+                "payment_group": clp_payment_group,
+                "payment_code": payment_code,
+                "payment_description": description,
+                "room_number": room_number,
+                "room_type": room_type,
+                "reservation_number": reservation_number,
+                "account_code": account_code,
+                "invoice_number": invoice_number,
+                "authorization_code": auth_code,
+                "transaction_date": tx_date_str,
+                "transaction_time": tx_time_str,
+                "cashier_username": cashier_username,
+                "guest_name": guest_name,
+                "amount": clp_amount,
+                "is_reversal": bool(raw_amount > 0),
+                "reconciled": False,
+                "source_key": clp_key,
+            })
+            normalized_code = normalize_auth_code(auth_code)
+            if normalized_code:
+                clp_rows_by_auth_code.setdefault(normalized_code, []).append(position)
+
+    period_header = parse_bordero_period(erp_dataframe)
+    return {
+        "usd_instances": usd_instances,
+        "usd_by_auth_code": usd_by_auth_code,
+        "clp_rows": clp_rows,
+        "clp_rows_by_auth_code": clp_rows_by_auth_code,
+        "all_movements": all_movements,
+        "stats": {
+            "period_header": period_header,
+            "min_date": min_date,
+            "max_date": max_date,
+            "total_movements": total_movements,
+            "card_movements": card_movements,
+            "non_card_movements": non_card_movements,
+            "usd_card_movements": usd_card_movements,
+            "clp_card_movements": clp_card_movements,
+        },
+    }
 
 
 def parse_bordero_period(dataframe: pd.DataFrame) -> Tuple[Optional[date], Optional[date]]:

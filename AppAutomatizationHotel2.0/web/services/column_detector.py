@@ -8,6 +8,7 @@ Solves both column renaming and column reordering in Excel files:
 
 import math
 import unicodedata
+from datetime import date, datetime, time as dt_time
 from decimal import Decimal
 from typing import Any, Dict
 import pandas as pd
@@ -190,14 +191,66 @@ def _parse_spanish_long_date(text: str):
         return None
 
 
+def _fast_parse_date_str(text: str):
+    """Fast-path parser for common ISO and DD/MM/YYYY date strings before pandas fallback."""
+    n = len(text)
+    try:
+        if n == 10:
+            if text[2] == "/" and text[5] == "/":
+                return datetime.strptime(text, "%d/%m/%Y").date()
+            if text[4] == "-" and text[7] == "-":
+                return date.fromisoformat(text)
+            if text[2] == "-" and text[5] == "-":
+                return datetime.strptime(text, "%d-%m-%Y").date()
+        elif n == 19 and (text[10] == " " or text[10] == "T"):
+            if text[2] == "/" and text[5] == "/" and text[13] == ":" and text[16] == ":":
+                return datetime.strptime(text[:10], "%d/%m/%Y").date()
+            if text[4] == "-" and text[7] == "-":
+                return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+    return None
+
+
+def _fast_parse_time_str(text: str):
+    """Fast-path parser for common HH:MM:SS and HH:MM strings before pandas fallback."""
+    n = len(text)
+    try:
+        if n == 8 and text[2] == ":" and text[5] == ":":
+            return dt_time.fromisoformat(text)
+        if n == 5 and text[2] == ":":
+            return dt_time(int(text[:2]), int(text[3:5]))
+    except ValueError:
+        return None
+    return None
+
+
 def safe_date(raw_value: Any):
     """Parses date values safely, strictly returning None instead of pd.NaT."""
+    if raw_value is None or raw_value is pd.NaT or raw_value is pd.NA:
+        return None
+    if isinstance(raw_value, datetime):
+        if pd.isna(raw_value):
+            return None
+        return raw_value.date()
+    if isinstance(raw_value, date):
+        return raw_value
+    if isinstance(raw_value, float):
+        if math.isnan(raw_value):
+            return None
     if pd.isna(raw_value):
         return None
     if isinstance(raw_value, str):
-        spanish_date = _parse_spanish_long_date(raw_value)
+        text = raw_value.strip()
+        if not text:
+            return None
+        fast = _fast_parse_date_str(text)
+        if fast is not None:
+            return fast
+        spanish_date = _parse_spanish_long_date(text)
         if spanish_date:
             return spanish_date
+        raw_value = text
     try:
         parsed_timestamp = pd.to_datetime(raw_value, dayfirst=True, errors="coerce")
         if pd.isna(parsed_timestamp):
@@ -209,12 +262,28 @@ def safe_date(raw_value: Any):
 
 def safe_time(raw_value: Any):
     """Parses time values safely (HH:MM:SS), returning None if invalid or empty."""
+    if raw_value is None or raw_value is pd.NaT or raw_value is pd.NA:
+        return None
+    if isinstance(raw_value, datetime):
+        if pd.isna(raw_value):
+            return None
+        return raw_value.time()
+    if isinstance(raw_value, dt_time):
+        return raw_value
+    if isinstance(raw_value, float) and math.isnan(raw_value):
+        return None
     if pd.isna(raw_value):
         return None
     try:
         if hasattr(raw_value, "hour") and hasattr(raw_value, "minute"):
             return raw_value
-        parsed = pd.to_datetime(str(raw_value).strip(), errors="coerce")
+        text = str(raw_value).strip()
+        if not text:
+            return None
+        fast = _fast_parse_time_str(text)
+        if fast is not None:
+            return fast
+        parsed = pd.to_datetime(text, errors="coerce")
         if pd.isna(parsed):
             return None
         return parsed.time()

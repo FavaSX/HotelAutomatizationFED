@@ -18,6 +18,7 @@ from ..models import (
     TransbankTransaction,
 )
 from .column_detector import safe_date
+from .erp_coverage import resolve_prior_incomplete_processes
 from .preview_corrections import apply_pending_corrections, original_erp_rows
 from .suggestion_actions import with_proposed_change
 from .persistence_common import (
@@ -102,10 +103,19 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
                 existing_process = candidate_processes[best_proc_id]
 
         files = preview.get("file_names", {})
+        coverage_meta = preview.get("erp_coverage_meta") or {}
+        erp_min = safe_date(coverage_meta.get("erp_min_date"))
+        erp_max = safe_date(coverage_meta.get("erp_max_date"))
+        erp_incomplete = bool(coverage_meta.get("erp_last_day_incomplete", False))
+        resolve_prior_incomplete_processes(erp_min, erp_max)
+
         process_fields = {
             "user": user,
             "accounting_period": preview.get("accounting_period", "Cierre Pesos (CLP)"),
             "tolerance_applied": preview.get("tolerance"),
+            "erp_min_date": erp_min,
+            "erp_max_date": erp_max,
+            "erp_last_day_incomplete": erp_incomplete,
             "erp_file_name": files.get("erp"),
             "bank_statement_file_name": files.get("bank"),
             "transbank_credit_file_name": files.get("tbk_credit"),
@@ -114,6 +124,8 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         }
         if existing_process is not None:
             for attr, val in process_fields.items():
+                if val is None and attr in ("erp_min_date", "erp_max_date"):
+                    continue
                 setattr(existing_process, attr, val)
             existing_process.save()
             process = existing_process

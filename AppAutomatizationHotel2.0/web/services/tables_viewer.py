@@ -336,6 +336,9 @@ def _sanitize_preview_erp_row(
 
     if raw.get("manual_id"):
         origin_label = "Agregada a mano"
+    elif raw.get("from_db"):
+        proc_id = raw.get("db_process_id")
+        origin_label = f"Base de Datos (#{proc_id})" if proc_id else "Base de Datos"
     elif raw.get("is_auxiliary"):
         origin_label = "Borderó adicional"
     else:
@@ -444,7 +447,11 @@ def _preview_erp_history_for_rows(
     source_keys = {
         raw["source_key"] for raw in raw_rows if raw.get("is_corrected") and raw.get("source_key")
     }
-    manual_ids = {raw["manual_id"] for raw in raw_rows if raw.get("manual_id")}
+    manual_ids = {
+        raw.get("db_id") or raw.get("manual_id")
+        for raw in raw_rows
+        if raw.get("db_id") or raw.get("manual_id")
+    }
 
     db_changes_by_key: Dict[str, List[ErpTransactionChange]] = {}
     db_changes_by_id: Dict[int, List[ErpTransactionChange]] = {}
@@ -485,8 +492,9 @@ def _preview_erp_history_for_rows(
     result: Dict[int, Dict[str, Any]] = {}
     for idx, raw in enumerate(raw_rows):
         combined: List[Dict[str, Any]] = []
-        if raw.get("manual_id") and raw["manual_id"] in db_changes_by_id:
-            combined.extend(_change_models_to_raw_list(db_changes_by_id[raw["manual_id"]]))
+        row_db_id = raw.get("db_id") or raw.get("manual_id")
+        if row_db_id and row_db_id in db_changes_by_id:
+            combined.extend(_change_models_to_raw_list(db_changes_by_id[row_db_id]))
         elif raw.get("is_corrected") and raw.get("source_key") and raw["source_key"] in db_changes_by_key:
             combined.extend(_change_models_to_raw_list(db_changes_by_key[raw["source_key"]]))
         if idx in pending_by_idx:
@@ -530,6 +538,7 @@ def build_preview_source_tables_context(preview: Dict[str, Any], currency: str) 
             idx, row, currency, status_by_idx, usd_linked_auths, history_by_idx.get(idx)
         )
         for idx, row in enumerate(raw_erp_rows)
+        if not row.get("from_db") or idx in status_by_idx
     ]
     bank_rows = [
         _serialize_preview_bank_row(idx, row)

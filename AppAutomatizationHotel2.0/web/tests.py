@@ -6,6 +6,7 @@ import openpyxl
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .models import (
     AuditResolutionLog,
@@ -38,6 +39,7 @@ from .services.preview_corrections import PreviewCorrectionError, apply_preview_
 from .services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion
 from .services.exception_resolution import resolve_exception
 from .services.report_exporter import generate_committed_usd_excel_bytes
+from .services.tables_viewer import build_preview_source_tables_context
 
 
 # ------------------------------------------------------------------------------
@@ -2201,10 +2203,11 @@ class FullErpIngestionAndCumulativeUploadTests(TestCase):
         cash_row.refresh_from_db()
         self.assertTrue(cash_row.is_deleted)
 
-        # 5) Previously pending row 909090 is now reconciled in oct_process!
+        # 5) Previously pending row 909090 is now reconciled in oct_process while preserving original sep_process FK!
         pending_row.refresh_from_db()
         self.assertTrue(pending_row.reconciled)
-        self.assertEqual(pending_row.process_id, oct_process.id)
+        self.assertEqual(pending_row.process_id, sep_process.id)
+        self.assertTrue(oct_process.cross_match_results.filter(erp_transaction=pending_row).exists())
 
         # 6) New October rows (808080 and HOA) belong to oct_process
         oct_card = ErpTransaction.objects.get(authorization_code="808080")
@@ -2336,5 +2339,462 @@ class UnifiedPaginationTests(TestCase):
         self.assertIn('href="?por_pagina=10&page=1000"', html)
         self.assertIn('href="?por_pagina=10&page=2046"', html)
         self.assertNotIn("\xa0", html.split("<nav")[1])
+
+
+class ErpCoverageAndDbCrossMatchTests(TestCase):
+    """
+    Verifies:
+      - Pre-upload DB coverage check, empty DB 1-2yr guidance, MAX..yesterday rule, and incomplete-day warnings.
+      - Active upload validation (skipped incomplete day, includes today, card-only filtered Bordero).
+      - USD & CLP cross-matching directly against historical DB ErpTransaction rows, same-currency process preservation,
+        and preview source tables showing only linked DB rows.
+      - Fast-path date/time sanitizers & single-pass parse_bordero_bundle parity.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user("auditor_cov", password="ClaveFuerte!2026")
+        self.client.force_login(self.user)
+
+    def test_empty_db_coverage_and_precheck_ui_rendered(self):
+        from datetime import date
+        from .services.erp_coverage import get_erp_coverage_summary
+
+        cov = get_erp_coverage_summary(today=date(2026, 11, 12))
+        self.assertFalse(cov["has_data"])
+        self.assertEqual(cov["recommended_from"], date(2026, 1, 1))
+        self.assertEqual(cov["recommended_to"], date(2026, 11, 11))
+        self.assertFalse(cov["has_incomplete_day"])
+
+        for route_name in ("usd_upload", "clp_upload"):
+            resp = self.client.get(reverse(route_name))
+            self.assertEqual(resp.status_code, 200)
+            self.assertContains(resp, 'id="erpPrecheckGate"')
+            self.assertContains(resp, 'id="erpPrecheckReadCheckbox"')
+            self.assertContains(resp, 'id="btnConfirmErpPrecheck"')
+            self.assertContains(resp, 'id="expPhase1Dropzone"')
+            self.assertContains(resp, "usd_upload.js?v=10")
+
+    def test_incomplete_day_warning_and_resolution(self):
+        from datetime import timedelta
+        from .services.erp_coverage import (
+            evaluate_bordero_upload_warnings,
+            get_erp_coverage_summary,
+            resolve_prior_incomplete_processes,
+        )
+        from .services.file_detector import detect_and_align_clp_files
+
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+
+        def _bordero_with_period(payments, start_str, end_str):
+            header = {
+                "A": "Hab", "B": "Tipo Hab", "C": "Reserva", "D": "Cuenta", "E": "Cod. Deb.", "F": "Descripción",
+                "H": "Factura", "I": "Valor", "J": "Documento", "K": "Fecha", "L": "Hora", "M": "Usuario", "N": "Designación",
+            }
+            rows = {
+                1: {"A": "HOTELERA SAN FRANCISCO S.A"},
+                2: {"A": "Cargos de Débitos y Créditos"},
+                4: {"A": "Periodo de:", "B": start_str, "C": "hasta", "D": end_str},
+                5: header,
+                6: {"A": 1002, "D": 1785942, "E": "CNBQ", "F": "1/2 Pension Alimentos", "I": 20900, "J": "UH: 1002", "K": end_str},
+            }
+            for offset, (hab, cuenta, cod, desc, factura, valor, documento, fecha, hora, usuario, huesped) in enumerate(payments):
+                rows[7 + offset] = {
+                    "A": hab, "D": cuenta, "E": cod, "F": desc, "G": factura, "I": valor,
+                    "J": documento, "K": fecha, "L": hora, "M": usuario, "N": huesped,
+                }
+            return _xlsx("BORDERO_PERIODO.xlsx", rows)
+
+        # Save a closing whose Bordero includes `today` (so today remains incomplete)
+        rows = BORDERO_PAYMENTS + [
+            (701, 1799001, "MC$", "Master Card $", 55001, -45000, "919191", today.strftime("%d/%m/%Y"), "14:00:00", "CDAZA", "HOY HUESPED"),
+        ]
+        files = build_clp_files()
+        files["erp_file"] = _bordero_with_period(rows, yesterday.strftime("%d/%m/%Y"), today.strftime("%d/%m/%Y"))
+        preview = calculate_clp_preview(**files)
+        self.assertTrue(preview["erp_coverage_meta"]["erp_last_day_incomplete"])
+        self.assertTrue(any(w["code"] == "INCLUDES_TODAY_INCOMPLETE" for w in preview["erp_warnings"]))
+
+        proc = commit_clp_preview_to_database(self.user, preview)
+        proc.refresh_from_db()
+        self.assertTrue(proc.erp_last_day_incomplete)
+        self.assertEqual(proc.erp_max_date, today)
+
+        # Next day: DB recommends restarting from that incomplete day (`today`)
+        tomorrow = today + timedelta(days=1)
+        cov_next = get_erp_coverage_summary(today=tomorrow)
+        self.assertTrue(cov_next["has_incomplete_day"])
+        self.assertEqual(cov_next["incomplete_date"], today)
+        self.assertEqual(cov_next["recommended_from"], today)
+        self.assertEqual(cov_next["recommended_to"], today)
+
+        # Uploading a Bordero that starts on `tomorrow` (skipping `today`) emits SKIPPED_INCOMPLETE_DAY
+        skipped_bordero = _bordero_with_period(
+            [(702, 1799002, "MC$", "Master Card $", 55002, -32000, "929292", tomorrow.strftime("%d/%m/%Y"), "10:00:00", "CDAZA", "OTRO")],
+            tomorrow.strftime("%d/%m/%Y"),
+            tomorrow.strftime("%d/%m/%Y"),
+        )
+        det = detect_and_align_clp_files([skipped_bordero])
+        self.assertTrue(any(w["code"] == "SKIPPED_INCOMPLETE_DAY" for w in det.get("erp_warnings", [])))
+
+        # Re-exporting from `today` on `tomorrow` clears the prior incomplete flag once saved
+        cover_meta, _ = evaluate_bordero_upload_warnings(
+            [{
+                "period_header": (today, today),
+                "min_date": today,
+                "max_date": today,
+                "total_movements": 5,
+                "card_movements": 3,
+                "non_card_movements": 2,
+            }],
+            coverage=cov_next,
+            today=tomorrow,
+        )
+        self.assertFalse(cover_meta["erp_last_day_incomplete"])
+        cleared = resolve_prior_incomplete_processes(today, today, today=tomorrow)
+        self.assertEqual(cleared, 1)
+        proc.refresh_from_db()
+        self.assertFalse(proc.erp_last_day_incomplete)
+
+    def test_card_only_bordero_triggers_warning_in_detector_and_preview(self):
+        from .services.file_detector import detect_and_align_clp_files
+
+        # Build 22 CLP card rows with NO non-card movements (no CNBQ/HOA/IVA/BAR/E$)
+        header = {
+            "A": "Hab", "B": "Tipo Hab", "C": "Reserva", "D": "Cuenta", "E": "Cod. Deb.", "F": "Descripción",
+            "H": "Factura", "I": "Valor", "J": "Documento", "K": "Fecha", "L": "Hora", "M": "Usuario", "N": "Designación",
+        }
+        rows = {
+            1: {"A": "HOTELERA SAN FRANCISCO S.A"},
+            2: {"A": "Cargos de Débitos y Créditos"},
+            4: {"A": "Periodo de:", "B": "05/09/2026", "C": "hasta", "D": "05/09/2026"},
+            5: header,
+        }
+        for i in range(22):
+            rows[6 + i] = {
+                "A": 200 + i,
+                "D": 1800000 + i,
+                "E": "RCO" if i % 2 == 0 else "MC$",
+                "F": "Red Compra" if i % 2 == 0 else "Master Card $",
+                "G": 60000 + i,
+                "I": -(10000 + i * 100),
+                "J": f"{700000 + i}",
+                "K": "05/09/2026",
+                "L": f"12:{i:02d}:00",
+                "M": "CDAZA",
+                "N": f"HUESPED {i}",
+            }
+
+        card_only_bordero = _xlsx("BORDERO_SOLO_TARJETAS.xlsx", rows)
+        det = detect_and_align_clp_files([card_only_bordero])
+        self.assertTrue(any(w["code"] == "CARD_ONLY_FILTERED" for w in det["erp_warnings"]))
+
+        card_only_bordero.seek(0)
+        files = build_clp_files()
+        files["erp_file"] = card_only_bordero
+        preview = calculate_clp_preview(**files)
+        self.assertTrue(any(w["code"] == "CARD_ONLY_FILTERED" for w in preview["erp_warnings"]))
+
+    def test_clp_cross_match_against_db_pending_and_installments_preserves_original_process(self):
+        # First closing loads pending auth 887766 + an early installment auth 405544
+        pending_only_rows = BORDERO_PAYMENTS + [
+            (305, 1789500, "MC$", "Master Card $", 54990, -75000, "887766", "04/09/2026", "18:30:00", "CDAZA", "PENDIENTE BD"),
+        ]
+        sep_files = build_clp_files()
+        sep_files["erp_file"] = build_bordero(pending_only_rows)
+        sep_proc = commit_clp_preview_to_database(self.user, calculate_clp_preview(**sep_files))
+        db_pending = ErpTransaction.objects.get(authorization_code="887766")
+        self.assertFalse(db_pending.reconciled)
+        self.assertEqual(db_pending.process_id, sep_proc.id)
+
+        # Second closing uploads a DIFFERENT-period Bordero (no 887766, no 405544 in Excel)
+        # while Transbank settlement has pending 887766 + later installment "2/3" of 405544
+        oct_erp = _xlsx("BORDERO_OCT.xlsx", {
+            1: {"A": "HOTELERA SAN FRANCISCO S.A"},
+            2: {"A": "Cargos de Débitos y Créditos"},
+            4: {"A": "Periodo de:", "B": "10/10/2026", "C": "hasta", "D": "10/10/2026"},
+            5: {
+                "A": "Hab", "B": "Tipo Hab", "C": "Reserva", "D": "Cuenta", "E": "Cod. Deb.", "F": "Descripción",
+                "H": "Factura", "I": "Valor", "J": "Documento", "K": "Fecha", "L": "Hora", "M": "Usuario", "N": "Designación",
+            },
+            6: {"A": 401, "D": 1791000, "E": "HOA", "F": "Hospedaje Automático", "I": 95000, "J": "UH: 401", "K": "10/10/2026"},
+        })
+        oct_tbk = build_tbk_settlement("CREDIT_OCT.xlsx", "Crédito", [
+            ("04/09/2026", "RESTAURANT BRISTOL", 75000, "Normal", "S/C", 75000, 1500, 285, "5412 34** **** 2222", "887766"),
+            ("04/09/2026", "HOTEL PLAZA SAN FRANCISCO", 187172, "C3C", "2/3", 62391, 1500, 285, "5525 61** **** 5410", "405544"),
+        ])
+        oct_bank = build_cartola([("12/10/2026", "ABONO TRANSBANK TC TBK", 133821)])
+
+        preview = calculate_clp_preview(
+            erp_file=oct_erp,
+            bank_statement_file=oct_bank,
+            tbk_files=[oct_tbk],
+        )
+        self.assertEqual(preview["counts"]["matched"], 2)
+
+        # Source table displays ONLY the 2 matched DB rows (not unused Excel cards from sep_proc!)
+        src_ctx = build_preview_source_tables_context(preview, "CLP")
+        src_erp_rows = src_ctx["payload"]["erp"]
+        self.assertEqual(len(src_erp_rows), 2)
+        self.assertTrue(all(r["origin_label"] == f"Base de Datos (#{sep_proc.id})" for r in src_erp_rows))
+
+        # Commit preserves original sep_proc ownership for same-currency rows and links CrossMatchResult to oct_proc
+        oct_proc = commit_clp_preview_to_database(self.user, preview)
+        db_pending.refresh_from_db()
+        self.assertTrue(db_pending.reconciled)
+        self.assertEqual(db_pending.process_id, sep_proc.id)
+        self.assertTrue(oct_proc.cross_match_results.filter(erp_transaction=db_pending, system_result="MATCHED").exists())
+
+    def test_usd_cross_match_against_db_row_preloaded_in_clp_bordero(self):
+        # Load a full Bordero during a CLP closing, which persists auxiliary USD row 112194 unreconciled under clp_proc
+        clp_files = build_clp_files()
+        clp_proc = commit_clp_preview_to_database(self.user, calculate_clp_preview(**clp_files))
+        db_usd = ErpTransaction.objects.get(
+            process=clp_proc,
+            authorization_code="112194",
+            source_currency="USD",
+        )
+        self.assertFalse(db_usd.reconciled)
+
+        # USD upload uses an ERP Excel that omits 112194 (already in DB), while Transbank + Visa Operator carry 112194
+        usd_files = _build_usd_files()
+        usd_files["erp_file"] = _build_usd_bordero_file([
+            (710, 1715800, "MUS$", "Master Card US$", 99970, -80750, 334455, "05/09/2026", "20:00:00", "CDAZA", "JANE SMITH"),
+            (815, 1715900, "VUS$", "Visa US$", 99980, -47500, 556677, "06/09/2026", "11:15:00", "SCORREA", "MARIO RUIZ"),
+        ])
+
+        usd_preview = calculate_usd_preview(**usd_files)
+        self.assertEqual(usd_preview["counts"]["matched"], 1)
+        src_ctx = build_preview_source_tables_context(usd_preview, "USD")
+        db_rows_in_src = [r for r in src_ctx["payload"]["erp"] if r["origin_label"] == f"Base de Datos (#{clp_proc.id})"]
+        self.assertEqual(len(db_rows_in_src), 1)
+        self.assertEqual(db_rows_in_src[0]["authorization_code"], "112194")
+
+        # Cross-currency adoption: auxiliary USD row originally ingested by CLP process gets adopted on USD commit!
+        usd_proc = commit_usd_preview_to_database(self.user, usd_preview)
+        db_usd.refresh_from_db()
+        self.assertTrue(db_usd.reconciled)
+        self.assertEqual(db_usd.process_id, usd_proc.id)
+
+    def test_fast_date_time_sanitizers_and_single_pass_bundle_parity(self):
+        from datetime import date, datetime, time as dt_time
+        import pandas as pd
+        from .services.column_detector import safe_date, safe_time
+        from .services.excel_parsers import (
+            parse_all_bordero_movements,
+            parse_bordero_bundle,
+            parse_bordero_clp_transactions,
+            parse_erp_transactions,
+        )
+
+        self.assertEqual(safe_date("04/11/2026"), date(2026, 11, 4))
+        self.assertEqual(safe_date("2026-11-04"), date(2026, 11, 4))
+        self.assertEqual(safe_date("04 septiembre 2026"), date(2026, 9, 4))
+        self.assertEqual(safe_date(datetime(2026, 11, 4, 16, 25)), date(2026, 11, 4))
+        self.assertEqual(safe_date(date(2026, 11, 4)), date(2026, 11, 4))
+        self.assertIsNone(safe_date(pd.NaT))
+        self.assertIsNone(safe_date(""))
+
+        self.assertEqual(safe_time("16:25:09"), dt_time(16, 25, 9))
+        self.assertEqual(safe_time("16:25"), dt_time(16, 25, 0))
+        self.assertEqual(safe_time(datetime(2026, 11, 4, 16, 25, 9)), dt_time(16, 25, 9))
+        self.assertEqual(safe_time(dt_time(8, 5, 1)), dt_time(8, 5, 1))
+        self.assertIsNone(safe_time(None))
+
+        df = pd.read_excel(build_bordero(BORDERO_PAYMENTS), header=None)
+        card_types = {c.code: c for c in CardType.objects.all()}
+        bundle = parse_bordero_bundle(df, card_types=card_types, source_file="test.xlsx")
+        usd_insts, _ = parse_erp_transactions(df, card_types)
+        clp_rows, _ = parse_bordero_clp_transactions(df, source_file="test.xlsx")
+        all_movs = parse_all_bordero_movements(df, source_file="test.xlsx")
+
+        self.assertEqual(len(bundle["usd_instances"]), len(usd_insts))
+        self.assertEqual(len(bundle["clp_rows"]), len(clp_rows))
+        self.assertEqual(len(bundle["all_movements"]), len(all_movs))
+        self.assertEqual(
+            [m["source_key"] for m in bundle["all_movements"]],
+            [m["source_key"] for m in all_movs],
+        )
+
+    def test_clear_test_db_clears_over_sqlite_variable_limit_and_soft_deleted_rows(self):
+        from datetime import date
+        from .models import (
+            AuditResolutionLog,
+            BankDepositValidation,
+            BankStatementMovement,
+            CrossMatchResult,
+            ErpTransactionChange,
+            ReconciliationSummary,
+            SystemConfiguration,
+            TransbankTransaction,
+        )
+
+        SystemConfiguration.get_solo()
+        proc = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        card = CardType.objects.first()
+
+        # Include a soft-deleted row and >32,766 active rows to exceed SQLite's bind-variable limit
+        soft_deleted = ErpTransaction.objects.create(
+            process=proc,
+            card_type=card,
+            document_number="SOFT-1",
+            account_code="SOFT-1",
+            transaction_date=date(2026, 9, 5),
+            amount=Decimal("1000.00"),
+            source_currency="CLP",
+            is_deleted=True,
+            source_key="soft-deleted-clear-test",
+        )
+        ErpTransactionChange.objects.create(
+            erp_transaction=soft_deleted,
+            field_name=ErpTransactionChange.FIELD_DELETED,
+            old_value="activo",
+            new_value="eliminado",
+            user=self.user,
+            source=ErpTransactionChange.SOURCE_MANUAL,
+        )
+        bulk_rows = [
+            ErpTransaction(
+                process=proc,
+                card_type=card,
+                document_number=f"BULK-{i}",
+                account_code=f"BULK-{i}",
+                transaction_date=date(2026, 9, 5),
+                amount=Decimal("1000.00"),
+                source_currency="CLP",
+                source_key=f"bulk-clear-{i}",
+            )
+            for i in range(35000)
+        ]
+        ErpTransaction.objects.bulk_create(bulk_rows, batch_size=1000)
+        self.assertGreater(ErpTransaction.all_objects.count(), 35000)
+
+        resp = self.client.post(reverse("clear_test_db"), {"next": "clp_upload"})
+        self.assertRedirects(resp, reverse("clp_upload"))
+
+        for model_cls in (
+            ReconciliationProcess,
+            AuditResolutionLog,
+            ErpTransactionChange,
+            CrossMatchResult,
+            BankDepositValidation,
+            ReconciliationSummary,
+            TransbankTransaction,
+            BankStatementMovement,
+        ):
+            self.assertEqual(model_cls.objects.count(), 0)
+        self.assertEqual(ErpTransaction.all_objects.count(), 0)
+
+        # Catalogs, configuration, and users remain intact
+        self.assertTrue(CardType.objects.exists())
+        self.assertTrue(ReconciliationStatus.objects.exists())
+        self.assertTrue(SystemConfiguration.objects.exists())
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+
+    def test_db_lookup_and_suggestions_reject_distant_months_even_on_code_or_amount_overlap(self):
+        from datetime import date
+        from .services.clp_suggestion_engine import _find_db_suggestion_for_clp_voucher
+        from .services.erp_coverage import db_card_candidates_for_codes
+        from .services.suggestion_engine import _find_db_suggestion_for_orphan
+
+        oct_proc = ReconciliationProcess.objects.create(
+            user=self.user,
+            process_currency="USD",
+            accounting_period="Octubre 2026",
+            erp_min_date=date(2026, 10, 1),
+            erp_max_date=date(2026, 10, 31),
+        )
+        rc_card = CardType.objects.get_or_create(code="RC", defaults={"name": "Redcompra"})[0]
+        vi_card = CardType.objects.get(code="VI")
+
+        # Distant October DB rows sharing exact/similar auth codes and exact amounts with September vouchers
+        oct_clp = ErpTransaction.objects.create(
+            process=oct_proc,
+            card_type=rc_card,
+            account_code="1796118",
+            payment_code="RCO",
+            payment_description="Red Compra",
+            authorization_code="6746",
+            transaction_date=date(2026, 10, 15),
+            amount=Decimal("20900.00"),
+            source_currency="CLP",
+            reconciled=False,
+            source_key="oct-rco-6746",
+        )
+        sep_clp = ErpTransaction.objects.create(
+            process=oct_proc,
+            card_type=rc_card,
+            account_code="1786100",
+            payment_code="RCO",
+            payment_description="Red Compra",
+            authorization_code="6749",
+            transaction_date=date(2026, 9, 4),
+            amount=Decimal("20900.00"),
+            source_currency="CLP",
+            reconciled=False,
+            source_key="sep-rco-6749",
+        )
+        oct_usd = ErpTransaction.objects.create(
+            process=oct_proc,
+            card_type=vi_card,
+            account_code="1796999",
+            payment_code="VUS$",
+            payment_description="Visa US$",
+            authorization_code="6746",
+            transaction_date=date(2026, 10, 15),
+            amount=Decimal("95000.00"),
+            source_currency="USD",
+            reconciled=False,
+            source_key="oct-usd-6746",
+        )
+
+        # Level 1 lookup rejects Oct 15 DB row when Transbank voucher is from Sept 5
+        clp_cands = db_card_candidates_for_codes(
+            source_currency="CLP",
+            voucher_codes={"6746"},
+            voucher_dates_by_code={"6746": {date(2026, 9, 5)}},
+        )
+        self.assertNotIn(oct_clp, clp_cands)
+
+        usd_cands = db_card_candidates_for_codes(
+            source_currency="USD",
+            voucher_codes={"6746"},
+            voucher_dates_by_code={"6746": {date(2026, 9, 5)}},
+        )
+        self.assertNotIn(oct_usd, usd_cands)
+
+        # Level 2 CLP DB suggestions reject Oct 15 (even on exact amount + 67% code match) and find nearby Sept 4
+        sep_voucher = {
+            "authorization_code": "6746",
+            "tbk_amount": 20900.0,
+            "payment_modality": "DEBIT",
+            "sale_date": "03/09/2026",
+        }
+        sug_only_oct = _find_db_suggestion_for_clp_voucher(
+            sep_voucher, 1000.0, "TBK", "BORDERO", db_candidates=[oct_clp]
+        )
+        self.assertIsNone(sug_only_oct)
+
+        sug_with_sep = _find_db_suggestion_for_clp_voucher(
+            sep_voucher, 1000.0, "TBK", "BORDERO", db_candidates=[oct_clp, sep_clp]
+        )
+        self.assertIsNotNone(sug_with_sep)
+        self.assertEqual(sug_with_sep["db_match"]["transaction_id"], sep_clp.id)
+
+        # Level 2 USD DB suggestions reject Oct 15 for Sept 5 orphan
+        usd_orphan = {
+            "card_code": "VI",
+            "card_name": "Visa",
+            "authorization_code": "6746",
+            "gross_amount_usd": 100.0,
+            "sale_date": "05/09/2026",
+            "masked_card": "4260 **** 1111",
+        }
+        self.assertIsNone(
+            _find_db_suggestion_for_orphan(
+                usd_orphan, [], set(), lambda _: {}, db_candidates=[oct_usd]
+            )
+        )
+
 
 

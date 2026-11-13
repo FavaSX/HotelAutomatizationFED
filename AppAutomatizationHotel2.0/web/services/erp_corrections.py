@@ -12,6 +12,7 @@ possible duplicate for the accountant to decide.
 """
 
 import hashlib
+from datetime import date, datetime, time as dt_time
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -38,9 +39,17 @@ def erp_source_key(
     Accepts raw Excel/session values or model values; both normalize to the same key.
     Migration 0006 inlines this algorithm for the backfill: keep both in sync.
     """
-    amount_dec = round(Decimal(str(amount or 0)), 2)
-    date_val = safe_date(transaction_date) if transaction_date not in (None, "") else None
-    time_val = safe_time(transaction_time) if transaction_time not in (None, "") else None
+    amount_dec = round(amount, 2) if isinstance(amount, Decimal) else round(Decimal(str(amount or 0)), 2)
+    date_val = (
+        transaction_date
+        if isinstance(transaction_date, date) and not isinstance(transaction_date, datetime)
+        else (safe_date(transaction_date) if transaction_date not in (None, "") else None)
+    )
+    time_val = (
+        transaction_time
+        if isinstance(transaction_time, dt_time)
+        else (safe_time(transaction_time) if transaction_time not in (None, "") else None)
+    )
     parts = [
         source_currency or "",
         str(document_number or ""),
@@ -259,15 +268,16 @@ def overlay_on_instances(
 ) -> Tuple[List[ErpTransaction], Dict[str, Any]]:
     """Same as `apply_saved_corrections`, for the unsaved ErpTransaction instances of the USD flow."""
     for inst in instances:
-        inst.source_key = erp_source_key(
-            source_currency,
-            inst.document_number or inst.account_code or "",
-            inst.invoice_number,
-            inst.authorization_code,
-            inst.amount,
-            inst.transaction_date,
-            inst.transaction_time,
-        )
+        if not getattr(inst, "source_key", None):
+            inst.source_key = erp_source_key(
+                source_currency,
+                inst.document_number or inst.account_code or "",
+                inst.invoice_number,
+                inst.authorization_code,
+                inst.amount,
+                inst.transaction_date,
+                inst.transaction_time,
+            )
     report = {
         "corrected": 0,
         "deleted": 0,

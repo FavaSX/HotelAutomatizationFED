@@ -21,6 +21,7 @@ from ..models import (
 )
 from ..templatetags.currency_filters import format_observation
 from .column_detector import safe_date
+from .erp_coverage import resolve_prior_incomplete_processes
 from .preview_corrections import apply_pending_corrections, original_erp_rows
 from .suggestion_actions import with_proposed_change
 from .persistence_common import (
@@ -80,10 +81,21 @@ def _get_or_save_usd_process(
             existing_process = candidate_proc
 
     files = preview.get("file_names", {})
+    coverage_meta = preview.get("erp_coverage_meta") or {}
+    erp_min = safe_date(coverage_meta.get("erp_min_date"))
+    erp_max = safe_date(coverage_meta.get("erp_max_date"))
+    erp_incomplete = bool(coverage_meta.get("erp_last_day_incomplete", False))
+    resolve_prior_incomplete_processes(erp_min, erp_max)
+
     if existing_process is not None:
         existing_process.user = user
         existing_process.accounting_period = preview.get("accounting_period", existing_process.accounting_period)
         existing_process.tolerance_applied = preview.get("tolerance")
+        if erp_min is not None:
+            existing_process.erp_min_date = erp_min
+        if erp_max is not None:
+            existing_process.erp_max_date = erp_max
+        existing_process.erp_last_day_incomplete = erp_incomplete
         for file_key, attr_name in (
             ("erp", "erp_file_name"),
             ("transbank", "transbank_general_file_name"),
@@ -102,6 +114,9 @@ def _get_or_save_usd_process(
         user=user,
         process_currency="USD",
         tolerance_applied=preview.get("tolerance"),
+        erp_min_date=erp_min,
+        erp_max_date=erp_max,
+        erp_last_day_incomplete=erp_incomplete,
         accounting_period=preview.get("accounting_period", "Cierre Dólares (USD)"),
         erp_file_name=files.get("erp", "TERJETAS ERP.xlsx"),
         transbank_general_file_name=files.get("transbank", "ABONO TBK.xlsx"),

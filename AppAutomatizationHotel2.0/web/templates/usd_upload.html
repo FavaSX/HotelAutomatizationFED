@@ -81,8 +81,9 @@
   <input type="file" name="usd_mastercard_file" id="input_usd_mc" class="d-none" accept=".xls,.xlsx">
 
   <div class="card card-executive p-4 mb-4">
+    {% include "partials/erp_upload_precheck.html" %}
     <!-- FASE 1: Zona de Carga Masiva -->
-    <div id="expPhase1Dropzone">
+    <div id="expPhase1Dropzone" class="d-none">
       <div class="mb-2">
         <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-1 rounded-pill">
           <i class="bi bi-1-circle-fill me-1 text-warning"></i> Carga Masiva de Archivos
@@ -128,6 +129,7 @@
 
       <!-- Alerta de Estado de la Alineación -->
       <div id="alignmentSummaryAlert" class="alert rounded-4 mb-3 py-2 px-3 small"></div>
+      <div id="erpUploadWarningsBox" class="mb-3 d-none"></div>
 
       <!-- Card 1: Archivos Principales de Conciliación -->
       <div class="card card-executive p-0 mb-4 overflow-hidden border">
@@ -214,5 +216,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=9"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=10"></script>
 {% endblock %}

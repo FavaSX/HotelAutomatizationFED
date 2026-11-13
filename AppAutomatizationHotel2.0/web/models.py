@@ -95,6 +95,10 @@ class ReconciliationProcess(models.Model):
 
     # Tolerance snapshot used when this process was reconciled (USD or CLP depending on process_currency)
     tolerance_applied = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
+    # Coverage range of the uploaded Bordero(s) in this closing and whether the last day remained open/incomplete
+    erp_min_date = models.DateField(blank=True, null=True)
+    erp_max_date = models.DateField(blank=True, null=True)
+    erp_last_day_incomplete = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'reconciliation_process'

@@ -19,6 +19,83 @@ let bulkUploadedFiles = [];
 let latestDetectionReport = null;
 let extraErpIndices = new Set();
 let extraTbkIndices = new Set();
+let erpPrecheckConfirmed = false;
+
+function initErpPrecheckGate() {
+  const gate = document.getElementById('erpPrecheckGate');
+  const dropzone = document.getElementById('expPhase1Dropzone');
+  const checkbox = document.getElementById('erpPrecheckReadCheckbox');
+  const confirmBtn = document.getElementById('btnConfirmErpPrecheck');
+  const verifiedBanner = document.getElementById('erpPrecheckVerifiedBanner');
+  const reopenBtn = document.getElementById('btnReopenErpPrecheck');
+
+  if (!gate || !dropzone) {
+    erpPrecheckConfirmed = true;
+    if (dropzone) dropzone.classList.remove('d-none');
+    return;
+  }
+
+  erpPrecheckConfirmed = false;
+  if (checkbox && confirmBtn) {
+    checkbox.addEventListener('change', () => {
+      confirmBtn.disabled = !checkbox.checked;
+    });
+    confirmBtn.addEventListener('click', () => {
+      if (!checkbox.checked) return;
+      erpPrecheckConfirmed = true;
+      gate.classList.add('d-none');
+      if (verifiedBanner) verifiedBanner.classList.remove('d-none');
+      dropzone.classList.remove('d-none');
+    });
+  }
+  if (reopenBtn) {
+    reopenBtn.addEventListener('click', () => {
+      gate.classList.remove('d-none');
+      if (verifiedBanner) verifiedBanner.classList.add('d-none');
+    });
+  }
+}
+
+function renderErpUploadWarnings(data) {
+  const box = document.getElementById('erpUploadWarningsBox');
+  if (!box) return;
+  const warnings = Array.isArray(data.erp_warnings) ? data.erp_warnings : [];
+  const cov = data.erp_coverage;
+  if (!warnings.length && !(cov && cov.erp_min_date_str)) {
+    box.innerHTML = '';
+    box.classList.add('d-none');
+    return;
+  }
+  const parts = [];
+  if (cov && cov.erp_min_date_str) {
+    const badge = cov.erp_last_day_incomplete
+      ? '<span class="badge bg-warning-subtle text-dark border border-warning rounded-pill ms-2">Día final en curso (se marcará incompleto)</span>'
+      : '';
+    parts.push(`
+      <div class="alert alert-secondary bg-white border rounded-4 small py-2 px-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div>
+          <i class="bi bi-calendar2-week text-primary me-1"></i>
+          <strong>Borderó detectado:</strong>
+          <span class="font-mono">${escapeHtmlStr(cov.erp_min_date_str)} al ${escapeHtmlStr(cov.erp_max_date_str)}</span>
+          · ${Number(cov.total_movements) || 0} mov. (${Number(cov.card_movements) || 0} tarjetas / ${Number(cov.non_card_movements) || 0} otros cargos)
+        </div>
+        ${badge}
+      </div>
+    `);
+  }
+  warnings.forEach(w => {
+    const cls = w.level === 'danger' ? 'alert-danger' : 'alert-warning';
+    const icon = w.level === 'danger' ? 'bi-exclamation-octagon-fill' : 'bi-exclamation-triangle-fill';
+    parts.push(`
+      <div class="alert ${cls} border-0 rounded-4 small py-2 px-3 mb-2" role="alert">
+        <i class="bi ${icon} me-1"></i>
+        <strong>${escapeHtmlStr(w.title || '')}:</strong> ${escapeHtmlStr(w.message || '')}
+      </div>
+    `);
+  });
+  box.innerHTML = parts.join('');
+  box.classList.remove('d-none');
+}
 
 function getUploadForm() {
   return document.querySelector('form[data-detect-url]');
@@ -45,6 +122,7 @@ function showProcessingOverlay() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initErpPrecheckGate();
   const dropzoneBox = document.getElementById('bulkDropzoneBox');
   if (!dropzoneBox) return;
 
@@ -72,6 +150,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function handleBulkFilesSelected(fileList) {
+  if (!erpPrecheckConfirmed && document.getElementById('erpPrecheckGate')) {
+    alert('Por favor confirme las indicaciones previas del rango y exportación del Borderó antes de cargar archivos.');
+    return;
+  }
   if (!fileList || fileList.length === 0) return;
   bulkUploadedFiles = Array.from(fileList);
 
@@ -255,6 +337,7 @@ function renderAlignmentTable(data) {
 
   renderExtraErpWidgets();
   renderExtraTbkWidgets();
+  renderErpUploadWarnings(data);
   document.getElementById('expPhase2Alignment').classList.remove('d-none');
   validateCurrentAlignmentSelection();
 }
@@ -555,6 +638,11 @@ function resetExperimentalFiles() {
   document.getElementById('bulkFilesInput').value = '';
   document.getElementById('expPhase2Alignment').classList.add('d-none');
   document.getElementById('expScanningSpinner').classList.add('d-none');
+  const warnBox = document.getElementById('erpUploadWarningsBox');
+  if (warnBox) {
+    warnBox.innerHTML = '';
+    warnBox.classList.add('d-none');
+  }
   document.getElementById('expPhase1Dropzone').classList.remove('d-none');
 }
 

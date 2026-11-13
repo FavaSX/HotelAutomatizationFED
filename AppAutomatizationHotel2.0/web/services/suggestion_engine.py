@@ -9,7 +9,8 @@ import difflib
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from ..templatetags.currency_filters import fmt_clp, fmt_usd
-from .column_detector import clean_code_string
+from .column_detector import clean_code_string, safe_date
+from .erp_coverage import expand_date_window
 
 OCR_REPLACEMENTS = (("G", "6"), ("O", "0"), ("B", "8"), ("T", "7"), ("Z", "7"), ("S", "5"), ("I", "1"))
 
@@ -498,6 +499,7 @@ def _find_db_suggestion_for_orphan(
         except Exception:
             return None
 
+    parsed_sale_date = safe_date(sale_date) if sale_date and sale_date != "—" else None
     best_match = None
     best_score = 0
 
@@ -507,6 +509,9 @@ def _find_db_suggestion_for_orphan(
         db_card = db_tx.card_type.code if db_tx.card_type else ""
         if card_code and db_card and db_card != card_code:
             continue
+        if parsed_sale_date is not None and db_tx.transaction_date is not None:
+            if not -2 <= (db_tx.transaction_date - parsed_sale_date).days <= 5:
+                continue
 
         db_auth = clean_code_string(db_tx.authorization_code or "")
         db_acc = clean_code_string(db_tx.account_code or db_tx.document_number or "")
@@ -665,15 +670,30 @@ def enrich_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[str, A
             )
 
     # Pass 3: Database Assisted Suggestions for remaining orphans (single pre-fetched query)
+    target_dates = expand_date_window(
+        [
+            o.get("sale_date")
+            for o in orphan_vouchers
+            if not o.get("suggestion") or o.get("suggestion", {}).get("confidence") == "MEDIA"
+        ],
+        back_days=2,
+        forward_days=5,
+    )
     try:
+        from django.db.models import Q
         from ..models import ErpTransaction
-        db_candidates = list(
+        db_qs = (
             ErpTransaction.objects.filter(
                 reconciled=False,
                 source_currency="USD",
                 card_type__isnull=False,
-            ).select_related("process", "card_type").order_by("-transaction_date")[:300]
+            )
+            .select_related("process", "card_type")
         )
+        if target_dates:
+            db_candidates = list(db_qs.filter(Q(transaction_date__in=target_dates) | Q(transaction_date__isnull=True)))
+        else:
+            db_candidates = list(db_qs.order_by("-transaction_date")[:300])
     except Exception:
         db_candidates = []
     claimed_db_ids: Set[int] = set()

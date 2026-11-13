@@ -14,19 +14,18 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
-from ..models import CardType, SystemConfiguration
+from ..models import CardType, ErpTransactionChange, SystemConfiguration
 from .erp_corrections import apply_saved_corrections
+from .erp_coverage import db_card_candidates_for_codes, evaluate_bordero_upload_warnings
 from .column_detector import (
     normalize_text,
     normalize_auth_code,
     safe_date,
 )
 from .excel_parsers import (
-    parse_all_bordero_movements,
     parse_bank_statement_movements,
+    parse_bordero_bundle,
     serialize_bank_movement,
-    parse_bordero_clp_transactions,
-    parse_bordero_period,
     parse_universal_transbank_clp,
     store_additional_erp_movements,
 )
@@ -249,6 +248,40 @@ def _cross_match_sale(
     }
 
 
+def _clp_row_from_db_model(row: Any, is_corrected: bool = False) -> Dict[str, Any]:
+    """Serializes an existing DB card/RedCompra ErpTransaction into a CLP preview row."""
+    card_code = row.card_type.code if row.card_type_id and row.card_type else ""
+    is_redcompra = (row.payment_code or "").upper() == "RCO" or not card_code
+    return {
+        "excel_row": f"BD #{row.id}",
+        "source_file": f"Base de Datos (#{row.process_id})",
+        "card_code": card_code,
+        "payment_group": "REDCOMPRA" if is_redcompra else "CREDIT",
+        "payment_code": row.payment_code or "",
+        "payment_description": row.payment_description or (
+            "Red Compra" if is_redcompra else (f"{row.card_type.name} $" if row.card_type else "")
+        ),
+        "room_number": "",
+        "room_type": row.room_type or "",
+        "reservation_number": row.reservation_number or "",
+        "account_code": row.account_code or row.document_number or "",
+        "invoice_number": row.invoice_number or "",
+        "authorization_code": row.authorization_code or "",
+        "transaction_date": row.transaction_date.strftime("%d/%m/%Y") if row.transaction_date else None,
+        "transaction_time": row.transaction_time.strftime("%H:%M:%S") if row.transaction_time else None,
+        "cashier_username": row.cashier_username or "",
+        "guest_name": "",
+        "amount": float(row.amount),
+        "is_reversal": row.amount < 0,
+        "reconciled": row.reconciled,
+        "source_key": row.source_key,
+        "is_corrected": is_corrected,
+        "from_db": True,
+        "db_id": row.id,
+        "db_process_id": row.process_id,
+    }
+
+
 def calculate_clp_preview(
     erp_file,
     bank_statement_file,
@@ -293,10 +326,13 @@ def calculate_clp_preview(
     settlements = parse_universal_transbank_clp(all_tbk_files)
 
     # Optional auxiliary/historical Bordero files (e.g. BORDERO 04-07.XLS for earlier installment sales)
+    primary_bundle = parse_bordero_bundle(bordero_dataframe, card_types=None, source_file=erp_file_name)
+    erp_stats_list: List[Dict[str, Any]] = [primary_bundle["stats"]]
+    raw_additional_movements: List[Dict[str, Any]] = list(primary_bundle["all_movements"])
+
     auxiliary_erp_rows: List[Dict[str, Any]] = []
     extra_erp_names: List[str] = []
     failed_extra_erp_files: List[str] = []
-    all_bordero_dfs: List[Tuple[str, pd.DataFrame]] = [(erp_file_name, bordero_dataframe)]
     for extra_file in (extra_erp_files or []):
         if not extra_file:
             continue
@@ -306,13 +342,16 @@ def calculate_clp_preview(
         try:
             extra_df = pd.read_excel(extra_file, header=None)
             if len(extra_df) > 0:
-                parsed_extra, _ = parse_bordero_clp_transactions(extra_df, source_file=extra_name)
-                auxiliary_erp_rows.extend(parsed_extra)
+                extra_bundle = parse_bordero_bundle(extra_df, card_types=None, source_file=extra_name)
+                auxiliary_erp_rows.extend(extra_bundle["clp_rows"])
+                erp_stats_list.append(extra_bundle["stats"])
+                raw_additional_movements.extend(extra_bundle["all_movements"])
                 extra_erp_names.append(extra_name)
-                all_bordero_dfs.append((extra_name, extra_df))
         except Exception:
             failed_extra_erp_files.append(extra_name)
             continue
+
+    erp_coverage_meta, erp_warnings = evaluate_bordero_upload_warnings(erp_stats_list)
 
     # 1. Bank deposits of the 3 settlements
     bank_movements = parse_bank_statement_movements(bank_dataframe)
@@ -328,7 +367,8 @@ def calculate_clp_preview(
                 detected_account = cells[idx + 1]
 
     # 2. Bordero peso card payments
-    erp_rows, rows_by_auth_code = parse_bordero_clp_transactions(bordero_dataframe, source_file=erp_file_name)
+    erp_rows = primary_bundle["clp_rows"]
+    rows_by_auth_code = primary_bundle["clp_rows_by_auth_code"]
 
     # Incorporate and deduplicate auxiliary / extra ERP files if provided
     if auxiliary_erp_rows:
@@ -363,12 +403,28 @@ def calculate_clp_preview(
                 if norm_code:
                     rows_by_auth_code.setdefault(norm_code, []).append(pos)
 
+    period = primary_bundle["stats"]["period_header"]
+    if period == (None, None):
+        erp_dates = [d for d in (safe_date(r["transaction_date"]) for r in erp_rows if not r.get("is_auxiliary")) if d]
+        if erp_dates:
+            period = (min(erp_dates), max(erp_dates))
+
     # Corrections saved in the DB win over the Excel, so a re-upload does not undo them.
     # Deleting rows shifts positions and a correction may change the code, so the index is rebuilt.
-    voucher_codes = {
-        normalize_auth_code(sale["authorization_code"])
-        for modality, _, _, _ in CLP_MODALITIES for sale in settlements[modality]["sales"]
-    }
+    voucher_codes = set()
+    later_installment_codes = set()
+    voucher_dates_by_code: Dict[str, set] = {}
+    for modality, _, _, _ in CLP_MODALITIES:
+        for sale in settlements[modality]["sales"]:
+            norm = normalize_auth_code(sale["authorization_code"])
+            if not norm:
+                continue
+            voucher_codes.add(norm)
+            if _installment_is_later(sale.get("installment_number", "")):
+                later_installment_codes.add(norm)
+            if sale.get("sale_date") is not None:
+                voucher_dates_by_code.setdefault(norm, set()).add(sale["sale_date"])
+
     erp_rows, erp_corrections = apply_saved_corrections(
         erp_rows, source_currency="CLP", doc_field="account_code", voucher_codes=voucher_codes
     )
@@ -382,20 +438,36 @@ def calculate_clp_preview(
     active_clp_keys = {r.get("source_key") for r in erp_rows if r.get("source_key")}
     seen_additional_keys = set(active_clp_keys)
     additional_erp_rows: List[Dict[str, Any]] = []
-    for src_name, b_df in all_bordero_dfs:
-        for mov in parse_all_bordero_movements(b_df, source_file=src_name):
-            skey = mov.get("source_key")
-            if not skey or skey in seen_additional_keys:
-                continue
-            seen_additional_keys.add(skey)
-            additional_erp_rows.append(mov)
+    for mov in raw_additional_movements:
+        skey = mov.get("source_key")
+        if not skey or skey in seen_additional_keys:
+            continue
+        seen_additional_keys.add(skey)
+        additional_erp_rows.append(mov)
     additional_erp_token = store_additional_erp_movements(additional_erp_rows)
 
-    period = parse_bordero_period(bordero_dataframe)
-    if period == (None, None):
-        erp_dates = [d for d in (safe_date(r["transaction_date"]) for r in erp_rows if not r.get("is_auxiliary")) if d]
-        if erp_dates:
-            period = (min(erp_dates), max(erp_dates))
+    # Incorporate pending / eligible historical CLP card rows already persisted in DB
+    existing_manual_ids = {r.get("manual_id") for r in erp_rows if r.get("manual_id")}
+    db_candidates = db_card_candidates_for_codes(
+        source_currency="CLP",
+        voucher_codes=voucher_codes,
+        exclude_source_keys=active_clp_keys,
+        exclude_ids=existing_manual_ids,
+        later_installment_codes=later_installment_codes,
+        voucher_dates_by_code=voucher_dates_by_code,
+    )
+    if db_candidates:
+        corrected_db_ids = set(
+            ErpTransactionChange.objects.filter(erp_transaction_id__in=[c.id for c in db_candidates])
+            .exclude(field_name=ErpTransactionChange.FIELD_CREATED)
+            .values_list("erp_transaction_id", flat=True)
+        )
+        for cand in db_candidates:
+            pos = len(erp_rows)
+            erp_rows.append(_clp_row_from_db_model(cand, is_corrected=cand.id in corrected_db_ids))
+            norm_code = normalize_auth_code(cand.authorization_code or "")
+            if norm_code:
+                rows_by_auth_code.setdefault(norm_code, []).append(pos)
 
     # 3. Cross-match every Transbank voucher against the Bordero
     transbank_transactions_data: List[Dict[str, Any]] = []
@@ -612,6 +684,8 @@ def calculate_clp_preview(
         "out_of_period_vouchers": buckets["OUT_OF_PERIOD"],
         "skipped_movements": sum(s["skipped_movements"] for s in settlements.values()),
         "erp_corrections_applied": erp_corrections,
+        "erp_coverage_meta": erp_coverage_meta,
+        "erp_warnings": erp_warnings,
         "counts": {
             "matched": len(buckets["MATCHED"]),
             "discrepancies": len(discrepancy_vouchers),

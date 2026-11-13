@@ -126,8 +126,21 @@ def sync_erp_transactions_by_currency(
     the ORIGINAL Excel row. A row the accountant corrected is still found, and is never overwritten by the
     Excel values; a soft-deleted row is found too and stays deleted.
     """
-    manual_rows = ErpTransaction.all_objects.in_bulk([e["manual_id"] for e in erp_raw if e.get("manual_id")])
-    incoming_keys = [source_key_for_raw(e, source_currency, doc_field) for e in erp_raw if not e.get("manual_id")]
+    db_row_ids = [
+        e.get("db_id") or e.get("manual_id")
+        for e in erp_raw
+        if e.get("db_id") or e.get("manual_id")
+    ]
+    existing_by_id = (
+        ErpTransaction.all_objects.select_related("process").in_bulk(db_row_ids)
+        if db_row_ids
+        else {}
+    )
+    incoming_keys = [
+        source_key_for_raw(e, source_currency, doc_field)
+        for e in erp_raw
+        if not e.get("manual_id") and not e.get("db_id")
+    ]
     unique_keys = list(dict.fromkeys(k for k in incoming_keys if k))
     existing_map: Dict[str, ErpTransaction] = {}
     for start in range(0, len(unique_keys), 900):
@@ -146,21 +159,35 @@ def sync_erp_transactions_by_currency(
     seen_erp_update_ids: set = set()
 
     for e_data in erp_raw:
-        manual_obj = manual_rows.get(e_data.get("manual_id"))
-        if manual_obj is not None:
-            # Hand-added row taking part in this upload's cross-match: it already exists, update its process/flag
+        rec_val = e_data.get("reconciled", False)
+        desc_val = (e_data.get("payment_description") or "").strip()[:100] or None
+
+        db_id_val = e_data.get("db_id") or e_data.get("manual_id")
+        linked_obj = existing_by_id.get(db_id_val) if db_id_val else None
+        if linked_obj is not None:
+            is_manual = bool(e_data.get("manual_id"))
+            can_adopt_cross_currency = (
+                linked_obj.process_id != process.id
+                and linked_obj.process.process_currency != process.process_currency
+                and linked_obj.source_currency == process.process_currency
+            )
             changed = False
-            if e_data.get("reconciled") and not manual_obj.reconciled:
-                manual_obj.reconciled = True
-                manual_obj.process = process
+            if rec_val and not linked_obj.reconciled:
+                linked_obj.reconciled = True
+                if is_manual or can_adopt_cross_currency:
+                    linked_obj.process = process
                 changed = True
-            elif not manual_obj.reconciled and manual_obj.process_id != process.id:
-                manual_obj.process = process
+            elif not linked_obj.reconciled and linked_obj.process_id != process.id:
+                if is_manual or can_adopt_cross_currency:
+                    linked_obj.process = process
+                    changed = True
+            if desc_val and not linked_obj.payment_description:
+                linked_obj.payment_description = desc_val
                 changed = True
-            if changed and manual_obj.pk and manual_obj.pk not in seen_erp_update_ids:
-                seen_erp_update_ids.add(manual_obj.pk)
-                erp_to_update.append(manual_obj)
-            erp_models.append(manual_obj)
+            if changed and linked_obj.pk and linked_obj.pk not in seen_erp_update_ids:
+                seen_erp_update_ids.add(linked_obj.pk)
+                erp_to_update.append(linked_obj)
+            erp_models.append(linked_obj)
             continue
 
         doc_val = e_data.get(doc_field) or e_data.get("account_code") or ""
@@ -169,25 +196,23 @@ def sync_erp_transactions_by_currency(
         amt_val = to_decimal(e_data.get("amount"))
         date_val = safe_date(e_data.get("transaction_date"))
         time_val = safe_time(e_data.get("transaction_time"))
-        rec_val = e_data.get("reconciled", False)
-        desc_val = (e_data.get("payment_description") or "").strip()[:100] or None
 
         natural_key = source_key_for_raw(e_data, source_currency, doc_field)
         existing_obj = existing_map.get(natural_key)
         if existing_obj is not None:
+            can_adopt_cross_currency = (
+                existing_obj.process_id != process.id
+                and existing_obj.process.process_currency != process.process_currency
+                and existing_obj.source_currency == process.process_currency
+            )
             changed = False
             if rec_val and not existing_obj.reconciled:
                 existing_obj.reconciled = True
-                if existing_obj.process_id != process.id:
+                # Preserve original closing ownership for same-currency rows; adopt only auxiliary cross-currency rows.
+                if can_adopt_cross_currency:
                     existing_obj.process = process
                 changed = True
-            elif (
-                not existing_obj.reconciled
-                and existing_obj.process_id != process.id
-                and existing_obj.process.process_currency != process.process_currency
-                and existing_obj.source_currency == process.process_currency
-            ):
-                # Pre-loaded as an auxiliary row during the other currency's upload; adopt into native currency closing
+            elif not existing_obj.reconciled and can_adopt_cross_currency:
                 existing_obj.process = process
                 changed = True
             if desc_val and not existing_obj.payment_description:
@@ -258,25 +283,36 @@ def sync_additional_erp_movements(
     new_erp: List[ErpTransaction] = []
     to_update: List[ErpTransaction] = []
     seen_update_ids: set = set()
+    card_get = card_types.get
+    proc_currency = process.process_currency
 
     for m_data in additional_rows:
         skey = m_data.get("source_key")
         if not skey:
             continue
-        desc_val = (m_data.get("payment_description") or "").strip()[:100] or None
         existing_obj = existing_by_key.get(skey)
         if existing_obj is not None:
-            if desc_val and not existing_obj.payment_description and existing_obj.pk and existing_obj.pk not in seen_update_ids:
-                existing_obj.payment_description = desc_val
-                seen_update_ids.add(existing_obj.pk)
-                to_update.append(existing_obj)
+            if not existing_obj.payment_description:
+                desc_val = (m_data.get("payment_description") or "").strip()[:100] or None
+                if desc_val and existing_obj.pk and existing_obj.pk not in seen_update_ids:
+                    existing_obj.payment_description = desc_val
+                    seen_update_ids.add(existing_obj.pk)
+                    to_update.append(existing_obj)
             continue
 
+        desc_val = (m_data.get("payment_description") or "").strip()[:100] or None
         doc_val = m_data.get("document_number") or m_data.get("account_code") or ""
         card_code = m_data.get("card_code") or ""
+        tx_date_val = m_data.get("_date_obj")
+        if tx_date_val is None and m_data.get("transaction_date") is not None:
+            tx_date_val = safe_date(m_data.get("transaction_date"))
+        tx_time_val = m_data.get("_time_obj")
+        if tx_time_val is None and m_data.get("transaction_time") is not None:
+            tx_time_val = safe_time(m_data.get("transaction_time"))
+
         new_obj = ErpTransaction(
             process=process,
-            card_type=card_types.get(card_code) if card_code else None,
+            card_type=card_get(card_code) if card_code else None,
             room_number=m_data.get("room_number"),
             room_type=m_data.get("room_type"),
             reservation_number=m_data.get("reservation_number"),
@@ -286,12 +322,12 @@ def sync_additional_erp_movements(
             invoice_number=m_data.get("invoice_number") or "",
             document_number=doc_val,
             authorization_code=m_data.get("authorization_code") or "",
-            transaction_date=safe_date(m_data.get("transaction_date")),
-            transaction_time=safe_time(m_data.get("transaction_time")),
+            transaction_date=tx_date_val,
+            transaction_time=tx_time_val,
             cashier_username=m_data.get("cashier_username"),
             guest_name=m_data.get("guest_name"),
             amount=to_decimal(m_data.get("amount")),
-            source_currency=m_data.get("source_currency") or process.process_currency,
+            source_currency=m_data.get("source_currency") or proc_currency,
             reconciled=False,
             origin=ErpTransaction.ORIGIN_EXCEL,
             source_key=skey,

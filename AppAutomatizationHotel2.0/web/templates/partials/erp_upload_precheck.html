@@ -1,0 +1,117 @@
+{% load currency_filters %}
+<div id="erpPrecheckGate" class="border rounded-4 p-4 mb-3 bg-light-subtle">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+    <div>
+      <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1 rounded-pill mb-2">
+        <i class="bi bi-database-check me-1"></i> Paso Previo · Cobertura ERP en Base de Datos
+      </span>
+      <h5 class="fw-bold mb-1 text-dark">Verifique el rango ideal del Borderó antes de subir los archivos</h5>
+      <p class="text-muted small mb-0">
+        El sistema cruza tanto contra el Excel subido como contra las filas pendientes guardadas en la base de datos.
+      </p>
+    </div>
+    {% if erp_coverage.has_data %}
+    <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill">
+      <i class="bi bi-calendar-check me-1"></i> BD: {{ erp_coverage.min_date_str }} al {{ erp_coverage.max_date_str }} · {{ erp_coverage.total_rows|num_clp }} mov.
+    </span>
+    {% else %}
+    <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-2 rounded-pill">
+      <i class="bi bi-database-exclamation me-1"></i> BD ERP vacía (primera carga)
+    </span>
+    {% endif %}
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="bg-white border rounded-4 p-3 h-100">
+        <div class="text-uppercase text-muted fw-semibold mb-1" style="font-size: 0.72rem; letter-spacing: .04em;">
+          1. Estado actual en base de datos
+        </div>
+        {% if erp_coverage.has_data %}
+        <div class="fw-bold text-dark fs-6 mb-1">
+          {{ erp_coverage.min_date_str }} al {{ erp_coverage.max_date_str }}
+        </div>
+        <p class="small text-muted mb-0">
+          Última fecha de movimiento registrada: <strong>{{ erp_coverage.max_date_str }}</strong>
+          ({{ erp_coverage.total_rows|num_clp }} filas activas compartidas entre USD y CLP).
+        </p>
+        {% if erp_coverage.largest_gap %}
+        <div class="small text-warning-emphasis mt-2">
+          <i class="bi bi-info-circle me-1"></i>Se detecta un intervalo sin registros entre
+          <strong>{{ erp_coverage.largest_gap.from_str }}</strong> y <strong>{{ erp_coverage.largest_gap.to_str }}</strong>
+          ({{ erp_coverage.largest_gap.days }} días).
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="fw-bold text-dark fs-6 mb-1">Sin movimientos ERP cargados todavía</div>
+        <p class="small text-muted mb-0">
+          Para evitar períodos faltantes y contar con un rango mínimo/máximo sólido, cargue el
+          <strong>año completo {{ erp_coverage.today.year }}</strong> o incluya <strong>1 a 2 años anteriores</strong>.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="bg-white border border-warning rounded-4 p-3 h-100">
+        <div class="text-uppercase text-warning-emphasis fw-semibold mb-1" style="font-size: 0.72rem; letter-spacing: .04em;">
+          2. Rango ideal sugerido para exportar el Borderó
+        </div>
+        <div class="fw-bold text-dark fs-6 mb-1">
+          <i class="bi bi-calendar-range text-warning me-1"></i>{{ erp_coverage.ideal_range_label }}
+        </div>
+        {% if erp_coverage.has_data %}
+        <p class="small text-muted mb-0">
+          Incluya desde el mismo día <strong>{{ erp_coverage.recommended_from_str }}</strong> hasta
+          <strong>ayer ({{ erp_coverage.yesterday_str }})</strong>, ya que durante hoy ({{ erp_coverage.today_str }})
+          se siguen generando registros nuevos en recepción.
+        </p>
+        {% else %}
+        <p class="small text-muted mb-0">
+          Recomendado en primera carga: desde <strong>{{ erp_coverage.recommended_from_str }}</strong>
+          (o desde <strong>1 a 2 años atrás</strong>) hasta <strong>ayer ({{ erp_coverage.yesterday_str }})</strong>.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if erp_coverage.has_incomplete_day %}
+  <div class="alert alert-danger border-0 rounded-4 py-2 px-3 small mb-3" role="alert">
+    <i class="bi bi-exclamation-octagon-fill me-1"></i>
+    <strong>Día anterior incompleto ({{ erp_coverage.incomplete_date_str }}):</strong>
+    En una carga previa se importaron movimientos del mismo día en curso, por lo que pudieron quedar registros posteriores sin bajar.
+    Debe volver a exportar <strong>obligatoriamente desde el {{ erp_coverage.incomplete_date_str }}</strong> para completar ese día sin dejar filas sueltas.
+  </div>
+  {% endif %}
+
+  <div class="alert alert-info border-0 rounded-4 py-2 px-3 small mb-3" role="note">
+    <i class="bi bi-funnel-fill me-1"></i>
+    <strong>Regla de exportación del Borderó (USD + CLP):</strong>
+    Exporte el listado <strong>completo con todos los movimientos del hotel</strong> (tarjetas USD, tarjetas CLP, Redcompra, efectivo, HOA, IVA, BAR, PROP, etc.),
+    filtrado <strong>únicamente por el período de fechas</strong> y sin filtros por medio de pago o moneda.
+  </div>
+
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top">
+    <div class="form-check m-0">
+      <input class="form-check-input" type="checkbox" id="erpPrecheckReadCheckbox">
+      <label class="form-check-label small fw-semibold text-dark" for="erpPrecheckReadCheckbox">
+        He leído las indicaciones, verifiqué el rango sugerido y mi Borderó viene completo filtrado solo por fecha.
+      </label>
+    </div>
+    <button type="button" id="btnConfirmErpPrecheck" class="btn btn-brand rounded-pill px-4 shadow-sm" disabled>
+      <i class="bi bi-unlock-fill me-1"></i> Confirmar y habilitar carga de archivos
+    </button>
+  </div>
+</div>
+
+<div id="erpPrecheckVerifiedBanner" class="alert alert-success border-0 rounded-4 py-2 px-3 small mb-3 d-none d-flex flex-wrap align-items-center justify-content-between gap-2">
+  <div>
+    <i class="bi bi-patch-check-fill me-1"></i>
+    <strong>Indicaciones confirmadas.</strong>
+    Rango sugerido: <span class="font-mono fw-semibold">{{ erp_coverage.ideal_range_label }}</span> (Borderó completo sin filtro de tarjetas).
+  </div>
+  <button type="button" id="btnReopenErpPrecheck" class="btn btn-sm btn-outline-success rounded-pill px-3">
+    <i class="bi bi-eye me-1"></i> Ver indicaciones
+  </button>
+</div>
