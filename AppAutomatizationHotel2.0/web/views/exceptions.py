@@ -150,7 +150,7 @@ def exceptions_view(request):
         changes.setdefault(change.cross_match_result_id, []).append(change)
     choices = {cur: payment_code_choices(cur) for cur in ("CLP", "USD")}
     for item in rows:
-        item.history = logs.get(item.id, [])
+        item.history = _history_with_reasons(logs.get(item.id, []), changes.get(item.id, []))
         item.erp_changes_list = changes.get(item.id, [])
         _add_correction_context(item, choices[item.process.process_currency])
 
@@ -260,6 +260,24 @@ def _suggestion_panel(currency, today):
     return items[:SUGGESTION_PANEL_LIMIT], len(items)
 
 
+def _history_with_reasons(logs, changes):
+    """
+    One timeline per case, newest first. Every ERP correction already writes a status log whose comment
+    summarizes the change, so the ERP change rows only contribute the accountant's reason ("Motivo").
+    """
+    logs = sorted(logs, key=lambda log: log.created_at, reverse=True)
+    for log in logs:
+        log.reason = ""
+    for change in changes:
+        if not change.reason:
+            continue
+        closest = min(logs, key=lambda log: abs((log.created_at - change.created_at).total_seconds()), default=None)
+        if (closest and abs((closest.created_at - change.created_at).total_seconds()) < 10
+                and change.reason not in (closest.comment or "")):
+            closest.reason = change.reason
+    return logs
+
+
 def _add_correction_context(item, choices):
     """ERP rows to fix and the prefilled "add row" values for the "Corregir el ERP" panel of an open case."""
     item.can_correct = item.is_pending and item.transbank_transaction_id is not None
@@ -280,6 +298,8 @@ def _add_correction_context(item, choices):
         "transaction_date": item.sale_date,
         "payment_code": default_payment_code(item),
         "document_number": "",
+        # Valor as the Bordero writes a payment: negative, no thousands separator
+        "bordero_amount": "" if amount is None else f"-{amount:.2f}".removesuffix(".00"),
     }
 
 
@@ -368,7 +388,7 @@ def exception_erp_edit_view(request, match_id: int, row_id: int):
 @login_required(login_url="login")
 @require_POST
 def exception_erp_add_view(request, match_id: int):
-    values = {f: request.POST.get(f) for f in (*FIELD_LABELS, "invoice_number", "guest_name")}
+    values = {f: request.POST.get(f) for f in FIELD_LABELS}
     return _correction_view(
         request, match_id,
         lambda match: add_row(match, values, request.user, reason=request.POST.get("reason", "")),

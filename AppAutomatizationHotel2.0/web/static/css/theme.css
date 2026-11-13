@@ -1861,10 +1861,70 @@ a.segmented-item { text-decoration: none; }
 .exception-history { border-left: 2px solid var(--border); padding-left: .9rem; }
 .exception-history li + li { margin-top: .6rem; }
 
-/* ===================== Pendientes: Corregir el ERP ===================== */
-.erp-correction details > summary { cursor: pointer; list-style-position: inside; }
-.erp-correction details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-.erp-row-card { background: var(--surface-2); border-color: var(--border) !important; }
+/* ===================== Pendientes: ventana "Resolver" ===================== */
+.exc-header-sub { font-size: .8rem; color: rgba(255, 255, 255, .72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.exc-modal .modal-body { background: var(--surface); }
+.exc-section + .exc-section { border-top: 1px solid var(--border); margin-top: 1.5rem; padding-top: 1.5rem; }
+.exc-section-title {
+  text-transform: uppercase; letter-spacing: .06em;
+  font-size: .72rem; font-weight: 700; color: var(--text-muted);
+  margin-bottom: .75rem;
+}
+.exc-hint { font-size: .8rem; color: var(--text-muted); margin-bottom: .75rem; }
+
+/* Amounts: the three numbers that explain the case, difference highlighted */
+.exc-amounts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; }
+.exc-amount { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: .7rem .9rem; }
+.exc-amount .kpi-label { font-size: .68rem; }
+.exc-amount-value { font-size: 1.2rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: .15rem; }
+.exc-amount-diff {
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+}
+.exc-amount-diff .exc-amount-value { color: var(--danger); }
+
+.exc-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem 1.25rem;
+  margin: 1rem 0 0; font-size: .85rem;
+}
+.exc-facts dt { font-size: .72rem; font-weight: 600; color: var(--text-muted); }
+.exc-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.exc-diagnosis {
+  display: flex; align-items: flex-start;
+  margin: 1rem 0 0; font-size: .85rem; color: var(--text-muted);
+}
+.exc-callout {
+  font-size: .875rem; border-radius: 12px; padding: .7rem .9rem;
+  background: var(--brand-subtle); border: 1px solid var(--brand-border); color: var(--text);
+}
+
+/* Actions: one tab per way of solving the case */
+.exc-tabs { display: flex; width: 100%; }
+.exc-tabs .segmented-item { flex: 1 1 0; justify-content: center; }
+@media (max-width: 575.98px) { .exc-tabs .segmented-item { flex-basis: 100%; } }
+
+.erp-row-card { border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); }
+.erp-row-card + .erp-row-card { margin-top: .6rem; }
+.erp-row-head { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .7rem .9rem; }
+.erp-row-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: .75rem; font-weight: 600; }
+.erp-row-amount { font-variant-numeric: tabular-nums; }
+.erp-row-key { font-size: .75rem; font-weight: 600; color: var(--text-muted); }
+.erp-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .9rem; font-size: .8rem; color: var(--text-muted); margin-top: .15rem; }
+.erp-row-actions { display: flex; align-items: center; gap: .25rem; flex-shrink: 0; }
+.erp-row-form { border-top: 1px solid var(--border); background: var(--surface-2); padding: .8rem .9rem; margin: 0; border-radius: 0 0 12px 12px; }
+.erp-row-form-danger { background: color-mix(in srgb, var(--danger) 5%, var(--surface)); }
+.exc-more { font-weight: 600; color: var(--brand-text); }
+.exc-more i { display: inline-block; transition: transform .15s ease; }
+.exc-more[aria-expanded="true"] i { transform: rotate(90deg); }
+.exc-form-footer { display: flex; gap: .5rem; align-items: center; margin-top: .25rem; }
+.exc-form-footer .form-control { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 575.98px) { .exc-form-footer { flex-direction: column; align-items: stretch; } }
+
+.exc-history > summary { cursor: pointer; list-style: none; display: flex; align-items: center; }
+.exc-history > summary::-webkit-details-marker { display: none; }
+.exc-history > summary::before { content: "\F285"; font-family: "bootstrap-icons"; margin-right: .4rem; transition: transform .15s ease; }
+.exc-history[open] > summary::before { transform: rotate(90deg); }
+.exc-history > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .suggestion-change { background: var(--surface-2); border: 1px solid var(--border); border-radius: .75rem; padding: .6rem .8rem; }
 .proposal-block { background: var(--surface-2); }
 .proposal-block .form-control { min-width: 11rem; }

@@ -19,7 +19,11 @@ from ..models import ErpTransaction
 from .column_detector import normalize_auth_code, safe_date, safe_time
 
 # Fields the accountant may correct; their DB value replaces the Excel value on a new upload
-CORRECTABLE_FIELDS = ("amount", "authorization_code", "transaction_date", "payment_code", "document_number")
+CORRECTABLE_FIELDS = (
+    "amount", "authorization_code", "transaction_date", "payment_code", "document_number",
+    "transaction_time", "invoice_number", "account_code", "reservation_number",
+    "room_number", "room_type", "guest_name", "cashier_username",
+)
 MANUAL_SOURCE_LABEL = "Agregada a mano"
 
 
