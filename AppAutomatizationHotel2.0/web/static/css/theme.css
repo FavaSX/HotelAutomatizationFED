@@ -399,10 +399,8 @@ body::before {
   min-width: 260px;
   padding: .5rem;
   border-radius: 14px;
-  background: var(--glass-modal-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   box-shadow: var(--glass-shadow);
 }
 .profile-menu-header { display: flex; align-items: center; gap: .75rem; padding: .5rem .6rem; }
