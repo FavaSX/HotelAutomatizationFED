@@ -1,7 +1,7 @@
 # Sistema de Conciliación Financiera ERP — Hotel Plaza San Francisco (v2.0)
 
 [![Despliegue en Producción](https://img.shields.io/badge/Despliegue-PythonAnywhere-28a745?style=for-the-badge&logo=pythonanywhere&logoColor=white)](https://hotelsanfrancisco.pythonanywhere.com/)
-[![Django](https://img.shields.io/badge/Django-5.1+-092e20?style=for-the-badge&logo=django&logoColor=white)](https://www.djangoproject.com/)
+[![Django](https://img.shields.io/badge/Django-6.1+-092e20?style=for-the-badge&logo=django&logoColor=white)](https://www.djangoproject.com/)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Bootstrap 5](https://img.shields.io/badge/Bootstrap-5.3-7952b3?style=for-the-badge&logo=bootstrap&logoColor=white)](https://getbootstrap.com/)
 
@@ -13,11 +13,11 @@ El **Sistema de Conciliación Financiera ERP** es una plataforma web corporativa
 
 ## 🛠 Tecnologías Utilizadas
 
-* **Lenguaje & Framework:** Python 3.12+, Django 5.1+ / 6.1+.
+* **Lenguaje & Framework:** Python 3.12+ (verificado en Python 3.14), Django 6.1+ (`requirements.txt` fija `Django==6.1.2`).
 * **Procesamiento de Datos:** Pandas 3.0+, OpenPyXL 3.1+ (reportes con fórmulas y estilos corporativos), xlrd 2.0+ (lectura de archivos heredados `.xls`).
 * **Base de Datos:** SQLite 3 (desarrollo y despliegue rápido) / compatible con PostgreSQL para entornos de alta concurrencia.
-* **Interfaz de Usuario (Frontend):** Bootstrap 5.3, Bootstrap Icons 1.11, JavaScript ES6+ nativo (arrastrar y soltar, peticiones asíncronas AJAX, filtros en tiempo real y paginación cliente), CSS3 con soporte de variables y Modo Claro / Oscuro.
-* **Seguridad & Auditoría:** `django-axes` (protección contra ataques de fuerza bruta), sesiones seguras en memoria y middleware de seguridad HTTPS.
+* **Interfaz de Usuario (Frontend):** Bootstrap 5.3, Bootstrap Icons 1.11, JavaScript ES6+ nativo (arrastrar y soltar, peticiones asíncronas AJAX, filtros en tiempo real y paginación híbrida cliente/servidor), CSS3 con soporte de variables y Modo Claro / Oscuro.
+* **Seguridad & Auditoría:** `django-axes` (protección contra ataques de fuerza bruta), sesiones con expiración por cierre o turno (8 horas), middleware de endurecimiento HTTPS, ruta admin configurable (`DJANGO_ADMIN_URL`) y bitácoras inmutables (`AuditResolutionLog`, `ErpTransactionChange`, `UserAuditLog`).
 
 ---
 
@@ -59,9 +59,10 @@ El motor financiero ejecuta la conciliación en **tres niveles de validación si
    * En paralelo, valida la conversión a pesos chilenos en cascada: compara el monto CLP del ERP primero contra la columna **`SALDO`** de la operadora y, si hubo ajuste cambiario, contra la columna **`SALDO CORREGIDO`**.
 3. **Confirmación de Abono en Cartola Bancaria:**
    * Suma la totalidad de las liquidaciones netas del cierre y escanea la cartola bancaria buscando el abono exacto en cuenta corriente, emitiendo un dictamen inmediato de **Abono Bancario Confirmado** o **Alerta de Diferencia Bancaria**.
-4. **Motor de Sugerencia Asistida Nivel 2 (`suggestion_engine.py`):**
-   * Para aquellos vouchers que no logran un cruce automático en el Nivel 1 (pestañas *Con Diferencia* y *En TBK pero NO en ERP*), el sistema ejecuta un segundo motor analítico de carácter **consultivo** (nunca fuerza ni altera la conciliación automática).
-   * Cruza los vouchers pendientes contra la totalidad de filas disponibles del ERP y de los operadores aplicando algoritmos de similitud de texto (`difflib`), normalización de confusiones visuales de lectura POS/OCR (`G↔6`, `O↔0`, `B↔8`, `T/Z↔7`, `S↔5`, `I↔1`), detección de errores humanos de digitación de 1 o 2 caracteres, cercanía de fechas y correlación de montos en USD y CLP.
+4. **Motor de Sugerencia Asistida Nivel 2 (`suggestion_engine.py` y `preview_corrections.py`):**
+   * Para los vouchers sin cruce automático en el Nivel 1 (*Con Diferencia* y *En TBK pero NO en ERP*), el sistema calcula propuestas **al vuelo** (*on-the-fly*, sin congelar sugerencias antiguas en base de datos), contrastando contra filas disponibles del Borderó cargado, Posición por Clientes y registros ERP activos en BD (`erp_coverage.py`). Nunca fuerza ni altera la conciliación sin confirmación explícita del contador.
+   * Aplica similitud de texto (`difflib`), normalización de confusiones visuales POS/OCR (`G↔6`, `O↔0`, `B↔8`, `T/Z↔7`, `S↔5`, `I↔1`), detección de errores de digitación de 1 o 2 caracteres, cercanía de fechas y correlación de montos en USD y CLP.
+   * Cuando la diferencia apunta a un campo corregible del ERP (`authorization_code`, `amount`, `transaction_date`, `payment_code`, `document_number`), permite editar/confirmar el nuevo valor directamente en el Paso 2 (*Aplicar corrección*) o posteriormente desde la bandeja *Pendientes* (*Aceptar* / *Rechazar*), dejando rastro en `ErpTransactionChange`.
 
 ---
 
@@ -71,12 +72,12 @@ A diferencia del esquema tradicional a ciegas, el sistema opera bajo una arquite
 1. **Dashboard Interactivo de Previsualización (En Memoria):**
    Al subir los 7 archivos, el contador accede inmediatamente a una vista preliminar con KPIs ejecutivos (porcentaje de conciliación automática con barra de progreso interactiva, diferencia total y tarjeta de confirmación del abono en cartola bancaria con número de cuenta detectado), las **dos tablas paralelas de cuadratura** (**2A. Cuadratura por Operador en Dólares US$** y **2B. Cuadratura en Moneda Nacional Pesos CLP**) y el desglose línea por línea clasificado en **3 pestañas de auditoría**:
    * **Ubicadas Exactas:** Transacciones que cuadran tanto en ERP como en la operadora (incluyendo el detalle de Cruce de Vouchers `TBK ⇄ ERP`, Cruce de Documentos `ERP ⇄ OP`, Fecha, Cajero, Tarjeta, Monto TBK, Monto Operador, Diferencia USD, Monto CLP y Diagnóstico).
-   * **Con Diferencia:** Vouchers ubicados en el ERP pero que presentan diferencias monetarias en dólares o pesos fuera del rango de tolerancia (`±US$ 0,50 USD`), o cuyo documento aún no figura en la liquidación del operador.
+   * **Con Diferencia:** Vouchers ubicados en el ERP pero que presentan diferencias monetarias en dólares o pesos fuera de la tolerancia configurada (por defecto `±US$ 0,50 USD`, editable en `/settings/`), o cuyo documento aún no figura en la liquidación del operador.
    * **En TBK pero NO en ERP:** Cobros reales procesados en la máquina de Transbank cuyo código de autorización no fue ingresado con coincidencia exacta al sistema del hotel por recepción.
-2. **Asistente de Cruce Secundario (Modal Nivel 2):**
-   En las pestañas *Con Diferencia* y *En TBK pero NO en ERP*, un banner ejecutivo informa cuántos casos cuentan con **sugerencia asistida** y permite abrir un modal interactivo con tablas comparativas lado a lado (`Transbank ⇄ ERP Hotel ⇄ Operadora`), nivel de confianza (`Alta / Media`) y la acción contable sugerida para corregir el dato en recepción.
+2. **Asistente de Cruce Secundario (Modal Nivel 2) y Tablas de Respaldo:**
+   En las pestañas *Con Diferencia* y *En TBK pero NO en ERP*, un banner ejecutivo informa cuántos casos cuentan con **sugerencia asistida** y abre el modal unificado (`usd_preview_modals.html` y `suggestion_card.js`) con filtro rápido (*Todos / Con Sugerencia Asistida / Sin Sugerencia en Archivos*), comparación lado a lado por archivo, motivos detectados y un campo editable para confirmar **Aplicar corrección** antes o al guardar el cierre (`preview_corrections.py`). Adicionalmente, el contador puede desplegar las **Tablas de Respaldo** de solo lectura (`source_tables_viewer.js`) para auditar en memoria los 4 orígenes cargados.
 3. **Confirmación en Base de Datos y Descarga de Excel Oficial en 2 Pasos:**
-   Una vez revisados los datos, el contador presiona **"Guardar cierre"**. Mediante una petición asíncrona (AJAX), el sistema persiste atómicamente toda la operación en la base de datos y transforma el modal al **Paso 2**, habilitando el botón de descarga del **Reporte Excel Oficial Multi-Hoja** (*Resumen Dólares*, *Vouchers Ubicados* y *Discrepancias y No Ubicados*) respaldado por el registro histórico recién creado.
+   Una vez revisados los datos, el contador presiona **"Guardar cierre"**. Mediante una petición asíncrona (AJAX), el sistema persiste atómicamente la operación en BD (aplicando las correcciones aceptadas en Paso 2 y re-evaluando si el Borderó recién ingresado resuelve casos `PENDING` de cierres anteriores vía `pending_recross.py`) y pasa el modal al **Paso 2**, habilitando la descarga del **Reporte Excel Oficial Multi-Hoja** (*Resumen Dólares*, *Vouchers Ubicados*, *Discrepancias y No Ubicados* y *Sugerencias Asistidas*).
 
 ---
 
@@ -98,18 +99,21 @@ Durante la auditoría del código original se detectaron fallas críticas que im
 ---
 
 ### 2. Nueva Arquitectura de Base de Datos Relacional y Motor Anti-Duplicados
-Se diseñó e implementó desde cero un modelo relacional normalizado en Django compuesto por **11 modelos (3 catálogos base y 8 tablas operativas de conciliación)**:
-* **Catálogos y Configuración:** `CardType` (franquicias y prefijos BIN), `ReconciliationStatus` (estados de gestión contable) y `SystemConfiguration` (tolerancias de redondeo en USD y CLP editables por administración).
-* **Cabecera y Resúmenes del Cierre:** `ReconciliationProcess` (registro maestro de ejecución), `BankDepositValidation` (validación del abono bancario por modalidad: `USD_GENERAL`, `CLP_CREDIT`, `CLP_DEBIT`, `CLP_PREPAID`) y `ReconciliationSummary` (cuadraturas consolidadas por tarjeta y modalidad en tablas USD y CLP).
-* **Almacén de Transacciones Limpias:** `BankStatementMovement`, `ErpTransaction`, `TransbankTransaction` y `CardOperatorTransaction`.
-* **Auditoría y Gestión de Discrepancias:** `CrossMatchResult` (resultado individual por cada voucher con diagnóstico del sistema y estado de resolución) y `AuditResolutionLog` (bitácora inmutable de cambios de estado).
+Se diseñó e implementó desde cero un modelo relacional normalizado en Django compuesto por **15 modelos (3 catálogos/configuración base, 10 tablas operativas y de auditoría de conciliación, y 2 tablas de ciclo de vida de usuarios)**:
+* **Catálogos y Configuración (3):** `CardType` (franquicias y prefijos BIN), `ReconciliationStatus` (estados `PENDING`, `REJECTED`, `ACCEPTED_ROUNDING`, `RESOLVED_*`) y `SystemConfiguration` (tolerancias de redondeo USD `0`–`5` y CLP `0`–`5000` editables desde `/settings/`).
+* **Cabecera, Cobertura y Resúmenes del Cierre (3):** `ReconciliationProcess` (registro maestro con tolerancia aplicada y ventana de cobertura Borderó `erp_min_date` / `erp_max_date` / `erp_last_day_incomplete`), `BankDepositValidation` (validación del abono bancario por modalidad: `USD_GENERAL`, `CLP_CREDIT`, `CLP_DEBIT`, `CLP_PREPAID`) y `ReconciliationSummary` (cuadraturas consolidadas por tarjeta y modalidad en tablas USD y CLP).
+* **Almacén de Transacciones Limpias (4):** `BankStatementMovement`, `ErpTransaction` (distingue origen `EXCEL` o `MANUAL`, huella original inmutable `source_key` y borrado lógico `is_deleted`), `TransbankTransaction` y `CardOperatorTransaction`.
+* **Cruce, Correcciones y Auditoría de Conciliación (3):** `CrossMatchResult` (resultado individual por cada voucher con diagnóstico, detalle `system_status_detail`, vínculo ERP/operadora y estado de resolución), `AuditResolutionLog` (bitácora inmutable de cambios de estado) y `ErpTransactionChange` (bitácora campo por campo de ediciones, altas manuales y eliminaciones lógicas de filas ERP desde sugerencia o edición manual).
+* **Gestión y Auditoría de Usuarios (2):** `UserAccountStatus` (metadata de cuenta activa/baja lógica sin romper llaves foráneas históricas) y `UserAuditLog` (registro inmutable de creación, edición, restablecimiento de clave, baja lógica y reactivación).
 
-#### Blindaje contra Duplicidad (Idempotencia en las 8 Tablas Operativas)
-Para evitar que la base de datos se infle si un contador guarda dos veces el mismo proceso o si vuelve a subir los archivos tras corregir una factura en el ERP, se construyó un **motor de deduplicación inteligente**:
+#### Blindaje contra Duplicidad, Protección de Ediciones ERP y Recálculo Automático
+Para garantizar idempotencia al re-subir cierres sin perder trabajo previo del contador, se construyó un **motor de deduplicación, protección y recálculo**:
 1. **Llaves Naturales Únicas por Tabla:** Cada movimiento bancario, cobro ERP, voucher Transbank y liquidación de operadora se identifica por su huella contable real (ej. *Tarjeta + Código de Autorización + Monto + Fecha + BIN* en Transbank, o *Cuenta + Factura + Autorización + Monto + Fecha + Hora* en ERP).
 2. **Detección Inteligente del Mismo Cierre Contable:** El sistema evalúa si la mayoría ($\ge 80\%$) de los vouchers del archivo de abono Transbank entrante y el monto total de liquidación coinciden con un proceso ya registrado de la misma moneda. Si es el mismo cierre, reutiliza y actualiza el proceso existente en lugar de duplicar resúmenes; si es un cierre de otro día que solo comparte 1 o 2 filas por solapamiento de fechas de descarga, crea un proceso nuevo sin sobrescribir el historial del día anterior.
 3. **Consultas SQL Focalizadas (`.filter(...__in=...)`):** En vez de cargar tablas históricas completas en memoria, el motor filtra en SQL únicamente los lotes de fechas, números de documento y códigos de autorización presentes en los archivos subidos, garantizando tiempos de respuesta constantes aunque la base de datos acumule años de operación.
-4. **Resolución y Trazabilidad Automática (`AuditResolutionLog`):** La tabla `CrossMatchResult` mantiene una relación 1 a 1 con cada voucher de Transbank. Si un voucher había quedado como `NOT_FOUND_IN_ERP`, `AMOUNT_MISMATCH`, `CARD_TYPE_MISMATCH` o `OUT_OF_PERIOD` y, al re-subir el archivo ERP corregido, pasa a `MATCHED`, el sistema actualiza el registro existente a conciliado, asigna automáticamente el usuario y fecha de resolución, e inserta una entrada en `AuditResolutionLog` dejando constancia de la corrección.
+4. **Resolución y Trazabilidad Automática (`AuditResolutionLog`):** La tabla `CrossMatchResult` mantiene una relación 1 a 1 con cada voucher de Transbank. Si un voucher había quedado como `NOT_FOUND_IN_ERP`, `AMOUNT_MISMATCH`, `CARD_TYPE_MISMATCH` o `OUT_OF_PERIOD` y pasa a `MATCHED`, el sistema actualiza el registro existente a conciliado e inserta una entrada en `AuditResolutionLog`.
+5. **Protección de Ediciones y Filas Manuales frente a Re-cargas (`erp_corrections.py` y `persistence_common.py`):** Cada fila importada desde el Borderó conserva su huella `source_key` calculada sobre los valores originales del Excel. Si el contador edita o elimina lógicamente esa fila, futuras re-cargas del Excel crudo la reconocen y aplican los cambios persistidos (`apply_saved_corrections`) antes del cruce para que no reaparezca el error original ni se reinserten filas eliminadas. Asimismo, `get_protected_tbk_match_ids` impide que una re-carga cruda degrade o sobrescriba vouchers ya conciliados manualmente (filas `MANUAL`, filas modificadas con `ErpTransactionChange`, casos cerrados `RESOLVED_*` o cruces inter-cierre).
+6. **Recálculo Automático de Casos `PENDING` entre Cierres (`pending_recross.py` y `voucher_recross.py`):** Las sugerencias asistidas no se congelan en la base de datos sino que se calculan **al vuelo**; además, cada vez que se guarda un nuevo cierre o se edita/agrega una fila ERP, el sistema re-evalúa automáticamente los casos `PENDING` abiertos en USD y CLP (incluyendo Borderós posteriores y cuotas `2/3`, `3/3` en CLP), pasando a `MATCHED` (*Corregido en ERP*) cuando logran cuadrar e informando en el resumen cuántos pendientes previos se resolvieron.
 
 ---
 
@@ -117,28 +121,32 @@ Para evitar que la base de datos se infle si un contador guarda dos veces el mis
 * **Auto-Detección de Archivos por Huella Interna (`file_detector.py`):** En versiones anteriores el usuario debía subir manualmente cada archivo en casilleros separados, con el riesgo de equivocarse de casilla entre operadoras o modalidades de pago. En la nueva versión se reemplazó ese esquema por una **Zona Única de Carga Masiva en 2 Pasos** tanto para Dólares (7 archivos) como para Pesos (archivos unificados o separados + Borderós históricos opcionales):
   1. **Paso 1 (Selección Masiva):** El contador arrastra o selecciona todos los archivos juntos en cualquier orden e incluso con nombres distintos. El sistema abre las primeras 45 filas de cada Excel en memoria e identifica su **huella contable interna** (por ejemplo, leyendo `Cliente: TRANSBANK - TARJETA MASTERCARD US$`, el campo `Medio de pago: Crédito / Débito / Prepago` en liquidaciones CLP, o los encabezados `Cargos de Débitos y Créditos` del Borderó FrontOffice).
   2. **Paso 2 (Tabla de Alineación y Confirmación):** El sistema presenta los roles requeridos alineados junto con la evidencia interna encontrada, el período de fechas detectado, el conteo de filas, el nivel de certeza (`100% Seguro`) y un selector desplegable en cada fila que permite cambiar o reasignar manualmente cualquier archivo antes de ejecutar la conciliación.
+* **Pre-Check y Cobertura Histórica del Borderó (`erp_coverage.py`):** Antes de subir archivos, las vistas de carga muestran la cobertura acumulada en BD del Borderó, detectan días abiertos o potencialmente incompletos, calculan el rango de fechas ideal recomendado para exportar desde el ERP y emiten advertencias preventivas frente a fechas faltantes (`erp_upload_precheck.html` y `erp_upload_warnings.html`).
 * **Previsualización Instantánea (`Zero-Write`):** Toda la lectura y cruce matemático (`calculate_usd_preview` y `calculate_clp_preview`) se ejecuta 100% en memoria RAM en fracciones de segundo y se almacena temporalmente en la sesión del usuario, permitiendo auditar sin tocar la base de datos hasta la confirmación explícita (`commit_usd_preview_to_database` / `commit_clp_preview_to_database`) protegida con `transaction.atomic()`.
 * **Detector Híbrido de Columnas (`column_detector.py`) y Precisión `Decimal`:** Escanea las primeras filas de cada Excel buscando coincidencias por nombres de encabezado normalizados (sin tildes ni ruido), utiliza índices posicionales como respaldo secundario y reemplaza los flotantes inexactos por aritmética `Decimal` libre de errores `NaN`.
 * **Arquitectura Modular por Responsabilidad Única (Clean Architecture & DRY):**
-  * `persistence_common.py`: Módulo transversal que centraliza la sincronización atómica de movimientos bancarios, transacciones ERP y vouchers Transbank mediante llaves naturales compuestas.
-  * `excel_parsers.py` y `column_detector.py`: Capa especializada de lectura, sanitización e inferencia de tarjetas por BIN (Visa, MasterCard, Amex, Diners, Redcompra), desacoplada de la lógica contable.
-  * `excel_styles.py`: Constantes corporativas de OpenPyXL (paleta Navy `#0C0C42`, Gold `#996909`, alertas rojas, bordes y formatos numéricos) compartidas por los exportadores.
-  * `usd_reconciliation.py` y `clp_reconciliation.py`: Motores matemáticos de conciliación en memoria para Dólares (USD) y Pesos (CLP).
-  * `suggestion_engine.py` y `clp_suggestion_engine.py`: Motores de sugerencia asistida Nivel 2 para análisis de discrepancias, errores tipográficos/OCR y búsqueda en transacciones históricas pre-cargadas (sin consultas $N+1$).
-  * `reconciliation_persistence.py` y `clp_persistence.py`: Orquestadores específicos de persistencia para USD y CLP que delegan la deduplicación a `persistence_common.py`.
+  * `persistence_common.py`, `reconciliation_persistence.py` y `clp_persistence.py`: Sincronización atómica de movimientos bancarios, filas ERP, vouchers Transbank, resúmenes y protección de correcciones/cierres.
+  * `excel_parsers.py`, `column_detector.py`, `excel_styles.py`, `file_detector.py` y `erp_coverage.py`: Lectura, sanitización, inferencia de tarjetas por BIN, auto-detección de archivos por huella interna, cobertura histórica de Borderó y estilos OpenPyXL compartidos.
+  * `usd_reconciliation.py`, `clp_reconciliation.py`, `suggestion_engine.py` y `clp_suggestion_engine.py`: Motores matemáticos de conciliación en memoria y cálculo *on-the-fly* de sugerencias asistidas Nivel 2.
+  * `preview_corrections.py`, `suggestion_actions.py`, `erp_editing.py`, `erp_corrections.py`, `voucher_recross.py`, `pending_recross.py` y `exception_resolution.py`: Flujo completo de correcciones en previsualización y bandeja *Pendientes*, edición/alta/borrado lógico del ERP, protección `source_key`, recruce unitario y recálculo automático de casos `PENDING`.
   * `report_exporter.py` y `clp_report_exporter.py`: Generación de reportes Excel oficiales multi-hoja estilizados.
-  * `file_detector.py`: Clasificación y alineación automática de lotes de archivos por huella estructural interna.
-  * `web/views/common.py`: Controladores reutilizables para descarte de previsualizaciones, APIs de detección, confirmación en BD y streaming de reportes.
+  * `tables_viewer.py` y `user_management.py`: Preparación de tablas de respaldo en lectura, consultas consolidadas/por cierre, auditoría y gestión del ciclo de vida de usuarios.
+  * `web/views/` (`dashboard.py`, `usd.py`, `clp.py`, `common.py`, `exceptions.py`, `tables_viewer.py`, `admin_tools.py`, `users.py`, `auth.py`): Controladores separados por dominio y reutilizables entre fases.
 
 ---
 
-### 4. Rediseño de Interfaz (UI/UX) y Estandarización Contable Chilena
+### 4. Rediseño de Interfaz (UI/UX), Consultas y Estandarización Contable Chilena
 * **Sistema de Diseño Corporativo con Modo Claro y Oscuro (`theme.css`):** Interfaz ejecutiva inspirada en la identidad del **Hotel Plaza San Francisco** (azul marino profundo `#0C0C42` y dorado `#996909`), equipada con barra lateral colapsable, selector de **Modo Claro / Modo Oscuro** persistente, alertas dinámicas y pantalla de bloqueo de carga (*Loading Overlay*) para impedir envíos dobles.
 * **Página de Inicio y Dashboard Ejecutivo (`dashboard.html`):** Vista principal con selector segmentado de moneda (Dólares / Pesos) a la izquierda y acciones rápidas en la cabecera superior derecha (*"Nueva conciliación"* y *"Reporte del último cierre"*) sincronizadas dinámicamente con JavaScript según la moneda activa. Incluye métricas KPI clave (tasa de conciliación porcentual, monto auditado, excepciones pendientes por cajero) y tabla con los últimos 6 cierres guardados en base de datos.
-* **Herramientas Avanzadas de Productividad en Tablas (`usd_preview.js` y `clp_preview.js`):**
+* **Herramientas Avanzadas de Productividad en Tablas (`usd_preview.js`, `clp_preview.js` y `source_tables_viewer.js`):**
   * **Filtros Instantáneos Combinables:** Buscador en tiempo real por código de voucher, documento, cuenta, factura o huésped; filtro rápido por franquicia de tarjeta (*Visa, MasterCard, Amex, Diners, Redcompra*); filtro por modalidad (*Crédito, Débito, Prepago*) y selector específico por **Usuario Cajero**.
   * **Ordenamiento Dinámico y Modo Pantalla Completa:** Ordenamiento ascendente/descendente (`Mayor a Menor / Menor a Mayor`) en columnas de montos y diferencias, junto con un botón de **Pantalla Completa** (`Esc`) que maximiza el área de trabajo para auditorías extensas.
-  * **Paginación Estandarizada en 25 Registros:** Todas las tablas de vouchers (USD y CLP) y los listados dentro de los modales de **Sugerencias Asistidas Nivel 2** cuentan con paginación cliente predeterminada en **25 registros por página**, con ventana compacta de 3 números y selector adaptable (`10`, `25`, `50`, `100` o `Todas`).
+  * **Tablas de Respaldo en Lectura:** Panel colapsable en previsualizaciones para revisar en memoria *Borderó ERP* (incluyendo indicador de valores originales en filas editadas), *Cartola Bancaria*, *Posición por Clientes* y *Transbank Detallado*.
+  * **Paginación Estandarizada (25 registros por defecto):** Las tablas de previsualización, tablas de respaldo y modales de sugerencias paginan en cliente desde **25 registros** (`10`, `25`, `50`, `100` o `Todas`); en base de datos, **Consultas**, **Auditoría** (`db_pagination_bar.html`, con ventana compacta y selector `10`, `25`, `50`, `100`) y **Pendientes** (`EXCEPTIONS_PAGE_SIZE = 25`) usan paginación por servidor.
+* **Módulo de Consultas, Auditoría y Configuración (`/tablas/`, `/auditoria/`, `/settings/`, `/usuarios/`):**
+  * **Cierres y Tablas (`/tablas/`):** Directorio de cierres con vista detalle multi-pestaña (`/tablas/cierre/<id>/`) y vistas consolidadas globales de *Borderó ERP* (`/tablas/erp/`), *Transbank* (`/tablas/transbank/`), *Cartola Bancaria*, *Operadoras* y *Cruces*, con trazabilidad de modificaciones ERP por fila (`_erp_history_modal.html`).
+  * **Auditoría (`/auditoria/`):** Trazabilidad unificada de correcciones ERP (`ErpTransactionChange`) y resoluciones de excepciones (`AuditResolutionLog`).
+  * **Configuración (`/settings/`) y Gestión de Usuarios (`/usuarios/`):** Ajuste parametrizable de tolerancias USD y CLP para próximos cierres, y administración de cuentas por superadmin.
 * **Formato Numérico y Diagnósticos Claros (`currency_filters.py`):** Librería única de formateo bajo el estándar chileno (**`.`** para separador de miles y **`,`** para decimales, tanto en USD como en CLP), píldoras visuales duales de comparación (`TBK = ERP` / `TBK ≠ ERP`) y diagnósticos legibles sin jerga técnica.
 
 ---
@@ -154,7 +162,7 @@ Para ejecutar un cierre en pesos, el contador arrastra en la zona única de carg
 
 * **A. Borderó ERP del Hotel (`BORDERO.XLS` / `.xlsx`)**
   * **Origen:** Sistema FrontOffice del hotel (*Reporte de Cargos de Débitos y Créditos*).
-  * **Datos extraídos:** Rango de fechas del período consultado, Código de Medio de Pago (`VI` Visa, `MC` MasterCard, `AX` Amex, `DI` Diners, `RC` Redcompra Débito), Código de Autorización normalizado, Monto en CLP, Fecha y Hora de transacción, N° de Cuenta, N° de Factura, Reserva, Habitación, **Nombre del Huésped**, **Usuario Cajero** y detección automática de **reversas o anulaciones** (montos negativos). El parser filtra y excluye automáticamente los cargos en moneda extranjera (`AME$`, `VIS$`, `MAS$`, `DIN$`) para aislar exclusivamente la operación en pesos.
+  * **Datos extraídos:** Rango de fechas del período consultado, Código de Medio de Pago del Borderó (ej. `RCO` Redcompra Débito/Prepago y códigos crédito como `VISA $` / `V$`, `MC$`, `AME$`, `DIN$` mapeados a las franquicias `VI`, `MC`, `AX`, `DI`), Código de Autorización normalizado, Monto en CLP, Fecha y Hora de transacción, N° de Cuenta, N° de Factura, Reserva, Habitación, **Nombre del Huésped**, **Usuario Cajero** y detección automática de **reversas o anulaciones** (montos negativos). El parser ingiere el historial completo de filas ERP para referencia cruzada y excluye de los cobros CLP las filas en moneda extranjera (`US$`, `VUS$`, `MCUS$`, `MUS$`, `AUS$`, `DUS$`).
 
 * **B. Liquidaciones de Transbank (Categoría Unificada CLP)**
   * **Origen:** Portal Privado de Transbank (*Reportes de Abonos*).
@@ -187,8 +195,8 @@ El motor financiero de Pesos (`clp_reconciliation.py`) aplica las reglas contabl
 3. **Tipificación Contable de Excepciones (`CARD_TYPE_MISMATCH` y `OUT_OF_PERIOD`):**
    * **Discrepancia de Medio de Pago (`CARD_TYPE_MISMATCH`):** Si el código y monto cuadran, pero recepción registró la venta bajo un medio incompatible en el ERP (ej. tarjeta de crédito digitada como Redcompra débito), se separa en la pestaña *Con Diferencia* indicando el código erróneo.
    * **Separación de Ventas Fuera de Período (`OUT_OF_PERIOD`):** Si un voucher no se encuentra en el Borderó principal, evalúa su **Fecha de Venta original** y su **Número de Cuota**. Si la fecha está fuera del rango del Borderó o corresponde a una cuota posterior (`2/3`, `3/3`), se clasifica como **Fuera de Período** sin contaminar los extravíos del día.
-4. **Motor de Sugerencia Asistida Nivel 2 para Pesos (`clp_suggestion_engine.py`):**
-   * Inspecciona vouchers en *Con Diferencia*, *En TBK pero NO en Borderó* y *Fuera de Período* contra filas no reclamadas del **Borderó principal**, **Borderós históricos adicionales** y la **base de datos histórica de Django** (mediante una consulta única pre-cargada libre de $N+1$).
+4. **Motor de Sugerencia Asistida Nivel 2 para Pesos (`clp_suggestion_engine.py` y `preview_corrections.py`):**
+   * Calcula **al vuelo** propuestas para vouchers en *Con Diferencia*, *En TBK pero NO en Borderó* y *Fuera de Período*, contrastando contra filas disponibles del **Borderó principal**, **Borderós históricos adicionales** y la **base de datos histórica** (incluyendo discrepancias multi-fila por *splits* o reversas), permitiendo aplicar o ajustar la corrección en Paso 2 y re-cruzar el voucher en memoria de inmediato.
 
 ---
 
@@ -202,10 +210,10 @@ El motor financiero de Pesos (`clp_reconciliation.py`) aplica las reglas contabl
      * **Con Diferencia:** Vouchers cuyo código existe en el Borderó pero presentan diferencias de monto (`AMOUNT_MISMATCH`) o medio de pago (`CARD_TYPE_MISMATCH`).
      * **En TBK pero NO en Borderó:** Vouchers del período cuyo código no figura en el Borderó.
      * **Fuera de Período:** Vouchers correspondientes a fechas de venta anteriores o cobros de cuotas plurimensuales posteriores.
-2. **Asistente Interactivo Nivel 2 en las 3 Pestañas de Excepción:**
-   * Cada pestaña de excepción incorpora su propio botón de **Sugerencias Asistidas Nivel 2**, abriendo un modal comparativo detallado con texto de precaución unificado, chips de motivos y enlaces a la fila del Excel original.
+2. **Asistente Interactivo Nivel 2 en las 3 Pestañas de Excepción y Tablas de Respaldo:**
+   * Cada pestaña de excepción incorpora su propio botón de **Sugerencias Asistidas Nivel 2**, abriendo un modal comparativo (`clp_preview_modals.html` y `suggestion_card.js`) con texto de precaución colapsable, tarjetas por archivo, motivos detectados y un campo editable para confirmar **Aplicar corrección** en Paso 2 (actualizando en memoria el cruce y los totales al instante cuando la fila pertenece al Borderó actual). Además, el panel colapsable de **Tablas de Respaldo** permite consultar en lectura los movimientos cargados.
 3. **Confirmación Atómica y Descarga de Excel Oficial en 2 Pasos (`clp_persistence.py` y `clp_report_exporter.py`):**
-   * Al hacer clic en **"Confirmar y Guardar en BD"**, el sistema persiste atómicamente el proceso, actualiza estados en `AuditResolutionLog` y habilita la descarga inmediata del **Reporte Excel Oficial de Pesos** estructurado en 3 hojas (*Resumen Pesos*, *Vouchers Cuadrados* y *Excepciones*).
+   * Al hacer clic en **"Guardar cierre"**, el sistema persiste atómicamente el proceso (aplicando las correcciones aceptadas del Paso 2, actualizando `AuditResolutionLog` / `ErpTransactionChange` e informando si el nuevo Borderó resolvió automáticamente casos `PENDING` de cierres previos) y habilita la descarga inmediata del **Reporte Excel Oficial de Pesos** estructurado en 3 hojas (*Resumen Pesos*, *Vouchers Cuadrados* y *Reporte de Excepciones*).
 
 ---
 
@@ -243,7 +251,7 @@ pip install -r requirements.txt
 ```bash
 python manage.py migrate
 ```
-*(Crea la base de datos relacional y carga los catálogos base de franquicias `CardType` y estados `ReconciliationStatus`).*
+*(Crea las 15 tablas relacionales y carga los catálogos base `CardType`, `ReconciliationStatus` —incluyendo estados de resolución— y la configuración inicial `SystemConfiguration`).*
 
 ### 5. Crear usuario administrador
 ```bash
@@ -256,36 +264,45 @@ python manage.py runserver
 ```
 Accede desde tu navegador a: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 
+### 7. Ejecutar la batería de pruebas automáticas (opcional)
+```bash
+python manage.py test web
+```
+*(Verifica el conjunto completo de pruebas unitarias y de integración: 99 tests sobre motores USD/CLP, persistencia, protección de ediciones ERP, recálculo de pendientes, paginación, seguridad `django-axes` y gestión de usuarios).*
+
 ---
 
 ## Bandeja de Excepciones ("Pendientes")
 
-Detectar una diferencia es solo la mitad del trabajo: el contador también tiene que cerrarla. La sección **Pendientes** (`/excepciones/`) reúne los vouchers sin cuadrar de **todos** los cierres guardados, en dólares y en pesos:
+Detectar una diferencia es solo la mitad del trabajo: el contador también tiene que cerrarla. La sección **Pendientes** (`/excepciones/`) reúne los vouchers sin cuadrar (y los ya corregidos en el ERP) de **todos** los cierres guardados, en dólares y en pesos:
 
 * **Dólares y Pesos por separado:** un selector *Dólares / Pesos* (igual al del Inicio) muestra cuántos casos pendientes tiene cada moneda; la tabla, los totales, los filtros y la exportación trabajan siempre sobre la moneda activa.
-* **Filtros:** estado (pendientes / resueltas / todas), tipo de excepción, cajero (incluye *Sin cajero* para los vouchers que no están en el ERP), tarjeta, rango de fechas de venta y búsqueda por voucher, documento, habitación o huésped. La columna **Días** muestra la antigüedad desde el cierre (verde < 3, ámbar < 7, rojo ≥ 7).
-* **Resolución con motivo:** cada caso se cierra eligiendo un motivo (*Corregido en ERP*, *Ajuste contable registrado*, *Anulación / contracargo*, *Informado a recepción*, *Diferencia aceptada*) y un comentario, obligatorio al aceptar una diferencia o al reabrir un caso. El cambio queda en `AuditResolutionLog` con usuario y fecha, y el historial se ve en el detalle del voucher (`web/services/exception_resolution.py`).
-* **Coherencia con el dashboard:** al resolver un caso deja de contarse en *Excepciones pendientes*, y una resolución manual se mantiene aunque se vuelvan a subir los mismos archivos. Los bloques de excepciones del Inicio enlazan a la bandeja ya filtrada.
-* **Exportar a Excel:** descarga la lista filtrada, por ejemplo los casos de un cajero, para enviarla a recepción.
+* **Sugerencias Asistidas Interactivas en Bandeja (`suggestion_actions.py`):** recalcula al vuelo propuestas sobre casos abiertos (`PENDING` / `REJECTED`), permitiendo revisar la comparación, editar el nuevo valor si hace falta y **Aceptar** (aplicando la edición en BD y re-cruzando automáticamente) o **Rechazar** (dejando el caso disponible para edición manual) vía AJAX.
+* **Edición Manual, Alta y Borrado Lógico de Filas ERP (`erp_editing.py` y `voucher_recross.py`):** desde el detalle de cada caso se pueden editar campos del Borderó (*Monto*, *Cód. Autorización*, *Fecha*, *Medio de pago*, *Documento*), **agregar una fila ERP manual** cuando el cobro no fue digitado o aplicar **eliminación lógica** (`is_deleted=True`) de filas erróneas. Cada acción queda en `ErpTransactionChange`, re-cruza de inmediato el voucher y los demás casos asociados a esa fila, y queda protegida frente a futuras re-cargas (`erp_corrections.py`).
+* **Filtros y Paginación:** estado (pendientes / resueltas / todas), tipo de excepción, cajero (incluye *Sin cajero* para los vouchers que no están en el ERP), tarjeta, rango de fechas de venta y búsqueda por voucher, documento, habitación o huésped, paginado de a 25 registros. La columna **Días** muestra la antigüedad desde el cierre (verde < 3, ámbar < 7, rojo ≥ 7).
+* **Resolución con motivo:** cada caso también puede cerrarse administrativamente eligiendo un motivo (*Corregido en ERP*, *Ajuste contable registrado*, *Anulación / contracargo*, *Informado a recepción (error de cajero)*, *Diferencia aceptada*) y un comentario, obligatorio al aceptar una diferencia o al reabrir un caso. El cambio queda en `AuditResolutionLog` con usuario y fecha, y el historial se ve en el detalle del voucher (`web/services/exception_resolution.py`).
+* **Coherencia con el dashboard y recálculo entre cierres:** al resolver un caso deja de contarse en *Excepciones pendientes*, y una resolución o edición manual se mantiene protegida aunque se vuelvan a subir los mismos archivos; a su vez, los casos `PENDING` se re-evalúan automáticamente cuando posteriores cargas aportan nuevas filas ERP (`pending_recross.py`). Los bloques de excepciones del Inicio enlazan a la bandeja ya filtrada.
+* **Exportar a Excel:** descarga la lista filtrada (hoja *Excepciones*), por ejemplo los casos de un cajero, para enviarla a recepción.
 
 ---
 
-## Seguridad del Despliegue (PythonAnywhere)
+## Seguridad del Despliegue (PythonAnywhere) y Gestión de Usuarios
 
 * **Protección contra fuerza bruta (`django-axes`):** tras **5 intentos fallidos** se bloquea la combinación *usuario + IP* durante **15 minutos**, tanto en `/login/` como en el login del admin. El bloqueo es por par usuario/IP, por lo que un atacante no puede dejar sin acceso a un usuario legítimo desde otra IP. La IP real del visitante se obtiene de la cabecera `X-Real-IP` del proxy de PythonAnywhere (`web/security.py`). Los intentos quedan registrados en el admin (*Access attempts* / *Access failures*).
   * Desbloquear a un usuario: `python manage.py axes_reset_username <usuario>` (o `axes_reset` para limpiar todos).
-* **Configuración segura por defecto:** `DEBUG` está desactivado salvo `DJANGO_DEBUG=True`, y la aplicación no arranca en producción sin `DJANGO_SECRET_KEY`. `ALLOWED_HOSTS` ya no acepta cualquier host.
+* **Configuración segura de producción:** aunque `DEBUG` queda activo por defecto en desarrollo local (`DJANGO_DEBUG=True`), en producción se exige `DJANGO_DEBUG=False` y `DJANGO_SECRET_KEY` configurada (de lo contrario Django detiene el arranque con `ImproperlyConfigured`). `ALLOWED_HOSTS` se restringe por defecto a `localhost,127.0.0.1`.
 * **Ruta del admin no predecible:** se define con `DJANGO_ADMIN_URL`, así los bots que prueban `/admin/` reciben un 404.
-* **HTTPS y sesiones:** HSTS, cookies seguras, redirección a HTTPS y sesiones que expiran al cerrar el navegador o tras 8 horas.
-* No existe registro público: solo un superusuario puede crear cuentas desde el admin.
+* **HTTPS y sesiones:** con `DJANGO_DEBUG=False` se activan HSTS, cookies seguras (`SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`), redirección a HTTPS y protección `nosniff`; las sesiones expiran al cerrar el navegador o tras 8 horas.
+* **Gestión de Usuarios por Superadmin (`/usuarios/`):** no existe registro público; solo un usuario `Superadmin` puede crear cuentas (`Usuario estándar` o `Superadmin`), editar datos/roles, restablecer contraseñas, dar de baja lógica (invalidando de inmediato sesiones activas) o reactivar cuentas desde `/usuarios/` o desde el admin, manteniendo trazabilidad completa en `UserAccountStatus` y `UserAuditLog`.
 
 ### Variables de Entorno en el Archivo WSGI de PythonAnywhere:
 | Variable | Descripción | Ejemplo |
 | :--- | :--- | :--- |
-| `DJANGO_DEBUG` | Control de modo depuración | `False` |
+| `DJANGO_DEBUG` | Control de modo depuración (`False` en producción) | `False` |
 | `DJANGO_SECRET_KEY` | Clave secreta criptográfica de Django | `(Cadena aleatoria segura)` |
 | `DJANGO_ALLOWED_HOSTS` | Dominios autorizados separados por coma | `hotelsanfrancisco.pythonanywhere.com` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Orígenes confiables para CSRF | `https://hotelsanfrancisco.pythonanywhere.com` |
+| `DJANGO_ADMIN_URL` | Ruta privada del panel admin de Django | `admin-privado-hotel/` |
 
 > 🌐 **Acceso al Despliegue en Vivo:** [https://hotelsanfrancisco.pythonanywhere.com/](https://hotelsanfrancisco.pythonanywhere.com/)
 

@@ -393,6 +393,7 @@ def calculate_usd_preview(
     start_row = detail_header_row + 1 if detail_header_row > 0 else 0
     voucher_codes = set()
     voucher_dates_by_code: Dict[str, set] = {}
+    tbk_sale_keys = set()
     c_tbk_auth = tbk_cols["authorization_code"]
     c_tbk_date = tbk_cols["sale_date"]
     for row in tbk_df.iloc[start_row:].itertuples(index=False, name=None):
@@ -402,15 +403,23 @@ def calculate_usd_preview(
             voucher_codes.add(norm)
             raw_sd = row[c_tbk_date] if 0 <= c_tbk_date < len(row) else None
             sd = safe_date(raw_sd)
+            tbk_sale_keys.add((sd.isoformat() if sd else "", norm))
             if sd is not None:
                 voucher_dates_by_code.setdefault(norm, set()).add(sd)
 
     # Corrections saved in the DB win over the Excel, so a re-upload does not undo them
     erp_instances, erp_corrections = overlay_on_instances(
-        erp_instances, source_currency="USD", voucher_codes=voucher_codes
+        erp_instances,
+        source_currency="USD",
+        voucher_codes=voucher_codes,
+        tbk_sale_keys=tbk_sale_keys,
     )
 
     active_usd_keys = {inst.source_key for inst in erp_instances if getattr(inst, "source_key", None)}
+    for inst in erp_instances:
+        raw_key = getattr(inst, "_raw_source_key", None)
+        if raw_key:
+            active_usd_keys.add(raw_key)
     seen_additional_keys = set(active_usd_keys)
     additional_erp_rows: List[Dict[str, Any]] = []
     for mov in raw_additional_movements:
@@ -422,7 +431,11 @@ def calculate_usd_preview(
     additional_erp_token = store_additional_erp_movements(additional_erp_rows)
 
     # Incorporate pending / eligible historical USD card rows already persisted in DB
-    existing_manual_ids = {inst.pk for inst in erp_instances if getattr(inst, "pk", None)}
+    existing_manual_ids = {
+        getattr(inst, "pk", None) or getattr(inst, "db_id", None)
+        for inst in erp_instances
+        if getattr(inst, "pk", None) or getattr(inst, "db_id", None)
+    }
     db_candidates = db_card_candidates_for_codes(
         source_currency="USD",
         voucher_codes=voucher_codes,
@@ -512,6 +525,13 @@ def calculate_usd_preview(
             matching_erp_records = next(
                 (recs for erp_key, recs in erp_by_auth_code.items() if norm_auth and normalize_auth_code(erp_key) == norm_auth), []
             )
+        sale_key = (sale_date.isoformat() if sale_date else "", normalize_auth_code(auth_code))
+        matching_erp_records = [
+            r
+            for r in matching_erp_records
+            if not getattr(r["instance"], "_db_reconciled", False)
+            or sale_key in getattr(r["instance"], "_db_claimed_sales", set())
+        ]
 
         if matching_erp_records:
             active_erp_records = [r for r in matching_erp_records if getattr(r["instance"], "invoice_number", "")] or matching_erp_records
@@ -532,7 +552,7 @@ def calculate_usd_preview(
                     single_match if single_match is not None else resolved_candidates[0]
                 )
                 erp_item = matched_erp["instance"]
-                erp_item.reconciled = True
+                matched_erp_instances = [erp_item]
                 erp_index = getattr(erp_item, "_memory_index", None)
                 erp_indices = [erp_index] if erp_index is not None else []
                 account_code = matched_erp.get("account_code") or matched_erp["document_number"]
@@ -546,6 +566,7 @@ def calculate_usd_preview(
                 primary_cand = next((c for c in resolved_candidates if c[0]["amount_clp"] > 0), resolved_candidates[0])
                 primary_erp, selected_op, _, _, _ = primary_cand
                 erp_item = primary_erp["instance"]
+                matched_erp_instances = [erp_rec["instance"] for erp_rec, _, _, _, _ in resolved_candidates]
                 erp_index = getattr(erp_item, "_memory_index", None)
                 erp_indices = [
                     idx
@@ -560,7 +581,6 @@ def calculate_usd_preview(
                 all_ops_found = True
 
                 for erp_rec, chosen_op, op_usd, op_clp, _ in resolved_candidates:
-                    erp_rec["instance"].reconciled = True
                     rec_acc = erp_rec.get("account_code") or erp_rec["document_number"]
                     if rec_acc and rec_acc not in doc_numbers:
                         doc_numbers.append(rec_acc)
@@ -588,6 +608,9 @@ def calculate_usd_preview(
             difference_clp = round(operator_clp - erp_amount_clp, 2)
             is_within_tolerance = abs(difference_usd) <= usd_tolerance and selected_op is not None
             sys_result = "MATCHED" if is_within_tolerance else "AMOUNT_MISMATCH"
+            if is_within_tolerance:
+                for matched_inst in matched_erp_instances:
+                    matched_inst.reconciled = True
             cashier_username, erp_auth_code = erp_item.cashier_username or "—", erp_item.authorization_code or auth_code
         else:
             erp_index = operator_index = None
@@ -669,6 +692,7 @@ def calculate_usd_preview(
             "manual_id": e.pk if e.origin == ErpTransaction.ORIGIN_MANUAL else None,
             "db_id": getattr(e, "db_id", None),
             "db_process_id": getattr(e, "db_process_id", None),
+            "db_reconciled": bool(getattr(e, "_db_reconciled", False)),
             "from_db": bool(getattr(e, "loaded_from_db", False)),
         }
         for e in erp_instances

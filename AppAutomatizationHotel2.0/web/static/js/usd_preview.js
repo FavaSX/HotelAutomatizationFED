@@ -528,6 +528,17 @@ async function executeCommitToDatabase() {
     document.getElementById('modalPeriod').textContent = data.accounting_period;
     document.getElementById('modalExecDate').textContent = `${data.execution_date} (${data.auditor})`;
     document.getElementById('modalVoucherStats').textContent = `${data.total_vouchers} registrados (${data.matched_count} exactos)`;
+    const priorWrap = document.getElementById('modalPriorResolvedWrap');
+    const priorEl = document.getElementById('modalPriorResolved');
+    if (priorWrap && priorEl) {
+      const nPrior = Number(data.resolved_prior_count || 0);
+      if (nPrior > 0) {
+        priorEl.textContent = `${nPrior} caso(s) de cierres anteriores conciliado(s) automáticamente`;
+        priorWrap.classList.remove('d-none');
+      } else {
+        priorWrap.classList.add('d-none');
+      }
+    }
     document.getElementById('modalExcelDownloadBtn').href = data.export_url;
     document.getElementById('modalFinishBtn').href = data.upload_url;
 

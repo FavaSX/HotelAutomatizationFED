@@ -22,6 +22,7 @@ from ..models import (
 from ..templatetags.currency_filters import format_observation
 from .column_detector import safe_date
 from .erp_coverage import resolve_prior_incomplete_processes
+from .pending_recross import recross_pending_cases
 from .preview_corrections import apply_pending_corrections, original_erp_rows
 from .suggestion_actions import with_proposed_change
 from .persistence_common import (
@@ -108,6 +109,7 @@ def _get_or_save_usd_process(
             if file_key in files:
                 setattr(existing_process, attr_name, files[file_key])
         existing_process.save()
+        existing_process._updated_existing = True
         return existing_process
 
     return ReconciliationProcess.objects.create(
@@ -294,7 +296,13 @@ def _sync_cross_match_results(
             for v in preview.get("orphan_vouchers", [])
         ),
     ]
-    upsert_cross_match_and_audit_logs(user, tbk_models, entries, accepted_status)
+    upsert_cross_match_and_audit_logs(
+        user,
+        tbk_models,
+        entries,
+        accepted_status,
+        target_process_id=process.id,
+    )
 
 
 def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> ReconciliationProcess:
@@ -337,4 +345,10 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
         # Corrections the accountant accepted in step 2: written to the ERP with history and re-cross
         apply_pending_corrections(preview, erp_models, tbk_models, user)
         sync_additional_erp_movements(process, preview.get("additional_erp_token"), card_types)
+        process._recross_stats = recross_pending_cases(
+            user,
+            exclude_process_id=None if getattr(process, "_updated_existing", False) else process.id,
+            resolved_status_code="ACCEPTED_ROUNDING",
+            audit_prefix=f"Actualización automática con nuevos datos ERP/Operadora (Cierre #{process.id})",
+        )
         return process

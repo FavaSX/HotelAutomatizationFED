@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from ..models import CardType, ErpTransactionChange, SystemConfiguration
-from .erp_corrections import apply_saved_corrections
+from .erp_corrections import active_claimed_sales_by_erp_id, apply_saved_corrections
 from .erp_coverage import db_card_candidates_for_codes, evaluate_bordero_upload_warnings
 from .column_detector import (
     normalize_text,
@@ -124,6 +124,17 @@ def _match_bank_deposits(
     return validations, claimed_movements
 
 
+def _erp_row_eligible_for_sale(e_row: Dict[str, Any], sale: Dict[str, Any], is_later: bool) -> bool:
+    """Blocks another closing from stealing an already-reconciled DB row (except CLP later installments)."""
+    if not e_row.get("db_reconciled"):
+        return True
+    if is_later:
+        return True
+    sale_date_str = sale["sale_date"].isoformat() if sale.get("sale_date") else ""
+    sale_key = (sale_date_str, normalize_auth_code(sale.get("authorization_code") or ""))
+    return sale_key in {tuple(pair) for pair in (e_row.get("db_claimed_sales") or ())}
+
+
 def _cross_match_sale(
     sale: Dict[str, Any],
     erp_rows: List[Dict[str, Any]],
@@ -136,7 +147,12 @@ def _cross_match_sale(
     modality = sale["payment_modality"]
     gross = sale["gross_amount"]
     normalized_code = normalize_auth_code(sale["authorization_code"])
-    candidates = [idx for idx in rows_by_auth_code.get(normalized_code, []) if idx not in claimed_erp]
+    is_later = _installment_is_later(sale.get("installment_number", ""))
+    candidates = [
+        idx
+        for idx in rows_by_auth_code.get(normalized_code, [])
+        if idx not in claimed_erp and _erp_row_eligible_for_sale(erp_rows[idx], sale, is_later)
+    ]
 
     def _same_or_next_day(row_idx: int) -> bool:
         erp_date = safe_date(erp_rows[row_idx]["transaction_date"])
@@ -279,6 +295,8 @@ def _clp_row_from_db_model(row: Any, is_corrected: bool = False) -> Dict[str, An
         "from_db": True,
         "db_id": row.id,
         "db_process_id": row.process_id,
+        "db_reconciled": bool(row.reconciled),
+        "db_claimed_sales": [],
     }
 
 
@@ -414,19 +432,28 @@ def calculate_clp_preview(
     voucher_codes = set()
     later_installment_codes = set()
     voucher_dates_by_code: Dict[str, set] = {}
+    tbk_sale_keys = set()
     for modality, _, _, _ in CLP_MODALITIES:
         for sale in settlements[modality]["sales"]:
             norm = normalize_auth_code(sale["authorization_code"])
             if not norm:
                 continue
             voucher_codes.add(norm)
+            tbk_sale_keys.add(
+                (sale["sale_date"].isoformat() if sale.get("sale_date") else "", norm)
+            )
             if _installment_is_later(sale.get("installment_number", "")):
                 later_installment_codes.add(norm)
             if sale.get("sale_date") is not None:
                 voucher_dates_by_code.setdefault(norm, set()).add(sale["sale_date"])
 
     erp_rows, erp_corrections = apply_saved_corrections(
-        erp_rows, source_currency="CLP", doc_field="account_code", voucher_codes=voucher_codes
+        erp_rows,
+        source_currency="CLP",
+        doc_field="account_code",
+        voucher_codes=voucher_codes,
+        tbk_sale_keys=tbk_sale_keys,
+        later_installment_codes=later_installment_codes,
     )
     if erp_corrections["corrected"] or erp_corrections["deleted"] or erp_corrections["manual"]:
         rows_by_auth_code = {}
@@ -436,6 +463,9 @@ def calculate_clp_preview(
                 rows_by_auth_code.setdefault(norm_code, []).append(pos)
 
     active_clp_keys = {r.get("source_key") for r in erp_rows if r.get("source_key")}
+    for r in erp_rows:
+        if r.get("raw_source_key"):
+            active_clp_keys.add(r["raw_source_key"])
     seen_additional_keys = set(active_clp_keys)
     additional_erp_rows: List[Dict[str, Any]] = []
     for mov in raw_additional_movements:
@@ -447,7 +477,11 @@ def calculate_clp_preview(
     additional_erp_token = store_additional_erp_movements(additional_erp_rows)
 
     # Incorporate pending / eligible historical CLP card rows already persisted in DB
-    existing_manual_ids = {r.get("manual_id") for r in erp_rows if r.get("manual_id")}
+    existing_manual_ids = {
+        r.get("manual_id") or r.get("db_id")
+        for r in erp_rows
+        if r.get("manual_id") or r.get("db_id")
+    }
     db_candidates = db_card_candidates_for_codes(
         source_currency="CLP",
         voucher_codes=voucher_codes,
@@ -457,14 +491,20 @@ def calculate_clp_preview(
         voucher_dates_by_code=voucher_dates_by_code,
     )
     if db_candidates:
+        cand_ids = [c.id for c in db_candidates]
         corrected_db_ids = set(
-            ErpTransactionChange.objects.filter(erp_transaction_id__in=[c.id for c in db_candidates])
+            ErpTransactionChange.objects.filter(erp_transaction_id__in=cand_ids)
             .exclude(field_name=ErpTransactionChange.FIELD_CREATED)
             .values_list("erp_transaction_id", flat=True)
         )
+        claimed_by_cand = active_claimed_sales_by_erp_id([c.id for c in db_candidates if c.reconciled])
         for cand in db_candidates:
             pos = len(erp_rows)
-            erp_rows.append(_clp_row_from_db_model(cand, is_corrected=cand.id in corrected_db_ids))
+            row_dict = _clp_row_from_db_model(cand, is_corrected=cand.id in corrected_db_ids)
+            cand_claims = claimed_by_cand.get(cand.id, ())
+            row_dict["db_reconciled"] = bool(cand.reconciled and cand_claims)
+            row_dict["db_claimed_sales"] = sorted(cand_claims)
+            erp_rows.append(row_dict)
             norm_code = normalize_auth_code(cand.authorization_code or "")
             if norm_code:
                 rows_by_auth_code.setdefault(norm_code, []).append(pos)
@@ -489,8 +529,12 @@ def calculate_clp_preview(
             if sale_idx in match_results:
                 continue
             codes = rows_by_auth_code.get(normalize_auth_code(sale["authorization_code"]), [])
+            is_later = _installment_is_later(sale.get("installment_number", ""))
             has_exact = any(
-                abs(sale["gross_amount"] - Decimal(str(erp_rows[i]["amount"]))) <= tolerance for i in codes
+                i not in claimed_erp
+                and _erp_row_eligible_for_sale(erp_rows[i], sale, is_later)
+                and abs(sale["gross_amount"] - Decimal(str(erp_rows[i]["amount"]))) <= tolerance
+                for i in codes
             )
             if pass_exact and not has_exact:
                 continue

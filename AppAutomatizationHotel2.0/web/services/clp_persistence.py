@@ -19,6 +19,7 @@ from ..models import (
 )
 from .column_detector import safe_date
 from .erp_coverage import resolve_prior_incomplete_processes
+from .pending_recross import recross_pending_cases
 from .preview_corrections import apply_pending_corrections, original_erp_rows
 from .suggestion_actions import with_proposed_change
 from .persistence_common import (
@@ -193,25 +194,22 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
                 if suggestion:
                     observation = f"{observation} | Sugerencia: {suggestion['headline']}"
                 tbk_obj = get_model_at(tbk_models, v_dict.get("tbk_index"))
-                acc_code = (v_dict.get("account_code") or "").strip()
+                erp_obj = get_model_at(erp_models, v_dict.get("erp_index"))
+                erp_linked = erp_obj is not None
+                acc_code = (v_dict.get("account_code") or "").strip() if erp_linked else ""
                 if acc_code == "—":
                     acc_code = ""
-                if not acc_code and suggestion and not suggestion.get("missing_code") and v_dict.get("erp_index") is None:
-                    acc_code = ((suggestion.get("erp_row") or {}).get("account_code") or "").strip()
-                    if acc_code == "—":
-                        acc_code = ""
+                erp_doc = (v_dict.get("erp_authorization_code") or "").strip() if erp_linked else ""
+                if erp_doc == "—":
+                    erp_doc = ""
                 match_fields = {
                     "process": process,
                     "card_type": _card(v_dict.get("card_code")),
-                    "erp_transaction": get_model_at(erp_models, v_dict.get("erp_index")),
+                    "erp_transaction": erp_obj,
                     "card_operator_transaction": None,
                     "authorization_code": v_dict["authorization_code"],
                     "account_code": acc_code,
-                    "document_number": v_dict.get("erp_authorization_code") or (
-                        suggestion["erp_row"]["authorization_code"]
-                        if suggestion and not suggestion.get("missing_code") and v_dict.get("erp_index") is None
-                        else ""
-                    ),
+                    "document_number": erp_doc,
                     "sale_date": safe_date(v_dict.get("sale_date")),
                     "merchant_location_name": v_dict.get("merchant_location", ""),
                     "guest_name": "—",
@@ -232,8 +230,20 @@ def commit_clp_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
                 }
                 prepared_entries.append((tbk_obj, match_fields, default_status))
 
-        upsert_cross_match_and_audit_logs(user, tbk_models, prepared_entries, accepted_status)
+        upsert_cross_match_and_audit_logs(
+            user,
+            tbk_models,
+            prepared_entries,
+            accepted_status,
+            target_process_id=process.id,
+        )
         # 7. Corrections the accountant accepted in step 2: written to the ERP with history and re-cross
         apply_pending_corrections(preview, erp_models, tbk_models, user)
         sync_additional_erp_movements(process, preview.get("additional_erp_token"), card_types)
+        process._recross_stats = recross_pending_cases(
+            user,
+            exclude_process_id=None if existing_process is not None else process.id,
+            resolved_status_code="ACCEPTED_ROUNDING",
+            audit_prefix=f"Actualización automática con nuevo Borderó (Cierre #{process.id})",
+        )
         return process

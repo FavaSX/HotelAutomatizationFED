@@ -131,13 +131,8 @@ def _decorate_exception(item, today):
         _, error_type, item.action = _split_status_detail(item.system_status_detail)
         item.type_label = error_type or item.type_label
     item.suggestion = load_suggestion(item)
-    item.proposed_change = (item.suggestion or {}).get("proposed_change")
     # Opción A: one-click Aceptar / Rechazar while the case is open and nobody decided on the change yet
     item.proposal = open_proposal(item) if item.is_pending and not item.is_rejected else None
-    if item.proposal:
-        new = item.proposal["new"]
-        # Pesos have no cents: show 67650, not 67650.00
-        item.proposal_value = new[:-3] if item.proposal["field"] == "amount" and new.endswith(".00") else new
     return item
 
 
@@ -208,7 +203,6 @@ def exceptions_view(request):
             "payment_choices": {cur: [[code, label] for code, label, _ in opts] for cur, opts in choices.items()},
         },
         "suggestion_total": suggestion_total,
-        "panel_payment_choices": choices[currency.upper()],
     })
 
 
@@ -268,10 +262,6 @@ def _suggestion_panel(currency, today):
     for item in qs[:200]:
         _decorate_exception(item, today)
         if item.proposal:
-            item.proposal_input = (
-                "date" if item.proposal["field"] == "transaction_date"
-                else "select" if item.proposal["field"] == "payment_code" else "text"
-            )
             items.append(item)
     return items[:SUGGESTION_PANEL_LIMIT], len(items)
 

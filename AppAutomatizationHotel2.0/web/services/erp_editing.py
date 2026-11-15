@@ -207,7 +207,12 @@ def _settle_case(match: CrossMatchResult, user, summary: str, previous_result: O
 
 
 def _settle_all(
-    row: ErpTransaction, match: Optional[CrossMatchResult], user, summary: str, previous_result: Optional[str] = None
+    row: ErpTransaction,
+    match: Optional[CrossMatchResult],
+    user,
+    summary: str,
+    previous_result: Optional[str] = None,
+    recross_others: bool = True,
 ) -> Dict[str, Any]:
     affected = _affected_matches(row, match)
     results = [
@@ -221,6 +226,18 @@ def _settle_all(
         seen_procs[row.process_id] = row.process
     for proc in seen_procs.values():
         recalculate_process_summaries(proc)
+
+    if recross_others:
+        from .pending_recross import recross_pending_cases
+
+        recross_pending_cases(
+            user,
+            currencies=((row.source_currency,) if row.source_currency in ("CLP", "USD") else None),
+            exclude_match_ids={m.pk for m in affected if m and m.pk},
+            resolved_status_code=FIXED_STATUS_CODE,
+            audit_prefix=summary,
+            clear_suggestion_on_match=True,
+        )
     return results[0] if results else {"match": None, "matched": False}
 
 
@@ -244,6 +261,7 @@ def edit_row(
     source: str = ErpTransactionChange.SOURCE_MANUAL,
     reason: str = "",
     previous_result: Optional[str] = None,
+    recross_others: bool = True,
 ) -> Dict[str, Any]:
     """Opción B "la fila existe" (and Opción A "Aceptar"): changes the given fields of a Bordero row."""
     if row.is_deleted:
@@ -278,7 +296,7 @@ def edit_row(
     summary += ": " + "; ".join(
         f"{FIELD_LABELS[f]} {display_value(f, o, currency)} → {display_value(f, n, currency)}" for f, o, n in changes
     )
-    return _settle_all(row, match, user, summary, previous_result)
+    return _settle_all(row, match, user, summary, previous_result, recross_others=recross_others)
 
 
 @transaction.atomic

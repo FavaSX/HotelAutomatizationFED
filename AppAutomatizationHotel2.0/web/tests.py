@@ -267,10 +267,13 @@ class ClpPersistenceTests(TestCase):
                   CrossMatchResult.objects.count(), BankStatementMovement.objects.count())
 
         orphan = process.cross_match_results.get(authorization_code="F0FUAZ")
-        self.assertEqual(orphan.account_code, "1787015")
-        self.assertEqual(orphan.document_number, "0FOFUAZ")
-        self.assertEqual(orphan.display_account_code, "1787015")
-        self.assertEqual(orphan.display_erp_document, "0FOFUAZ")
+        self.assertIsNone(orphan.erp_transaction)
+        self.assertEqual(orphan.system_result, "NOT_FOUND_IN_ERP")
+        self.assertEqual(orphan.account_code, "")
+        self.assertEqual(orphan.document_number, "")
+        self.assertEqual(orphan.display_account_code, "")
+        self.assertEqual(orphan.display_erp_document, "")
+        self.assertIsNotNone(load_suggestion(orphan))
 
         matched_405544 = process.cross_match_results.get(authorization_code="405544")
         self.assertEqual(matched_405544.account_code, "1786484")
@@ -290,6 +293,8 @@ class ClpPersistenceTests(TestCase):
         self.assertNotIn("Huésped / Hab. / Cajero", exc_headers)
         first_exception = [c.value for c in workbook["Reporte de Excepciones"][2]]
         self.assertEqual(first_exception[0], "Error de tipeo")
+        self.assertEqual(first_exception[4], "—")
+        self.assertEqual(first_exception[5], "—")
 
         again = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
         self.assertEqual(again.id, process.id)
@@ -1210,10 +1215,36 @@ class SuggestionAcceptRejectTests(TestCase):
 
     def test_accepting_fixes_the_erp_matches_and_survives_a_reupload(self):
         case = self._case("F0FUAZ")
+        self.assertIsNone(case.erp_transaction)
+        self.assertEqual((case.account_code, case.document_number), ("", ""))
+        self.assertEqual((case.display_account_code, case.display_erp_document), ("", ""))
+
+        # Simulate legacy DB pollution + render Resultados del Cruce before accepting:
+        # unlinked NOT_FOUND_IN_ERP rows must never render a matched Doc ERP pill.
+        CrossMatchResult.objects.filter(pk=case.pk).update(account_code="1787015", document_number="0FOFUAZ")
+        case.refresh_from_db()
+        self.assertEqual((case.display_account_code, case.display_erp_document), ("", ""))
+        self.client.force_login(self.user)
+        before_cruce = self.client.get(reverse("consolidated_matches"), {"resultado": "NOT_FOUND_IN_ERP"})
+        self.assertContains(before_cruce, "F0FUAZ")
+        self.assertNotContains(before_cruce, "voucher-dual-pill")
+        self.assertNotContains(before_cruce, "Doc ERP:")
+        CrossMatchResult.objects.filter(pk=case.pk).update(account_code="", document_number="")
+        case.refresh_from_db()
+
         outcome = accept_suggestion(case, self.user)
         self.assertTrue(outcome["matched"])
         case.refresh_from_db()
+        self.assertIsNotNone(case.erp_transaction)
+        self.assertEqual((case.account_code, case.document_number), ("1787015", "F0FUAZ"))
+        self.assertEqual((case.display_account_code, case.display_erp_document), ("1787015", "F0FUAZ"))
         self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        after_cruce = self.client.get(reverse("consolidated_matches"), {"q": "F0FUAZ"})
+        self.assertContains(after_cruce, "voucher-dual-pill")
+        self.assertContains(after_cruce, "Doc ERP:")
+        self.assertContains(after_cruce, "Corregido en ERP")
+        self.assertContains(after_cruce, "ERP modificado")
+
         change = ErpTransactionChange.objects.get(cross_match_result=case)
         self.assertEqual(change.source, ErpTransactionChange.SOURCE_SUGGESTION)
         self.assertEqual(load_suggestion(case)["proposed_change"]["status"], "accepted")
@@ -1294,6 +1325,8 @@ class PreviewCorrectionTests(TestCase):
         process = commit_clp_preview_to_database(self.user, self.preview)
         case = process.cross_match_results.get(authorization_code="F0FUAZ")
         self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
+        self.assertEqual((case.account_code, case.document_number), ("1787015", "F0FUAZ"))
+        self.assertEqual((case.display_account_code, case.display_erp_document), ("1787015", "F0FUAZ"))
         row = case.erp_transaction
         self.assertEqual(row.authorization_code, "F0FUAZ")
         self.assertEqual(row.source_key, erp_source_key(  # fingerprint of the ORIGINAL Excel value
@@ -1384,6 +1417,47 @@ class SuggestionModalAjaxTests(TestCase):
         again = self.client.post(reverse("exception_suggestion_reject", args=[reject_case.id]), {}, **self.ajax)
         self.assertEqual(again.status_code, 400)
         self.assertIn("error", again.json())
+
+    def test_suggestion_slots_and_ids_not_localized_when_pk_over_thousand(self):
+        import json as json_lib
+        import re
+
+        usd_preview = calculate_usd_preview(
+            erp_file=_build_usd_bordero_file([
+                (502, 1718000, "VUS$", "Visa US$", 99996, -66500, "1234568", "06/09/2026", "10:00:00", "CDAZA", "TIPEO USD"),
+            ]),
+            transbank_file=_build_usd_tbk_file([("06/09/2026", "VI", "4260 40** **** 8888", 70.00, "1234567")]),
+            bank_statement_file=build_cartola([("08/09/2026", "Abono USD", 70.00)]),
+            amex_file=_build_operator_file("AX_M.xlsx", []),
+            diners_file=_build_operator_file("DI_M.xlsx", []),
+            visa_file=_build_operator_file("VI_M.xlsx", [(1718000, 1, 70.00, 66500, 66500)]),
+            mastercard_file=_build_operator_file("MC_M.xlsx", []),
+        )
+        usd_proc = commit_usd_preview_to_database(self.user, usd_preview)
+
+        clp_src = self.process.cross_match_results.get(authorization_code="007626")
+        erp_row = clp_src.erp_transaction
+        erp_row.pk = 159585
+        erp_row.save()
+        CrossMatchResult.objects.filter(pk=clp_src.pk).update(id=1737, erp_transaction=erp_row)
+
+        usd_src = usd_proc.cross_match_results.get(authorization_code="1234567")
+        CrossMatchResult.objects.filter(pk=usd_src.pk).update(id=2737)
+
+        self.assertContains(self.client.get(reverse("exceptions") + "?moneda=clp"), 'id="amt-1737-159585"')
+        for moneda, case_id in (("clp", 1737), ("usd", 2737)):
+            page = self.client.get(reverse("exceptions") + f"?moneda={moneda}")
+            html = page.content.decode("utf-8")
+            self.assertContains(page, f'data-suggestion-case="{case_id}" data-suffix="p"')
+            self.assertContains(page, f'data-suggestion-case="{case_id}" data-suffix="m"')
+            self.assertContains(page, f'data-bs-target="#exc-{case_id}"')
+            self.assertContains(page, f'id="exc-{case_id}"')
+            self.assertContains(page, "suggestion_card.js?v=7")
+            self.assertEqual(re.findall(r'[a-zA-Z0-9_-]+="[^"]*\xa0[^"]*"', html), [])
+            m = re.search(r'<script id="inboxSuggestionData"[^>]*>(.*?)</script>', html, re.S)
+            self.assertIsNotNone(m)
+            payload = json_lib.loads(m.group(1))
+            self.assertIn(str(case_id), payload["cases"])
 
 
 class ReadOnlyTableVisualizationPanelsTests(TestCase):
@@ -2797,4 +2871,884 @@ class ErpCoverageAndDbCrossMatchTests(TestCase):
         )
 
 
+class PendingRecrossOnErpUpdateTests(TestCase):
+    fixtures_loaded = False
 
+    def setUp(self):
+        self.user = User.objects.create_user(username="auditor_recross", password="secret")
+
+    def _custom_bordero(self, name: str, start_str: str, end_str: str, payments: list):
+        header = {
+            "A": "Hab", "B": "Tipo Hab", "C": "Reserva", "D": "Cuenta", "E": "Cod. Deb.",
+            "F": "Descripción", "H": "Factura", "I": "Valor", "J": "Documento",
+            "K": "Fecha", "L": "Hora", "M": "Usuario", "N": "Designación",
+        }
+        rows = {
+            1: {"A": "HOTELERA SAN FRANCISCO S.A"},
+            2: {"A": "Cargos de Débitos y Créditos"},
+            4: {"A": "Periodo de:", "B": start_str, "C": "hasta", "D": end_str},
+            5: header,
+            6: {"A": 1002, "D": 1785942, "E": "CNBQ", "F": "1/2 Pension Alimentos", "I": 20900, "J": "UH: 1002", "K": end_str},
+        }
+        for offset, (hab, cuenta, cod, desc, factura, valor, documento, fecha, hora, usuario, huesped) in enumerate(payments):
+            rows[7 + offset] = {
+                "A": hab, "D": cuenta, "E": cod, "F": desc, "G": factura, "I": valor,
+                "J": documento, "K": fecha, "L": hora, "M": usuario, "N": huesped,
+            }
+        return _xlsx(name, rows)
+
+    def test_clp_pending_auto_matches_transitions_and_preserves_rejected_cases(self):
+        # Closing #1 CLP: 070981 is OUT_OF_PERIOD (PENDING), 901234 is NOT_FOUND_IN_ERP (PENDING), F0FUAZ gets REJECTED.
+        tbk_credit = build_tbk_settlement("CRED_1.xlsx", "Crédito", [
+            ("04 septiembre 2026", "HOTEL PLAZA SAN FRANCISCO", 187172, "Venta $", "S/C", 187172, 4997, 949, "5525 61** **** 5410", "405544"),
+            ("03 septiembre 2026", "RESTAURANT BRISTOL", 8690, "Venta $", "S/C", 8690, 174, 33, "5532 53** **** 4291", "070981"),
+        ])
+        tbk_debit = build_tbk_settlement("DEB_1.xlsx", "Débito", [
+            ("05 septiembre 2026", "HOTEL PLAZA SAN FRANCISCO", 25000, "Normal", "S/C", 25000, 250, 48, "4547 93** **** 1111", "901234"),
+            ("06 septiembre 2026", "HOTEL PLAZA SAN FRANCISCO", 106999, "Normal", "S/C", 106999, 856, 163, "4547 93** **** 8430", "F0FUAZ"),
+        ])
+        bordero_1 = self._custom_bordero("BORD_1.xlsx", "04/09/2026", "06/09/2026", [
+            (822, 1786484, "MC$", "Master Card $", 53895, -187172, 405544, "04/09/2026", "03:11:09", "CDAZA", "RODRIGO ISLA"),
+            (825, 1787015, "RCO", "Red Compra", 259977, -106999, "0FOFUAZ", "06/09/2026", "19:36:48", "MSALAS", "KATHARINA WINCO"),
+        ])
+        bank_1 = build_cartola([("07/09/2026", "ABONO TBK", 300000)])
+        p1 = calculate_clp_preview(
+            erp_file=bordero_1, bank_statement_file=bank_1,
+            transbank_credit_file=tbk_credit, transbank_debit_file=tbk_debit,
+        )
+        proc1 = commit_clp_preview_to_database(self.user, p1)
+
+        m_oop = CrossMatchResult.objects.get(process=proc1, authorization_code="070981")
+        m_missing = CrossMatchResult.objects.get(process=proc1, authorization_code="901234")
+        m_rejected = CrossMatchResult.objects.get(process=proc1, authorization_code="F0FUAZ")
+        self.assertEqual(m_oop.system_result, "OUT_OF_PERIOD")
+        self.assertEqual(m_missing.system_result, "NOT_FOUND_IN_ERP")
+        self.assertEqual(m_oop.management_status.code, "PENDING")
+        self.assertEqual(m_missing.management_status.code, "PENDING")
+
+        # Accountant rejects the suggestion on F0FUAZ -> must NEVER be auto-reopened later
+        reject_suggestion(m_rejected, self.user, "No corresponde")
+        m_rejected.refresh_from_db()
+        self.assertEqual(m_rejected.management_status.code, "REJECTED")
+
+        # Also leave a PENDING exact-code case whose amount differs when Bordero #2 arrives -> AMOUNT_MISMATCH
+        # Closing #2 CLP arrives with 070981, 901234 (plus an unrelated F0FUAZ row) and a Closing #2 voucher 554433
+        bordero_2 = self._custom_bordero("BORD_2.xlsx", "07/09/2026", "10/09/2026", [
+            (301, 1790001, "MC$", "Master Card $", 60001, -8690, "070981", "08/09/2026", "10:00:00", "CDAZA", "HUESPED UNO"),
+            (302, 1790002, "RCO", "Red Compra", 60002, -25000, "901234", "07/09/2026", "11:00:00", "SCORREA", "HUESPED DOS"),
+            (303, 1790003, "RCO", "Red Compra", 60003, -106999, "F0FUAZ", "07/09/2026", "12:00:00", "MSALAS", "HUESPED TRES"),
+            (304, 1790004, "RCO", "Red Compra", 60004, -19000, "554433", "09/09/2026", "13:00:00", "CDAZA", "HUESPED CUATRO"),
+        ])
+        tbk_2 = build_tbk_settlement("DEB_2.xlsx", "Débito", [
+            ("09 septiembre 2026", "RESTAURANT BRISTOL", 19000, "Normal", "S/C", 19000, 190, 36, "4547 93** **** 9999", "554433"),
+        ])
+        bank_2 = build_cartola([("10/09/2026", "ABONO TBK", 18774)])
+        p2 = calculate_clp_preview(
+            erp_file=bordero_2, bank_statement_file=bank_2, transbank_debit_file=tbk_2,
+        )
+        proc2 = commit_clp_preview_to_database(self.user, p2)
+        self.assertIsNotNone(proc2.id)
+
+        m_oop.refresh_from_db()
+        m_missing.refresh_from_db()
+        m_rejected.refresh_from_db()
+
+        for m, expected_acc, expected_code in (
+            (m_oop, "1790001", "070981"),
+            (m_missing, "1790002", "901234"),
+        ):
+            self.assertEqual(m.system_result, "MATCHED")
+            self.assertEqual(m.management_status.code, "ACCEPTED_ROUNDING")
+            self.assertEqual(m.account_code, expected_acc)
+            self.assertEqual(m.document_number, expected_code)
+            self.assertEqual(m.difference_clp, Decimal("0.00"))
+            self.assertTrue(m.erp_transaction.reconciled)
+            self.assertTrue(m.transbank_transaction.reconciled)
+            self.assertIsNone(m.auditor_comment)
+            self.assertTrue(
+                AuditResolutionLog.objects.filter(cross_match_result=m, comment__icontains="Cuadrado").exists()
+            )
+
+        # REJECTED case stayed REJECTED and unlinked
+        self.assertEqual(m_rejected.management_status.code, "REJECTED")
+        self.assertIsNone(m_rejected.erp_transaction)
+
+        # Closing #1 summary was updated (erp_sales_total now includes 405544 + 070981 + 901234 = 220862)
+        s1 = proc1.summaries.filter(currency_table="CLP").order_by("id").first()
+        self.assertIsNotNone(s1)
+        self.assertGreater(s1.erp_sales_total, Decimal("187172.00"))
+
+        # Resultados del Cruce displays the "Conciliado con nuevo cierre (#proc2)" badge, while Pendientes drops them
+        self.client.force_login(self.user)
+        cruce_detail = self.client.get(reverse("closing_detail", args=[proc1.id]), {"vista": "cruce"})
+        self.assertContains(cruce_detail, f"Conciliado con nuevo cierre (#{proc2.id})")
+        cruce_cons = self.client.get(reverse("consolidated_matches"), {"q": "070981"})
+        self.assertContains(cruce_cons, f"Conciliado con nuevo cierre (#{proc2.id})")
+        inbox = self.client.get(reverse("exceptions"), {"moneda": "clp"})
+        self.assertNotContains(inbox, "070981")
+        self.assertNotContains(inbox, "901234")
+
+    def test_usd_pending_auto_matches_via_usd_commit_and_cross_currency_clp_commit(self):
+        # Closing #1 USD: 112194 matched; 334455 AMOUNT_MISMATCH (missing MC op doc 1715800);
+        # 888999 NOT_FOUND_IN_ERP; 777888 NOT_FOUND_IN_ERP (will arrive via a CLP full Bordero later!).
+        tbk_usd_1 = _build_usd_tbk_file([
+            ("05/09/2026", "VI", "4260 40** **** 1111", 120.00, "112194"),
+            ("05/09/2026", "MC", "5525 61** **** 2222", 85.00, "334455"),
+            ("06/09/2026", "VI", "4260 40** **** 4444", 40.00, "888999"),
+            ("06/09/2026", "VI", "4260 40** **** 5555", 60.00, "777888"),
+        ])
+        bordero_usd_1 = _build_usd_bordero_file([
+            (602, 1715625, "VUS$", "Visa US$", 99965, -114000, 112194, "05/09/2026", "19:28:02", "TMENDOZA", "JOHN DOE"),
+            (710, 1715800, "MUS$", "Master Card US$", 99970, -80750, 334455, "05/09/2026", "20:00:00", "CDAZA", "JANE SMITH"),
+        ])
+        p_usd_1 = calculate_usd_preview(
+            erp_file=bordero_usd_1,
+            transbank_file=tbk_usd_1,
+            bank_statement_file=build_cartola([("08/09/2026", "Abono USD", 305.00)]),
+            amex_file=_build_operator_file("AX.xlsx", []),
+            diners_file=_build_operator_file("DI.xlsx", []),
+            visa_file=_build_operator_file("VI.xlsx", [
+                (1715625, 1, 120.00, 114000, 114000),
+                (1716000, 1, 40.00, 38000, 38000),
+                (1717000, 1, 60.00, 57000, 57000),
+            ]),
+            mastercard_file=_build_operator_file("MC.xlsx", []),
+        )
+        usd_proc1 = commit_usd_preview_to_database(self.user, p_usd_1)
+
+        m_334455 = CrossMatchResult.objects.get(process=usd_proc1, authorization_code="334455")
+        m_888999 = CrossMatchResult.objects.get(process=usd_proc1, authorization_code="888999")
+        m_777888 = CrossMatchResult.objects.get(process=usd_proc1, authorization_code="777888")
+        self.assertEqual(m_334455.system_result, "AMOUNT_MISMATCH")
+        self.assertEqual(m_888999.system_result, "NOT_FOUND_IN_ERP")
+        self.assertEqual(m_777888.system_result, "NOT_FOUND_IN_ERP")
+
+        # Closing #2 USD brings ERP row for 888999 AND Mastercard operator row (1715800, 85.00 USD) for 334455
+        tbk_usd_2 = _build_usd_tbk_file([
+            ("07/09/2026", "VI", "4260 40** **** 6666", 30.00, "212121"),
+        ])
+        bordero_usd_2 = _build_usd_bordero_file([
+            (605, 1716000, "VUS$", "Visa US$", 99985, -38000, 888999, "06/09/2026", "10:00:00", "CDAZA", "ALICE USD"),
+            (606, 1716001, "VUS$", "Visa US$", 99986, -28500, 212121, "07/09/2026", "11:00:00", "CDAZA", "BOB USD"),
+        ])
+        p_usd_2 = calculate_usd_preview(
+            erp_file=bordero_usd_2,
+            transbank_file=tbk_usd_2,
+            bank_statement_file=build_cartola([("09/09/2026", "Abono USD 2", 30.00)]),
+            amex_file=_build_operator_file("AX2.xlsx", []),
+            diners_file=_build_operator_file("DI2.xlsx", []),
+            visa_file=_build_operator_file("VI2.xlsx", [(1716001, 1, 30.00, 28500, 28500)]),
+            mastercard_file=_build_operator_file("MC2.xlsx", [(1715800, 1, 85.00, 80750, 80750)]),
+        )
+        usd_proc2 = commit_usd_preview_to_database(self.user, p_usd_2)
+
+        m_888999.refresh_from_db()
+        m_334455.refresh_from_db()
+        m_777888.refresh_from_db()
+
+        self.assertEqual(m_888999.system_result, "MATCHED")
+        self.assertEqual(m_888999.management_status.code, "ACCEPTED_ROUNDING")
+        self.assertEqual(m_888999.account_code, "1716000")
+        self.assertIsNotNone(m_888999.card_operator_transaction)
+        self.assertEqual(m_888999.difference_usd, Decimal("0.00"))
+        self.assertTrue(m_888999.erp_transaction.reconciled)
+        self.assertTrue(m_888999.transbank_transaction.reconciled)
+
+        self.assertEqual(m_334455.system_result, "MATCHED")
+        self.assertEqual(m_334455.management_status.code, "ACCEPTED_ROUNDING")
+        self.assertEqual(m_334455.operator_amount_usd, Decimal("85.00"))
+        self.assertEqual(m_334455.difference_usd, Decimal("0.00"))
+        self.assertTrue(m_334455.erp_transaction.reconciled)
+        self.assertTrue(m_334455.transbank_transaction.reconciled)
+
+        # 777888 still pending before CLP Bordero brings it
+        self.assertEqual(m_777888.system_result, "NOT_FOUND_IN_ERP")
+        self.assertEqual(m_777888.management_status.code, "PENDING")
+
+        # Closing #3 is a CLP full Bordero containing USD card row 777888 (ingested via sync_additional_erp_movements)
+        clp_bordero = self._custom_bordero("BORD_FULL.xlsx", "06/09/2026", "09/09/2026", [
+            (901, 1717000, "VUS$", "Visa US$", 99991, -57000, "777888", "06/09/2026", "14:00:00", "SCORREA", "CARLOS USD"),
+            (902, 1791000, "RCO", "Red Compra", 70001, -12000, "101010", "08/09/2026", "15:00:00", "SCORREA", "LUIS CLP"),
+        ])
+        clp_tbk = build_tbk_settlement("DEB_3.xlsx", "Débito", [
+            ("08 septiembre 2026", "HOTEL PLAZA SAN FRANCISCO", 12000, "Normal", "S/C", 12000, 120, 23, "4547 93** **** 7777", "101010"),
+        ])
+        p_clp = calculate_clp_preview(
+            erp_file=clp_bordero,
+            bank_statement_file=build_cartola([("09/09/2026", "ABONO TBK", 11857)]),
+            transbank_debit_file=clp_tbk,
+        )
+        clp_proc3 = commit_clp_preview_to_database(self.user, p_clp)
+
+        m_777888.refresh_from_db()
+        self.assertEqual(m_777888.system_result, "MATCHED")
+        self.assertEqual(m_777888.management_status.code, "ACCEPTED_ROUNDING")
+        self.assertEqual(m_777888.account_code, "1717000")
+        self.assertTrue(m_777888.erp_transaction.reconciled)
+        self.assertTrue(m_777888.transbank_transaction.reconciled)
+
+        # USD Closing #1 summaries reflect updated erp_sales_total and difference == 0 for both VI and MC
+        vi_summary = usd_proc1.summaries.get(currency_table="USD", card_type__code="VI")
+        mc_summary = usd_proc1.summaries.get(currency_table="USD", card_type__code="MC")
+        self.assertEqual(vi_summary.difference, Decimal("0.00"))
+        self.assertEqual(mc_summary.difference, Decimal("0.00"))
+
+        # Resultados del Cruce displays the "Conciliado con nuevo cierre" badge for both USD commit and cross-currency CLP commit
+        self.client.force_login(self.user)
+        usd_detail = self.client.get(reverse("closing_detail", args=[usd_proc1.id]), {"vista": "cruce"})
+        self.assertContains(usd_detail, f"Conciliado con nuevo cierre (#{usd_proc2.id})")
+        self.assertContains(usd_detail, f"Conciliado con nuevo cierre (#{clp_proc3.id})")
+
+    def test_refreshes_suggestions_faithfully_without_false_matches_and_guards_distant_months(self):
+        # 1) CLP: unlinked 445566 (PENDING) gets no suggestion on Closing #1;
+        # Closing #2 adds BOTH a distant-month exact code (Oct 15) and a nearby typo row (445569 on Sep 06).
+        # Also test 313131 (PENDING) linking to exact code wrong amount -> AMOUNT_MISMATCH with amount proposal!
+        p_clp_1 = calculate_clp_preview(
+            erp_file=self._custom_bordero("CLP1.xlsx", "05/09/2026", "05/09/2026", []),
+            bank_statement_file=build_cartola([("07/09/2026", "ABONO TBK", 40000)]),
+            transbank_debit_file=build_tbk_settlement("CLP1_TBK.xlsx", "Débito", [
+                ("05 septiembre 2026", "RESTAURANT BRISTOL", 22000, "Normal", "S/C", 22000, 220, 42, "4547 93** **** 1212", "445566"),
+                ("05 septiembre 2026", "RESTAURANT BRISTOL", 18000, "Normal", "S/C", 18000, 180, 34, "4547 93** **** 3434", "313131"),
+            ]),
+        )
+        proc_clp_1 = commit_clp_preview_to_database(self.user, p_clp_1)
+        m_typo_clp = CrossMatchResult.objects.get(process=proc_clp_1, authorization_code="445566")
+        m_amt_clp = CrossMatchResult.objects.get(process=proc_clp_1, authorization_code="313131")
+        self.assertIsNone(m_typo_clp.auditor_comment)
+
+        p_clp_2 = calculate_clp_preview(
+            erp_file=self._custom_bordero("CLP2.xlsx", "06/09/2026", "15/10/2026", [
+                (401, 1792001, "RCO", "Red Compra", 80001, -22000, "445566", "15/10/2026", "10:00:00", "CDAZA", "MES LEJANO"),
+                (402, 1792002, "RCO", "Red Compra", 80002, -22000, "445569", "06/09/2026", "11:00:00", "CDAZA", "TIPEO CERCA"),
+                (403, 1792003, "RCO", "Red Compra", 80003, -15000, "313131", "06/09/2026", "12:00:00", "CDAZA", "MONTO ERRADO"),
+            ]),
+            bank_statement_file=build_cartola([("07/09/2026", "ABONO TBK", 0)]),
+            transbank_debit_file=build_tbk_settlement("CLP2_TBK.xlsx", "Débito", []),
+        )
+        commit_clp_preview_to_database(self.user, p_clp_2)
+
+        m_typo_clp.refresh_from_db()
+        self.assertEqual(m_typo_clp.system_result, "NOT_FOUND_IN_ERP")
+        self.assertEqual(m_typo_clp.management_status.code, "PENDING")
+        self.assertIsNone(m_typo_clp.erp_transaction)
+        self.assertEqual(m_typo_clp.account_code, "")
+        self.assertEqual(m_typo_clp.document_number, "")
+        prop_clp = open_proposal(m_typo_clp)
+        self.assertIsNotNone(prop_clp)
+        self.assertEqual(prop_clp["field"], "authorization_code")
+        self.assertEqual(prop_clp["old"], "445569")
+        self.assertEqual(prop_clp["new"], "445566")
+
+        accept_suggestion(m_typo_clp, self.user)
+        m_typo_clp.refresh_from_db()
+        self.assertEqual(m_typo_clp.system_result, "MATCHED")
+        self.assertEqual(m_typo_clp.management_status.code, "RESOLVED_ERP_FIXED")
+
+        # 313131 transitioned NOT_FOUND_IN_ERP -> AMOUNT_MISMATCH (PENDING) with an amount proposal!
+        m_amt_clp.refresh_from_db()
+        self.assertEqual(m_amt_clp.system_result, "AMOUNT_MISMATCH")
+        self.assertEqual(m_amt_clp.management_status.code, "PENDING")
+        self.assertEqual(m_amt_clp.account_code, "1792003")
+        prop_amt = open_proposal(m_amt_clp)
+        self.assertIsNotNone(prop_amt)
+        self.assertEqual(prop_amt["field"], "amount")
+
+        # 2) USD: unlinked 1234567 (PENDING) gets a fresh suggestion when Closing #2 adds typo 1234568 nearby,
+        # ignoring distant Oct 18 exact match, without ever saving a fake match until accepted.
+        p_usd_1 = calculate_usd_preview(
+            erp_file=_build_usd_bordero_file([]),
+            transbank_file=_build_usd_tbk_file([("06/09/2026", "VI", "4260 40** **** 8888", 70.00, "1234567")]),
+            bank_statement_file=build_cartola([("08/09/2026", "Abono USD", 70.00)]),
+            amex_file=_build_operator_file("AX_U1.xlsx", []),
+            diners_file=_build_operator_file("DI_U1.xlsx", []),
+            visa_file=_build_operator_file("VI_U1.xlsx", [(1718000, 1, 70.00, 66500, 66500)]),
+            mastercard_file=_build_operator_file("MC_U1.xlsx", []),
+        )
+        proc_usd_1 = commit_usd_preview_to_database(self.user, p_usd_1)
+        m_typo_usd = CrossMatchResult.objects.get(process=proc_usd_1, authorization_code="1234567")
+        self.assertIsNone(open_proposal(m_typo_usd))
+
+        p_usd_2 = calculate_usd_preview(
+            erp_file=_build_usd_bordero_file([
+                (501, 1718999, "VUS$", "Visa US$", 99995, -66500, "1234567", "18/10/2026", "10:00:00", "CDAZA", "MES LEJANO USD"),
+                (502, 1718000, "VUS$", "Visa US$", 99996, -66500, "1234568", "07/09/2026", "10:00:00", "CDAZA", "TIPEO USD"),
+            ]),
+            transbank_file=_build_usd_tbk_file([]),
+            bank_statement_file=build_cartola([("09/09/2026", "Abono USD 2", 0)]),
+            amex_file=_build_operator_file("AX_U2.xlsx", []),
+            diners_file=_build_operator_file("DI_U2.xlsx", []),
+            visa_file=_build_operator_file("VI_U2.xlsx", []),
+            mastercard_file=_build_operator_file("MC_U2.xlsx", []),
+        )
+        commit_usd_preview_to_database(self.user, p_usd_2)
+
+        m_typo_usd.refresh_from_db()
+        self.assertEqual(m_typo_usd.system_result, "NOT_FOUND_IN_ERP")
+        self.assertEqual(m_typo_usd.management_status.code, "PENDING")
+        self.assertIsNone(m_typo_usd.erp_transaction)
+        self.assertEqual(m_typo_usd.account_code, "")
+        self.assertEqual(m_typo_usd.document_number, "")
+        prop_usd = open_proposal(m_typo_usd)
+        self.assertIsNotNone(prop_usd)
+        self.assertEqual(prop_usd["field"], "authorization_code")
+        self.assertEqual(prop_usd["old"], "1234568")
+        self.assertEqual(prop_usd["new"], "1234567")
+
+        accept_suggestion(m_typo_usd, self.user)
+        m_typo_usd.refresh_from_db()
+        self.assertEqual(m_typo_usd.system_result, "MATCHED")
+        self.assertEqual(m_typo_usd.management_status.code, "RESOLVED_ERP_FIXED")
+
+    def test_manual_add_row_also_matches_sibling_pending_cases_in_clp_and_usd(self):
+        p_clp = calculate_clp_preview(
+            erp_file=self._custom_bordero("MAN_CLP.xlsx", "05/09/2026", "05/09/2026", []),
+            bank_statement_file=build_cartola([("06/09/2026", "ABONO TBK", 25000)]),
+            transbank_debit_file=build_tbk_settlement("MAN_CLP_TBK.xlsx", "Débito", [
+                ("05 septiembre 2026", "RESTAURANT BRISTOL", 15000, "Normal", "S/C", 15000, 150, 29, "4547 93** **** 1010", "990011"),
+                ("05 septiembre 2026", "RESTAURANT BRISTOL", 10000, "Normal", "S/C", 10000, 100, 19, "4547 93** **** 1011", "990012"),
+            ]),
+        )
+        proc_clp = commit_clp_preview_to_database(self.user, p_clp)
+        m_clp = CrossMatchResult.objects.get(process=proc_clp, authorization_code="990011")
+        m_clp_anchor = CrossMatchResult.objects.get(process=proc_clp, authorization_code="990012")
+
+        p_usd = calculate_usd_preview(
+            erp_file=_build_usd_bordero_file([]),
+            transbank_file=_build_usd_tbk_file([
+                ("05/09/2026", "VI", "4260 40** **** 2020", 50.00, "990022"),
+                ("05/09/2026", "VI", "4260 40** **** 2021", 25.00, "990023"),
+            ]),
+            bank_statement_file=build_cartola([("06/09/2026", "Abono USD", 75.00)]),
+            amex_file=_build_operator_file("AX_M.xlsx", []),
+            diners_file=_build_operator_file("DI_M.xlsx", []),
+            visa_file=_build_operator_file("VI_M.xlsx", [(1719000, 1, 50.00, 47500, 47500)]),
+            mastercard_file=_build_operator_file("MC_M.xlsx", []),
+        )
+        proc_usd = commit_usd_preview_to_database(self.user, p_usd)
+        m_usd = CrossMatchResult.objects.get(process=proc_usd, authorization_code="990022")
+        m_usd_anchor = CrossMatchResult.objects.get(process=proc_usd, authorization_code="990023")
+
+        # Anchor on a different case so m_clp / m_usd are resolved strictly via sibling recross_pending_cases
+        add_row(
+            m_clp_anchor,
+            {
+                "account_code": "1795001",
+                "document_number": "1795001",
+                "authorization_code": "990011",
+                "payment_code": "RCO",
+                "transaction_date": date(2026, 9, 5),
+                "amount": Decimal("15000.00"),
+                "invoice_number": "88001",
+            },
+            self.user,
+            reason="Ingreso manual posterior CLP",
+        )
+        add_row(
+            m_usd_anchor,
+            {
+                "account_code": "1719000",
+                "document_number": "1719000",
+                "authorization_code": "990022",
+                "payment_code": "VUS$",
+                "transaction_date": date(2026, 9, 5),
+                "amount": Decimal("47500.00"),
+                "invoice_number": "88002",
+            },
+            self.user,
+            reason="Ingreso manual posterior USD",
+        )
+
+        m_clp.refresh_from_db()
+        m_usd.refresh_from_db()
+        self.assertEqual(m_clp.system_result, "MATCHED")
+        self.assertEqual(m_clp.management_status.code, "RESOLVED_ERP_FIXED")
+        self.assertEqual(m_usd.system_result, "MATCHED")
+        self.assertEqual(m_usd.management_status.code, "RESOLVED_ERP_FIXED")
+
+
+
+
+
+
+class ManualErpProtectionAndPendingRecrossEdgeCasesTests(TestCase):
+    fixtures = []
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="protect_tester", password="x")
+        self.status_accepted, _ = ReconciliationStatus.objects.get_or_create(
+            code="ACCEPTED_ROUNDING", defaults={"description": "Aceptado por redondeo"}
+        )
+        self.status_fixed, _ = ReconciliationStatus.objects.get_or_create(
+            code="RESOLVED_ERP_FIXED", defaults={"description": "Resuelto corrigiendo ERP"}
+        )
+        self.status_pending, _ = ReconciliationStatus.objects.get_or_create(
+            code="PENDING", defaults={"description": "Pendiente de revisión"}
+        )
+        self.card_vi, _ = CardType.objects.get_or_create(
+            code="VI", defaults={"name": "Visa"}
+        )
+
+    def test_reuploading_closing_after_manual_date_shift_or_cross_closing_match_preserves_match(self):
+        # 1) Closing #1: voucher 111222 has ERP typo 999111; voucher 333444 is missing in ERP.
+        tbk1 = build_tbk_settlement("TBK_1.xlsx", "Crédito", [
+            ("05 septiembre 2026", "REST", 50000, "Venta $", "S/C", 50000, 500, 95, "4260**1111", "111222"),
+            ("05 septiembre 2026", "REST", 70000, "Venta $", "S/C", 70000, 700, 133, "4260**2222", "333444"),
+        ])
+        erp1 = build_bordero([
+            (101, "170001", "V$", "Visa $", "F1", -50000, "999111", "05/09/2026", "12:00:00", "caj1", "G1"),
+        ])
+        bank1 = build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 118572)])
+        preview1 = calculate_clp_preview(erp1, bank1, tbk_files=[tbk1])
+        proc1 = commit_clp_preview_to_database(self.user, preview1)
+
+        cm_111 = CrossMatchResult.objects.get(process=proc1, authorization_code="111222")
+        cm_333 = CrossMatchResult.objects.get(process=proc1, authorization_code="333444")
+        self.assertEqual(cm_111.system_result, "NOT_FOUND_IN_ERP")
+        self.assertEqual(cm_333.system_result, "NOT_FOUND_IN_ERP")
+
+        # Manual edit fixes auth code AND shifts transaction_date beyond preview's +/-14 day window.
+        typo_erp = ErpTransaction.objects.get(process=proc1, authorization_code="999111")
+        edit_row(
+            typo_erp,
+            {"authorization_code": "111222", "transaction_date": "2026-09-28"},
+            self.user,
+            match=cm_111,
+        )
+        cm_111.refresh_from_db()
+        self.assertEqual(cm_111.system_result, "MATCHED")
+        self.assertEqual(cm_111.management_status.code, "RESOLVED_ERP_FIXED")
+
+        # Closing #2 resolves cm_333 automatically with a delayed ERP row (within +14d window).
+        tbk2 = build_tbk_settlement("TBK_2.xlsx", "Crédito", [
+            ("15 septiembre 2026", "REST", 25000, "Venta $", "S/C", 25000, 250, 48, "4260**3333", "888777"),
+        ])
+        erp2 = build_bordero([
+            (102, "170002", "V$", "Visa $", "F2", -25000, "888777", "15/09/2026", "13:00:00", "caj1", "G2"),
+            (103, "170003", "V$", "Visa $", "F3", -70000, "333444", "15/09/2026", "14:00:00", "caj1", "G3"),
+        ])
+        bank2 = build_cartola([("17/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 24702)])
+        preview2 = calculate_clp_preview(erp2, bank2, tbk_files=[tbk2])
+        commit_clp_preview_to_database(self.user, preview2)
+
+        cm_333.refresh_from_db()
+        self.assertEqual(cm_333.system_result, "MATCHED")
+        delayed_erp_id = cm_333.erp_transaction_id
+        self.assertIsNotNone(delayed_erp_id)
+
+        # Re-upload Closing #1's original raw Excels: neither manual shift nor cross-closing match may be wiped!
+        re_tbk1 = build_tbk_settlement("TBK_1.xlsx", "Crédito", [
+            ("05 septiembre 2026", "REST", 50000, "Venta $", "S/C", 50000, 500, 95, "4260**1111", "111222"),
+            ("05 septiembre 2026", "REST", 70000, "Venta $", "S/C", 70000, 700, 133, "4260**2222", "333444"),
+        ])
+        re_erp1 = build_bordero([
+            (101, "170001", "V$", "Visa $", "F1", -50000, "999111", "05/09/2026", "12:00:00", "caj1", "G1"),
+        ])
+        re_bank1 = build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 118572)])
+        re_preview1 = calculate_clp_preview(re_erp1, re_bank1, tbk_files=[re_tbk1])
+        re_proc1 = commit_clp_preview_to_database(self.user, re_preview1)
+        self.assertEqual(re_proc1.id, proc1.id)
+
+        cm_111.refresh_from_db()
+        cm_333.refresh_from_db()
+        typo_erp.refresh_from_db()
+        self.assertEqual(cm_111.system_result, "MATCHED")
+        self.assertEqual(cm_111.management_status.code, "RESOLVED_ERP_FIXED")
+        self.assertEqual(cm_111.erp_transaction_id, typo_erp.id)
+        self.assertTrue(cm_111.transbank_transaction.reconciled)
+        self.assertEqual(typo_erp.authorization_code, "111222")
+        self.assertEqual(typo_erp.transaction_date, date(2026, 9, 28))
+        self.assertTrue(typo_erp.reconciled)
+
+        self.assertEqual(cm_333.system_result, "MATCHED")
+        self.assertEqual(cm_333.erp_transaction_id, delayed_erp_id)
+        self.assertTrue(cm_333.transbank_transaction.reconciled)
+
+    def test_refreshed_bordero_with_fixed_values_and_colliding_code_neither_duplicates_nor_steals(self):
+        # Closing #1 fixes typo 888555 -> 444555 manually.
+        tbk1 = build_tbk_settlement("TBK_SEP.xlsx", "Crédito", [
+            ("05 septiembre 2026", "REST", 60000, "Venta $", "S/C", 60000, 600, 114, "4260**4444", "444555"),
+        ])
+        erp1 = build_bordero([
+            (201, "170101", "V$", "Visa $", "F10", -60000, "888555", "05/09/2026", "10:00:00", "caj1", "G10"),
+        ])
+        bank1 = build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 59286)])
+        proc1 = commit_clp_preview_to_database(self.user, calculate_clp_preview(erp1, bank1, tbk_files=[tbk1]))
+        cm1 = CrossMatchResult.objects.get(process=proc1, authorization_code="444555")
+        erp_row = ErpTransaction.objects.get(process=proc1, authorization_code="888555")
+        edit_row(erp_row, {"authorization_code": "444555"}, self.user, match=cm1)
+
+        count_before = ErpTransaction.all_objects.filter(source_currency="CLP").count()
+
+        # Closing #2 uploads refreshed Bordero where 888555 now already reads 444555,
+        # plus an unrelated new TBK voucher sharing code 444555 on 06/09/2026 (within period) without an ERP row of its own.
+        tbk2 = build_tbk_settlement("TBK_OCT.xlsx", "Crédito", [
+            ("06 septiembre 2026", "REST", 60000, "Venta $", "S/C", 60000, 600, 114, "4260**9999", "444555"),
+        ])
+        erp2 = build_bordero([
+            (201, "170101", "V$", "Visa $", "F10", -60000, "444555", "05/09/2026", "10:00:00", "caj1", "G10"),
+        ])
+        bank2 = build_cartola([("08/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 59286)])
+        preview2 = calculate_clp_preview(erp2, bank2, tbk_files=[tbk2])
+        proc2 = commit_clp_preview_to_database(self.user, preview2)
+
+        self.assertEqual(ErpTransaction.all_objects.filter(source_currency="CLP").count(), count_before)
+        erp_row.refresh_from_db()
+        self.assertEqual(erp_row.process_id, proc1.id)
+        self.assertTrue(erp_row.reconciled)
+
+        cm2 = CrossMatchResult.objects.get(process=proc2, authorization_code="444555")
+        self.assertEqual(cm2.system_result, "NOT_FOUND_IN_ERP")
+        self.assertIsNone(cm2.erp_transaction)
+
+    def test_reconciled_origin_manual_row_not_stolen_by_colliding_closing_in_clp_or_usd(self):
+        # CLP manual row reconciled in Closing #1
+        tbk1 = build_tbk_settlement("TBK_M1.xlsx", "Crédito", [
+            ("05 septiembre 2026", "REST", 40000, "Venta $", "S/C", 40000, 400, 76, "4260**1212", "777666"),
+        ])
+        erp1 = build_bordero([])
+        bank1 = build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 39524)])
+        proc1 = commit_clp_preview_to_database(self.user, calculate_clp_preview(erp1, bank1, tbk_files=[tbk1]))
+        cm1 = CrossMatchResult.objects.get(process=proc1, authorization_code="777666")
+        add_row(
+            cm1,
+            {
+                "authorization_code": "777666",
+                "amount": "40000",
+                "transaction_date": "2026-09-05",
+                "payment_code": "V$",
+                "document_number": "900100",
+            },
+            self.user,
+            reason="Ingreso manual",
+        )
+        manual_erp = ErpTransaction.objects.get(origin=ErpTransaction.ORIGIN_MANUAL, authorization_code="777666")
+        self.assertTrue(manual_erp.reconciled)
+
+        # Colliding voucher in Closing #2 (same period, different sale date) must NOT hijack manual_erp.
+        tbk2 = build_tbk_settlement("TBK_M2.xlsx", "Crédito", [
+            ("06 septiembre 2026", "REST", 40000, "Venta $", "S/C", 40000, 400, 76, "4260**3434", "777666"),
+        ])
+        erp2 = build_bordero([])
+        bank2 = build_cartola([("08/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 39524)])
+        proc2 = commit_clp_preview_to_database(self.user, calculate_clp_preview(erp2, bank2, tbk_files=[tbk2]))
+        cm2 = CrossMatchResult.objects.get(process=proc2, authorization_code="777666")
+        self.assertEqual(cm2.system_result, "NOT_FOUND_IN_ERP")
+        self.assertIsNone(cm2.erp_transaction)
+        manual_erp.refresh_from_db()
+        self.assertEqual(manual_erp.process_id, proc1.id)
+
+        # USD: manual ERP edit in Closing #1 survives both colliding Closing #2 and re-upload of Closing #1.
+        u_tbk1 = _build_usd_tbk_file([("06/09/2026", "VI", "4260 40** **** 5555", 80.00, "654321")])
+        u_bank1 = build_cartola([("08/09/2026", "Abono USD", 80.00)])
+        u_erp1 = _build_usd_bordero_file([
+            (301, "654321", "VUS$", "Visa USD", "F20", -76000, "000000", "06/09/2026", "11:00:00", "caj1", "U1"),
+        ])
+        u_op_vi = _build_operator_file("VI_P1.xlsx", [(654321, 1, 80.00, 76000, 76000)])
+        u_proc1 = commit_usd_preview_to_database(
+            self.user,
+            calculate_usd_preview(
+                erp_file=u_erp1,
+                transbank_file=u_tbk1,
+                bank_statement_file=u_bank1,
+                amex_file=_build_operator_file("AX_P1.xlsx", []),
+                diners_file=_build_operator_file("DI_P1.xlsx", []),
+                visa_file=u_op_vi,
+                mastercard_file=_build_operator_file("MC_P1.xlsx", []),
+            ),
+        )
+        u_cm1 = CrossMatchResult.objects.get(process=u_proc1, authorization_code="654321")
+        u_erp_row = ErpTransaction.objects.get(process=u_proc1, source_currency="USD", authorization_code="000000")
+        edit_row(u_erp_row, {"authorization_code": "654321"}, self.user, match=u_cm1)
+        u_cm1.refresh_from_db()
+        self.assertEqual(u_cm1.system_result, "MATCHED")
+
+        # Re-upload USD Closing #1 with old raw Bordero: stays MATCHED and RESOLVED_ERP_FIXED.
+        u_proc1_re = commit_usd_preview_to_database(
+            self.user,
+            calculate_usd_preview(
+                erp_file=_build_usd_bordero_file([
+                    (301, "654321", "VUS$", "Visa USD", "F20", -76000, "000000", "06/09/2026", "11:00:00", "caj1", "U1"),
+                ]),
+                transbank_file=_build_usd_tbk_file([("06/09/2026", "VI", "4260 40** **** 5555", 80.00, "654321")]),
+                bank_statement_file=build_cartola([("08/09/2026", "Abono USD", 80.00)]),
+                amex_file=_build_operator_file("AX_P1.xlsx", []),
+                diners_file=_build_operator_file("DI_P1.xlsx", []),
+                visa_file=_build_operator_file("VI_P1.xlsx", [(654321, 1, 80.00, 76000, 76000)]),
+                mastercard_file=_build_operator_file("MC_P1.xlsx", []),
+            ),
+        )
+        self.assertEqual(u_proc1_re.id, u_proc1.id)
+        u_cm1.refresh_from_db()
+        self.assertEqual(u_cm1.system_result, "MATCHED")
+        self.assertEqual(u_cm1.management_status.code, "RESOLVED_ERP_FIXED")
+
+    def test_clp_later_installment_pending_recrosses_after_quota_1_reconciled_erp(self):
+        from .services.pending_recross import recross_pending_cases
+
+        # Closing #1 reconciles Quota 1/3 against ERP 919191 -> erp_shared.reconciled = True.
+        tbk_q1 = build_tbk_settlement("TBK_Q1.xlsx", "Crédito", [
+            ("05 septiembre 2026", "REST", 30000, "C3C", "1/3", 30000, 300, 57, "4260**8080", "919191"),
+        ])
+        erp_q1 = build_bordero([
+            (401, "170401", "V$", "Visa $", "F40", -30000, "919191", "05/09/2026", "09:00:00", "caj1", "Q1"),
+        ])
+        proc_q1 = commit_clp_preview_to_database(
+            self.user,
+            calculate_clp_preview(erp_q1, build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 29643)]), tbk_files=[tbk_q1]),
+        )
+        erp_shared = ErpTransaction.objects.get(process=proc_q1, authorization_code="919191")
+        self.assertTrue(erp_shared.reconciled)
+
+        # Later installment 2/3 saved as PENDING OUT_OF_PERIOD gets resolved via recross_pending_cases
+        # even though erp_shared is already reconciled by Quota 1/3.
+        tbk_q2 = build_tbk_settlement("TBK_Q2.xlsx", "Crédito", [
+            ("05 octubre 2026", "REST", 30000, "C3C", "2/3", 30000, 300, 57, "4260**8080", "919191"),
+        ])
+        proc_q2 = commit_clp_preview_to_database(
+            self.user,
+            calculate_clp_preview(build_bordero([]), build_cartola([("07/10/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 29643)]), tbk_files=[tbk_q2]),
+        )
+        cm_q2 = CrossMatchResult.objects.get(process=proc_q2, authorization_code="919191")
+        cm_q2.system_result = "OUT_OF_PERIOD"
+        cm_q2.erp_transaction = None
+        cm_q2.management_status = self.status_pending
+        cm_q2.save(update_fields=["system_result", "erp_transaction", "management_status"])
+
+        recross_pending_cases(self.user, exclude_process_id=proc_q1.id, audit_prefix="Recruce cuotas")
+        cm_q2.refresh_from_db()
+        self.assertEqual(cm_q2.system_result, "MATCHED")
+        self.assertEqual(cm_q2.erp_transaction_id, erp_shared.id)
+
+    def test_multi_row_split_mismatch_and_usd_partial_detail_and_commit_recross_stats(self):
+        from unittest.mock import patch
+        from .services import pending_recross
+
+        # 1) Multi-row split AMOUNT_MISMATCH must NOT emit a single-row amount overwrite proposal.
+        tbk1 = build_tbk_settlement("TBK_SPLIT.xlsx", "Crédito", [
+            ("05 septiembre 2026", "REST", 100000, "Venta $", "S/C", 100000, 1000, 190, "4260**5151", "515151"),
+        ])
+        proc1 = commit_clp_preview_to_database(
+            self.user,
+            calculate_clp_preview(
+                build_bordero([
+                    (502, "170502", "V$", "Visa $", "F51", -40000, "515151", "05/09/2026", "12:05:00", "caj1", "S2"),
+                    (502, "170502", "V$", "Visa $", "F52", -50000, "515151", "05/09/2026", "12:06:00", "caj1", "S2"),
+                ]),
+                build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 98810)]),
+                tbk_files=[tbk1],
+            ),
+        )
+        cm_split = CrossMatchResult.objects.get(process=proc1, authorization_code="515151")
+        split_rows = list(ErpTransaction.objects.filter(process=proc1, authorization_code="515151").order_by("id"))
+        self.assertEqual(len(split_rows), 2)
+        cm_split.system_result = "AMOUNT_MISMATCH"
+        cm_split.difference_clp = Decimal("10000.00")
+        cm_split.save(update_fields=["system_result", "difference_clp"])
+
+        multi_sug = pending_recross._build_clp_discrepancy_suggestion(cm_split, split_rows[0], linked_rows=split_rows)
+        self.assertIsNotNone(multi_sug)
+        self.assertNotIn("proposed_change", multi_sug)
+
+        single_sug = pending_recross._build_clp_discrepancy_suggestion(cm_split, split_rows[0], linked_rows=[split_rows[0]])
+        self.assertIsNotNone(single_sug)
+        self.assertIn("proposed_change", single_sug)
+
+        # 2) USD partial NOT_FOUND_IN_ERP -> AMOUNT_MISMATCH updates system_status_detail.
+        u_proc1 = commit_usd_preview_to_database(
+            self.user,
+            calculate_usd_preview(
+                erp_file=_build_usd_bordero_file([]),
+                transbank_file=_build_usd_tbk_file([("06/09/2026", "VI", "4260 40** **** 6262", 100.00, "626262")]),
+                bank_statement_file=build_cartola([("08/09/2026", "Abono USD", 100.00)]),
+                amex_file=_build_operator_file("AX_U.xlsx", []),
+                diners_file=_build_operator_file("DI_U.xlsx", []),
+                visa_file=_build_operator_file("VI_U.xlsx", []),
+                mastercard_file=_build_operator_file("MC_U.xlsx", []),
+            ),
+        )
+        u_cm = CrossMatchResult.objects.get(process=u_proc1, authorization_code="626262")
+        self.assertEqual(u_cm.system_result, "NOT_FOUND_IN_ERP")
+
+        commit_usd_preview_to_database(
+            self.user,
+            calculate_usd_preview(
+                erp_file=_build_usd_bordero_file([
+                    (601, "626262", "VUS$", "Visa USD", "F60", -85000, "626262", "07/09/2026", "12:00:00", "caj1", "U2"),
+                ]),
+                transbank_file=_build_usd_tbk_file([("07/09/2026", "VI", "4260 40** **** 9999", 50.00, "999999")]),
+                bank_statement_file=build_cartola([("09/09/2026", "Abono USD", 50.00)]),
+                amex_file=_build_operator_file("AX_U2.xlsx", []),
+                diners_file=_build_operator_file("DI_U2.xlsx", []),
+                visa_file=_build_operator_file("VI_U2.xlsx", [(626262, 1, 92.00, 85000, 85000)]),
+                mastercard_file=_build_operator_file("MC_U2.xlsx", []),
+            ),
+        )
+        u_cm.refresh_from_db()
+        self.assertEqual(u_cm.system_result, "AMOUNT_MISMATCH")
+        self.assertIn("USD", u_cm.system_status_detail)
+
+        # 3) Step-2 apply_pending_corrections avoids intermediate recross_pending_cases calls & exposes resolved_prior_count.
+        tbk_pend = build_tbk_settlement("TBK_P.xlsx", "Crédito", [
+            ("05 septiembre 2026", "REST", 22000, "Venta $", "S/C", 22000, 220, 42, "4260**3030", "303030"),
+        ])
+        commit_clp_preview_to_database(
+            self.user,
+            calculate_clp_preview(build_bordero([]), build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 21738)]), tbk_files=[tbk_pend]),
+        )
+        tbk_new = build_tbk_settlement("TBK_NEW.xlsx", "Crédito", [
+            ("12 septiembre 2026", "REST", 33000, "Venta $", "S/C", 33000, 330, 63, "4260**4040", "404040"),
+        ])
+        erp_new = build_bordero([
+            (701, "170701", "V$", "Visa $", "F70", -30000, "404040", "12/09/2026", "12:00:00", "caj1", "N1"),
+            (702, "170702", "V$", "Visa $", "F71", -22000, "303030", "06/09/2026", "12:00:00", "caj1", "N2"),
+        ])
+        preview_new = calculate_clp_preview(erp_new, build_cartola([("14/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 32607)]), tbk_files=[tbk_new])
+        tbk_idx = preview_new["discrepancy_vouchers"][0]["tbk_index"]
+        apply_preview_correction(preview_new, "CLP", tbk_idx, "33000")
+
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["clp_reconciliation_preview"] = preview_new
+        session.save()
+
+        real_recross = pending_recross.recross_pending_cases
+        with (
+            patch("web.services.pending_recross.recross_pending_cases") as spy_dyn,
+            patch(
+                "web.services.clp_persistence.recross_pending_cases",
+                wraps=real_recross,
+            ) as spy_clp,
+        ):
+            resp = self.client.post(reverse("clp_commit"), HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertTrue(payload["success"])
+        self.assertGreaterEqual(payload["resolved_prior_count"], 1)
+        self.assertEqual(spy_clp.call_count, 1)
+        self.assertEqual(spy_dyn.call_count, 0)
+
+    def test_usd_reupload_preserves_split_matched_and_mismatch_without_phantom_exceptions(self):
+        def _usd_files():
+            return {
+                "erp_file": _build_usd_bordero_file([
+                    (201, 1716476, "MUS$", "Master Card US$", 100076, -112388, "000503Z", "29/11/2025", "18:00:00", "caj1", "SPLIT USD"),
+                    (201, 1711636, "MUS$", "Master Card US$", 100075, -224776, "000503Z", "29/11/2025", "18:01:00", "caj1", "SPLIT USD"),
+                    (202, 1716590, "MUS$", "Master Card US$", 100103, -321890, "691302", "30/11/2025", "19:00:00", "caj2", "NO OP USD"),
+                ]),
+                "transbank_file": _build_usd_tbk_file([
+                    ("29/11/2025", "MC", "5525 61** **** 0503", 364.50, "00503Z"),
+                    ("30/11/2025", "MC", "5525 61** **** 6913", 348.68, "691302"),
+                ]),
+                "bank_statement_file": build_cartola([("03/12/2025", "Pago: Abono Divisas Transbank", 713.18)]),
+                "amex_file": _build_operator_file("AX_SPL.xlsx", []),
+                "diners_file": _build_operator_file("DI_SPL.xlsx", []),
+                "visa_file": _build_operator_file("VI_SPL.xlsx", []),
+                "mastercard_file": _build_operator_file("MC_SPL.xlsx", [
+                    (1716476, 1, 121.50, 112388, 112388),
+                    (1711636, 1, 243.00, 224776, 224776),
+                ]),
+            }
+
+        # 1) First upload & commit: split voucher is MATCHED across 2 ERP rows, missing-op voucher stays AMOUNT_MISMATCH
+        proc1 = commit_usd_preview_to_database(self.user, calculate_usd_preview(**_usd_files()))
+        cm_split = CrossMatchResult.objects.get(process=proc1, authorization_code="00503Z")
+        cm_mismatch = CrossMatchResult.objects.get(process=proc1, authorization_code="691302")
+        self.assertEqual(cm_split.system_result, "MATCHED")
+        self.assertEqual(cm_mismatch.system_result, "AMOUNT_MISMATCH")
+
+        erp_1 = ErpTransaction.objects.get(document_number="1716476")
+        erp_2 = ErpTransaction.objects.get(document_number="1711636")
+        erp_no_op = ErpTransaction.objects.get(document_number="1716590")
+        self.assertTrue(erp_1.reconciled)
+        self.assertTrue(erp_2.reconciled)
+        self.assertFalse(erp_no_op.reconciled)
+
+        # 2) Exact same re-upload must remain idempotent: 00503Z stays MATCHED, 691302 stays AMOUNT_MISMATCH
+        preview2 = calculate_usd_preview(**_usd_files())
+        self.assertEqual(len(preview2["matched_vouchers"]), 1)
+        self.assertEqual(len(preview2["discrepancy_vouchers"]), 1)
+        self.assertEqual(len(preview2["orphan_vouchers"]), 0)
+
+        proc2 = commit_usd_preview_to_database(self.user, preview2)
+        self.assertEqual(proc2.id, proc1.id)
+        cm_split.refresh_from_db()
+        cm_mismatch.refresh_from_db()
+        erp_no_op.refresh_from_db()
+        self.assertEqual(cm_split.system_result, "MATCHED")
+        self.assertEqual(cm_mismatch.system_result, "AMOUNT_MISMATCH")
+        self.assertFalse(erp_no_op.reconciled)
+        self.assertEqual(AuditResolutionLog.objects.filter(cross_match_result__process=proc1).count(), 0)
+
+        # 3) Cross-closing guard: another USD closing with auth 00503Z on another date cannot steal either split row
+        other_preview = calculate_usd_preview(
+            erp_file=_build_usd_bordero_file([
+                (201, 1716476, "MUS$", "Master Card US$", 100076, -112388, "000503Z", "29/11/2025", "18:00:00", "caj1", "SPLIT USD"),
+                (201, 1711636, "MUS$", "Master Card US$", 100075, -224776, "000503Z", "29/11/2025", "18:01:00", "caj1", "SPLIT USD"),
+            ]),
+            transbank_file=_build_usd_tbk_file([("15/12/2025", "MC", "5525 61** **** 0503", 243.00, "00503Z")]),
+            bank_statement_file=build_cartola([("18/12/2025", "Pago: Abono Divisas Transbank", 243.00)]),
+            amex_file=_build_operator_file("AX_OTH.xlsx", []),
+            diners_file=_build_operator_file("DI_OTH.xlsx", []),
+            visa_file=_build_operator_file("VI_OTH.xlsx", []),
+            mastercard_file=_build_operator_file("MC_OTH.xlsx", [
+                (1711636, 1, 243.00, 224776, 224776),
+            ]),
+        )
+        self.assertEqual([v["authorization_code"] for v in other_preview["orphan_vouchers"]], ["00503Z"])
+
+        # 4) Healing check: pre-existing stale reconciled=True with unclaimed CrossMatchResult heals on re-upload
+        ErpTransaction.objects.filter(id=erp_no_op.id).update(reconciled=True)
+        cm_split.system_result = "AMOUNT_MISMATCH"
+        cm_split.save(update_fields=["system_result"])
+        healed_proc = commit_usd_preview_to_database(self.user, calculate_usd_preview(**_usd_files()))
+        self.assertEqual(healed_proc.id, proc1.id)
+        cm_split.refresh_from_db()
+        cm_mismatch.refresh_from_db()
+        erp_no_op.refresh_from_db()
+        self.assertEqual(cm_split.system_result, "MATCHED")
+        self.assertEqual(cm_mismatch.system_result, "AMOUNT_MISMATCH")
+        self.assertFalse(erp_no_op.reconciled)
+
+    def test_clp_reupload_preserves_split_matched_and_blocks_cross_closing_theft(self):
+        def _clp_files():
+            tbk_file = build_tbk_settlement("TBK_CLP_SPLIT.xlsx", "Crédito", [
+                ("05 septiembre 2026", "REST", 100000, "Venta $", "S/C", 100000, 1000, 190, "4260**7778", "777888"),
+            ])
+            return {
+                "erp_file": build_bordero([
+                    (701, "1785777", "V$", "Visa $", "F81", -60000, "777888", "05/09/2026", "12:00:00", "caj1", "CLP SPLIT"),
+                    (701, "1785777", "V$", "Visa $", "F82", -40000, "777888", "05/09/2026", "12:01:00", "caj1", "CLP SPLIT"),
+                ]),
+                "bank_statement_file": build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 98810)]),
+                "tbk_files": [tbk_file],
+            }
+
+        proc1 = commit_clp_preview_to_database(self.user, calculate_clp_preview(**_clp_files()))
+        cm1 = CrossMatchResult.objects.get(process=proc1, authorization_code="777888")
+        self.assertEqual(cm1.system_result, "MATCHED")
+        rows = list(ErpTransaction.objects.filter(process=proc1, authorization_code="777888").order_by("id"))
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r.reconciled for r in rows))
+
+        # Re-uploading exact same CLP closing preserves MATCHED across both split rows
+        reupload_preview = calculate_clp_preview(**_clp_files())
+        self.assertEqual(len(reupload_preview["matched_vouchers"]), 1)
+        self.assertEqual(reupload_preview["matched_vouchers"][0]["erp_amount"], 100000.0)
+        proc2 = commit_clp_preview_to_database(self.user, reupload_preview)
+        self.assertEqual(proc2.id, proc1.id)
+        cm1.refresh_from_db()
+        self.assertEqual(cm1.system_result, "MATCHED")
+
+        # Unrelated closing on a different date within the period cannot steal the secondary split ERP row (-40000)
+        other_tbk = build_tbk_settlement("TBK_CLP_OTHER.xlsx", "Crédito", [
+            ("06 septiembre 2026", "REST", 40000, "Venta $", "S/C", 40000, 400, 76, "4260**7778", "777888"),
+        ])
+        other_preview = calculate_clp_preview(
+            erp_file=build_bordero([
+                (701, "1785777", "V$", "Visa $", "F81", -60000, "777888", "05/09/2026", "12:00:00", "caj1", "CLP SPLIT"),
+                (701, "1785777", "V$", "Visa $", "F82", -40000, "777888", "05/09/2026", "12:01:00", "caj1", "CLP SPLIT"),
+            ]),
+            bank_statement_file=build_cartola([("08/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 39524)]),
+            tbk_files=[other_tbk],
+        )
+        self.assertEqual([v["authorization_code"] for v in other_preview["orphan_vouchers"]], ["777888"])

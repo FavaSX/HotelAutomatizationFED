@@ -86,6 +86,7 @@ def handle_commit_preview(
         messages.error(request, f"Error al guardar el proceso en base de datos: {error}")
         return redirect(preview_url_name)
 
+    resolved_prior_count = int((getattr(process, "_recross_stats", None) or {}).get("matched", 0))
     request.session.pop(session_key, None)
     if is_ajax:
         return JsonResponse({
@@ -96,11 +97,20 @@ def handle_commit_preview(
             "auditor": process.user.username,
             "total_vouchers": process.cross_match_results.count(),
             "matched_count": process.cross_match_results.filter(system_result="MATCHED").count(),
+            "resolved_prior_count": resolved_prior_count,
             "export_url": reverse(export_url_name, args=[process.id]),
             "upload_url": reverse(upload_url_name),
         })
 
-    messages.success(request, f"¡Cierre en {currency_label} #{process.id} guardado formalmente con éxito en la base de datos!")
+    extra_msg = (
+        f" Se conciliaron automáticamente {resolved_prior_count} caso(s) pendiente(s) de cierres anteriores."
+        if resolved_prior_count > 0
+        else ""
+    )
+    messages.success(
+        request,
+        f"¡Cierre en {currency_label} #{process.id} guardado formalmente con éxito en la base de datos!{extra_msg}",
+    )
     return redirect(upload_url_name)
 
 

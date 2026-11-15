@@ -374,8 +374,18 @@ class CrossMatchResult(models.Model):
         return "" if val in ("", "—") else val
 
     @property
+    def _has_erp_link(self) -> bool:
+        """Unlinked ERP exceptions must not surface unaccepted suggestion codes as matched."""
+        return bool(
+            self.erp_transaction_id
+            or self.system_result not in ("NOT_FOUND_IN_ERP", "OUT_OF_PERIOD")
+        )
+
+    @property
     def display_account_code(self) -> str:
         """Bordero Col. D ('Cuenta'), supporting both new rows and historical DB rows."""
+        if not self._has_erp_link:
+            return ""
         direct = self._clean_code(self.account_code)
         if direct:
             return direct
@@ -390,6 +400,8 @@ class CrossMatchResult(models.Model):
     @property
     def display_erp_document(self) -> str:
         """Bordero Col. J ('Documento'), supporting both new rows and historical DB rows."""
+        if not self._has_erp_link:
+            return ""
         if self.erp_transaction_id:
             from_erp = self._clean_code(self.erp_transaction.authorization_code)
             if from_erp:
