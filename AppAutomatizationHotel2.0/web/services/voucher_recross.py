@@ -13,6 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
+from django.db import connection
 from django.db.models import Max, Min, Q
 
 from ..models import (
@@ -44,24 +45,28 @@ def _rows_with_code(currency: str, code: str) -> List[ErpTransaction]:
         if currency == "USD"
         else Q(card_type__isnull=False) | Q(payment_code__in=("RCO", "RC", "REDCOMPRA", "V$", "MC$", "AME$", "DIN$"))
     )
-    rows = (
+    qs = (
         ErpTransaction.objects.filter(source_currency=currency, authorization_code__icontains=code)
         .filter(card_filter)
         .select_related("card_type")
         .order_by("id")
     )
-    return [r for r in rows if normalize_auth_code(r.authorization_code or "") == code]
+    if connection.in_atomic_block:
+        qs = qs.select_for_update()
+    return [r for r in qs if normalize_auth_code(r.authorization_code or "") == code]
 
 
 def _claimed_by_other_vouchers(match: CrossMatchResult, row_ids: List[int]) -> set:
     if not row_ids:
         return set()
-    return set(
+    qs = (
         CrossMatchResult.objects.filter(erp_transaction_id__in=row_ids)
         .exclude(pk=match.pk)
         .exclude(system_result__in=NOT_LINKED_RESULTS)
-        .values_list("erp_transaction_id", flat=True)
     )
+    if connection.in_atomic_block:
+        qs = qs.select_for_update()
+    return set(qs.values_list("erp_transaction_id", flat=True))
 
 
 def _erp_row_allowed_for_pending_recross(
@@ -334,6 +339,34 @@ def recalculate_process_summaries(process: ReconciliationProcess) -> None:
                     summary.save(update_fields=["erp_sales_total", "transbank_sales_total", "difference"])
 
 
+def _release_unclaimed_erp_rows(match: CrossMatchResult, candidate_row_ids: set, keep_ids: set) -> None:
+    """Reverts `reconciled=False` on ERP rows previously linked to `match` that are no longer claimed by any MATCHED voucher."""
+    release_ids = {rid for rid in candidate_row_ids if rid and rid not in keep_ids}
+    if not release_ids:
+        return
+    currency = match.process.process_currency
+    other_matched_qs = (
+        CrossMatchResult.objects.filter(process__process_currency=currency, system_result="MATCHED")
+        .exclude(pk=match.pk)
+    )
+    still_primary_ids = set(
+        other_matched_qs.filter(erp_transaction_id__in=release_ids).values_list("erp_transaction_id", flat=True)
+    )
+    other_matched_codes = {
+        normalize_auth_code(code or "")
+        for code in other_matched_qs.values_list("authorization_code", flat=True)
+        if normalize_auth_code(code or "")
+    }
+    rows_to_unreconcile = []
+    for erp_row in ErpTransaction.objects.filter(id__in=(release_ids - still_primary_ids), reconciled=True):
+        row_code = normalize_auth_code(erp_row.authorization_code or "")
+        if row_code and row_code in other_matched_codes:
+            continue
+        rows_to_unreconcile.append(erp_row.id)
+    if rows_to_unreconcile:
+        ErpTransaction.objects.filter(id__in=rows_to_unreconcile).update(reconciled=False)
+
+
 def recross_voucher(match: CrossMatchResult, restrict_to_date_window: bool = False) -> Dict[str, Any]:
     """
     Recomputes the cross-match of one voucher from the database and writes the new result on `match`
@@ -344,9 +377,15 @@ def recross_voucher(match: CrossMatchResult, restrict_to_date_window: bool = Fal
     """
     if match.transbank_transaction_id is None:
         raise RecrossError("Este caso no tiene un voucher de Transbank asociado; no se puede volver a cruzar.")
+    prev_erp_id = match.erp_transaction_id
+    prev_code = normalize_auth_code(match.authorization_code or "")
+    currency = match.process.process_currency
+    prev_same_code_ids = {
+        r.id for r in (_rows_with_code(currency, prev_code) if prev_code else []) if r.reconciled
+    }
     outcome = (
         _recross_clp(match, restrict_to_date_window=restrict_to_date_window)
-        if match.process.process_currency == "CLP"
+        if currency == "CLP"
         else _recross_usd(match, restrict_to_date_window=restrict_to_date_window)
     )
     previous = match.system_result
@@ -354,21 +393,31 @@ def recross_voucher(match: CrossMatchResult, restrict_to_date_window: bool = Fal
         setattr(match, field_name, value)
     match.system_result = outcome["system_result"]
     tbk = match.transbank_transaction
+    candidate_release_ids = (
+        ({prev_erp_id} if prev_erp_id else set())
+        | prev_same_code_ids
+        | {r.id for r in outcome.get("linked_rows", []) if r.id}
+    )
     if outcome["system_result"] == "MATCHED":
+        matched_ids = set()
         for row in outcome["linked_rows"]:
+            matched_ids.add(row.id)
             if not row.reconciled:
                 row.reconciled = True
                 row.save(update_fields=["reconciled"])
+        _release_unclaimed_erp_rows(match, candidate_release_ids, keep_ids=matched_ids)
         if not tbk.reconciled:
             tbk.reconciled = True
             tbk.save(update_fields=["reconciled"])
-    elif tbk.reconciled:
-        other_matched = (
-            CrossMatchResult.objects.filter(transbank_transaction=tbk, system_result="MATCHED")
-            .exclude(pk=match.pk)
-            .exists()
-        )
-        if not other_matched:
-            tbk.reconciled = False
-            tbk.save(update_fields=["reconciled"])
+    else:
+        _release_unclaimed_erp_rows(match, candidate_release_ids, keep_ids=set())
+        if tbk.reconciled:
+            other_matched = (
+                CrossMatchResult.objects.filter(transbank_transaction=tbk, system_result="MATCHED")
+                .exclude(pk=match.pk)
+                .exists()
+            )
+            if not other_matched:
+                tbk.reconciled = False
+                tbk.save(update_fields=["reconciled"])
     return {**outcome, "previous_result": previous}

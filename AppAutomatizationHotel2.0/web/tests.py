@@ -3923,3 +3923,308 @@ class ManualErpProtectionAndPendingRecrossEdgeCasesTests(TestCase):
             tbk_files=[other_tbk],
         )
         self.assertEqual([v["authorization_code"] for v in other_preview["orphan_vouchers"]], ["777888"])
+
+
+class FinTechAuditQaFixesTests(TestCase):
+    """
+    Automated QA suite verifying FinTech / AppSec audit fixes:
+    H-01, H-02, H-03, H-06, H-07, H-08, H-09, H-10, H-11, and H-12.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user("qa_auditor", "qa@hotel.cl", "Pass1234!")
+        for code, name in [("AX", "American Express"), ("DI", "Diners Club"), ("VI", "Visa"), ("MC", "MasterCard")]:
+            CardType.objects.get_or_create(code=code, defaults={"name": name})
+        ReconciliationStatus.objects.get_or_create(code="PENDING", defaults={"display_name": "Pendiente"})
+        ReconciliationStatus.objects.get_or_create(code="RESOLVED_ERP_FIXED", defaults={"display_name": "Corregido en ERP"})
+        ReconciliationStatus.objects.get_or_create(code="RESOLVED_ADJUSTMENT", defaults={"display_name": "Resuelto con Ajuste"})
+
+    def test_h01_safe_decimal_and_safe_date_handle_international_and_iso_formats(self):
+        from .services.column_detector import safe_decimal, safe_date
+
+        # Chilean/European, US, thousands-only CLP integers, accounting parentheses, trailing minus, currency symbols
+        self.assertEqual(safe_decimal("1.250,50"), Decimal("1250.50"))
+        self.assertEqual(safe_decimal("1,250.50"), Decimal("1250.50"))
+        self.assertEqual(safe_decimal("15.000"), Decimal("15000.00"))
+        self.assertEqual(safe_decimal("1.250.000"), Decimal("1250000.00"))
+        self.assertEqual(safe_decimal("15,000"), Decimal("15000.00"))
+        self.assertEqual(safe_decimal("(500,25)"), Decimal("-500.25"))
+        self.assertEqual(safe_decimal("500-"), Decimal("-500.00"))
+        self.assertEqual(safe_decimal("$ 15.000"), Decimal("15000.00"))
+        self.assertEqual(safe_decimal("US$ 120.50"), Decimal("120.50"))
+
+        # ISO timestamps with milliseconds or short time must not swap day/month
+        self.assertEqual(safe_date("2026-03-05 14:30:00.123"), date(2026, 3, 5))
+        self.assertEqual(safe_date("2026-03-05T08:15"), date(2026, 3, 5))
+        self.assertEqual(safe_date("05/03/2026"), date(2026, 3, 5))
+
+    def test_h02_split_folio_secondary_row_deletion_and_unmatch_release_reconciled_flag(self):
+        tbk_file = build_tbk_settlement("TBK_H02.xlsx", "Crédito", [
+            ("05 septiembre 2026", "REST", 100000, "Venta $", "S/C", 100000, 1000, 190, "4260**7778", "888999"),
+        ])
+        preview = calculate_clp_preview(
+            erp_file=build_bordero([
+                (701, "1785900", "V$", "Visa $", "F91", -60000, "888999", "05/09/2026", "12:00:00", "caj1", "SPLIT 1"),
+                (701, "1785900", "V$", "Visa $", "F92", -40000, "888999", "05/09/2026", "12:01:00", "caj1", "SPLIT 2"),
+            ]),
+            bank_statement_file=build_cartola([("07/09/2026", "Pago: Abono Comer. Tc Tbk 0966893109", 98810)]),
+            tbk_files=[tbk_file],
+        )
+        process = commit_clp_preview_to_database(self.user, preview)
+        cm = CrossMatchResult.objects.get(process=process, authorization_code="888999")
+        self.assertEqual(cm.system_result, "MATCHED")
+
+        rows = list(ErpTransaction.objects.filter(process=process, authorization_code="888999").order_by("id"))
+        self.assertEqual(len(rows), 2)
+        primary_row, secondary_row = rows[0], rows[1]
+        self.assertTrue(primary_row.reconciled)
+        self.assertTrue(secondary_row.reconciled)
+
+        # Deleting the secondary split row must re-cross the parent voucher to AMOUNT_MISMATCH
+        # AND release reconciled=False on the primary row
+        soft_delete_row(secondary_row, self.user, reason="Cobro duplicado en folio dividido", match=cm)
+        cm.refresh_from_db()
+        primary_row.refresh_from_db()
+        secondary_row.refresh_from_db()
+        self.assertEqual(cm.system_result, "AMOUNT_MISMATCH")
+        self.assertFalse(primary_row.reconciled)
+        self.assertFalse(secondary_row.reconciled)
+
+    def test_h03_overlapping_upload_preserves_process_ownership_and_duplicate_account_operator_rows(self):
+        # Two identical USD card charges on the same guest account (1715625) in the same closing
+        erp_file = _build_usd_bordero_file([
+            (301, 1715625, "VUS$", "Visa US$", 200001, -95000, "111222", "26/11/2025", "10:00:00", "caj1", "GUEST A"),
+            (301, 1715625, "VUS$", "Visa US$", 200002, -95000, "333444", "26/11/2025", "10:05:00", "caj1", "GUEST A"),
+        ])
+        tbk_file = _build_usd_tbk_file([
+            ("26/11/2025", "VI", "4551 74** **** 1111", 100.00, "111222"),
+            ("26/11/2025", "VI", "4551 74** **** 1111", 100.00, "333444"),
+        ])
+        cartola_file = build_cartola([("01/12/2025", "Pago: Abono Divisas Transbank", 200.00)])
+        vi_file = _build_operator_file("VI_DUP.xlsx", [
+            (1715625, 1, 100.00, 95000, 95000),
+            (1715625, 1, 100.00, 95000, 95000),
+        ])
+        preview1 = calculate_usd_preview(
+            erp_file=erp_file,
+            transbank_file=tbk_file,
+            bank_statement_file=cartola_file,
+            amex_file=_build_operator_file("AX_E.xlsx", []),
+            diners_file=_build_operator_file("DI_E.xlsx", []),
+            visa_file=vi_file,
+            mastercard_file=_build_operator_file("MC_E.xlsx", []),
+        )
+        self.assertEqual(len(preview1["matched_vouchers"]), 2)
+        proc1 = commit_usd_preview_to_database(self.user, preview1)
+        self.assertEqual(
+            CardOperatorTransaction.objects.filter(process=proc1, document_number="1715625").count(),
+            2,
+        )
+        bank_mov = BankStatementMovement.objects.filter(process=proc1).first()
+        self.assertIsNotNone(bank_mov)
+
+        # Uploading a second distinct USD closing that includes the same bank movement row
+        # must NOT steal `bank_mov.process_id` away from proc1
+        preview2 = calculate_usd_preview(
+            erp_file=_build_usd_bordero_file([
+                (302, 1799999, "VUS$", "Visa US$", 200099, -47500, "555666", "10/12/2025", "11:00:00", "caj1", "GUEST B"),
+            ]),
+            transbank_file=_build_usd_tbk_file([
+                ("10/12/2025", "VI", "4551 74** **** 2222", 50.00, "555666"),
+            ]),
+            bank_statement_file=build_cartola([
+                ("01/12/2025", "Pago: Abono Divisas Transbank", 200.00),
+                ("12/12/2025", "Pago: Abono Divisas Transbank", 50.00),
+            ]),
+            amex_file=_build_operator_file("AX_E2.xlsx", []),
+            diners_file=_build_operator_file("DI_E2.xlsx", []),
+            visa_file=_build_operator_file("VI_E2.xlsx", [(1799999, 1, 50.00, 47500, 47500)]),
+            mastercard_file=_build_operator_file("MC_E2.xlsx", []),
+        )
+        proc2 = commit_usd_preview_to_database(self.user, preview2)
+        self.assertNotEqual(proc1.id, proc2.id)
+        bank_mov.refresh_from_db()
+        self.assertEqual(bank_mov.process_id, proc1.id)
+
+    def test_h06_h07_atomic_suggestion_claiming_and_idor_closed_case_guards(self):
+        visa = CardType.objects.get(code="VI")
+        pending = ReconciliationStatus.objects.get(code="PENDING")
+        closed_status = ReconciliationStatus.objects.get(code="RESOLVED_ADJUSTMENT")
+        process = ReconciliationProcess.objects.create(
+            user=self.user, process_currency="CLP", accounting_period="Cierre Pesos QA"
+        )
+        shared_erp = ErpTransaction.objects.create(
+            process=process, card_type=visa, document_number="9001", invoice_number="F1",
+            authorization_code="ABCD10", amount=Decimal("50000.00"),
+            transaction_date=date(2026, 9, 5), payment_code="V$", source_currency="CLP",
+        )
+        tbk1 = TransbankTransaction.objects.create(
+            process=process, card_type=visa, payment_modality="CREDIT",
+            authorization_code="ABCD11", sale_date=date(2026, 9, 5),
+            original_sale_amount=Decimal("50000.00"),
+        )
+        tbk2 = TransbankTransaction.objects.create(
+            process=process, card_type=visa, payment_modality="CREDIT",
+            authorization_code="ABCD12", sale_date=date(2026, 9, 5),
+            original_sale_amount=Decimal("50000.00"),
+        )
+        case1 = CrossMatchResult.objects.create(
+            process=process, card_type=visa, transbank_transaction=tbk1,
+            authorization_code="ABCD11", transbank_amount=Decimal("50000.00"),
+            system_result="NOT_FOUND_IN_ERP", management_status=pending,
+            auditor_comment=json.dumps({
+                "proposed_change": {
+                    "kind": "TYPO", "erp_id": shared_erp.id,
+                    "field": "authorization_code", "old": "ABCD10", "new": "ABCD11",
+                    "label": "Corregir código a ABCD11",
+                }
+            }),
+        )
+        case2 = CrossMatchResult.objects.create(
+            process=process, card_type=visa, transbank_transaction=tbk2,
+            authorization_code="ABCD12", transbank_amount=Decimal("50000.00"),
+            system_result="NOT_FOUND_IN_ERP", management_status=pending,
+            auditor_comment=json.dumps({
+                "proposed_change": {
+                    "kind": "TYPO", "erp_id": shared_erp.id,
+                    "field": "authorization_code", "old": "ABCD10", "new": "ABCD12",
+                    "label": "Corregir código a ABCD12",
+                }
+            }),
+        )
+
+        # Accepting on case1 claims shared_erp and marks it MATCHED
+        outcome1 = accept_suggestion(case1, self.user)
+        self.assertTrue(outcome1["matched"])
+        shared_erp.refresh_from_db()
+        self.assertTrue(shared_erp.reconciled)
+
+        # Attempting to accept the competing suggestion on case2 for the already-reconciled row must fail
+        with self.assertRaises(CorrectionError):
+            accept_suggestion(case2, self.user)
+
+        # Attempting to edit/delete shared_erp from case2 (IDOR against a row matched with case1) must fail
+        with self.assertRaises(CorrectionError):
+            edit_row(shared_erp, {"amount": "45000"}, self.user, match=case2)
+
+        # Manually closed case cannot be edited without reopening first
+        case2.management_status = closed_status
+        case2.save(update_fields=["management_status"])
+        unclaimed_erp = ErpTransaction.objects.create(
+            process=process, card_type=visa, document_number="9002", invoice_number="F2",
+            authorization_code="ABCD12", amount=Decimal("49000.00"),
+            transaction_date=date(2026, 9, 5), payment_code="V$", source_currency="CLP",
+        )
+        with self.assertRaises(CorrectionError):
+            edit_row(unclaimed_erp, {"amount": "50000"}, self.user, match=case2)
+
+    def test_h08_excel_formula_injection_is_neutralized_in_all_exporters(self):
+        from openpyxl import load_workbook
+        from .services.excel_styles import sanitize_excel_cell
+        from .services.report_exporter import generate_exceptions_excel_bytes
+
+        self.assertEqual(sanitize_excel_cell("=CMD|'/C calc'!A0"), "'=CMD|'/C calc'!A0")
+        self.assertEqual(sanitize_excel_cell("+SUM(A1:A10)"), "'+SUM(A1:A10)")
+        self.assertEqual(sanitize_excel_cell("-1+1"), "'-1+1")
+        self.assertEqual(sanitize_excel_cell("@HYPERLINK(\"http://evil\")"), "'@HYPERLINK(\"http://evil\")")
+        self.assertEqual(sanitize_excel_cell(Decimal("-150.00")), Decimal("-150.00"))
+
+        visa = CardType.objects.get(code="VI")
+        pending = ReconciliationStatus.objects.get(code="PENDING")
+        process = ReconciliationProcess.objects.create(
+            user=self.user, process_currency="USD", accounting_period="Cierre USD Formula Test"
+        )
+        erp_malicious = ErpTransaction.objects.create(
+            process=process, card_type=visa, document_number="=1+1", invoice_number="+cmd",
+            authorization_code="999000", amount=Decimal("100.00"),
+            transaction_date=date(2025, 11, 26), payment_code="VUS$", source_currency="USD",
+            guest_name="=CMD|'/C calc'!A0",
+        )
+        cm = CrossMatchResult.objects.create(
+            process=process, card_type=visa, erp_transaction=erp_malicious,
+            authorization_code="999000", transbank_amount=Decimal("120.00"),
+            operator_amount_usd=Decimal("100.00"), difference_usd=Decimal("20.00"),
+            system_result="AMOUNT_MISMATCH", management_status=pending,
+            auditor_comment="@SUM(1,2)",
+        )
+        excel_stream = generate_exceptions_excel_bytes(list(CrossMatchResult.objects.filter(pk=cm.pk)))
+        wb = load_workbook(excel_stream, data_only=False)
+        ws = wb.active
+        values = [ws.cell(row=2, column=col).value for col in range(1, 17)]
+        self.assertTrue(any(isinstance(v, str) and v.startswith("'") for v in values))
+        for v in values:
+            if isinstance(v, str):
+                self.assertFalse(v.startswith(("=", "+", "@")))
+
+    def test_h09_get_client_ip_validates_x_real_ip_and_trusted_proxy(self):
+        from django.test import RequestFactory
+        from .security import get_client_ip
+
+        rf = RequestFactory()
+        # Loopback proxy + valid X-Real-IP -> returns X-Real-IP
+        req_valid = rf.get("/", REMOTE_ADDR="127.0.0.1", HTTP_X_REAL_IP="203.0.113.45")
+        self.assertEqual(get_client_ip(req_valid), "203.0.113.45")
+
+        # Loopback proxy + spoofed malformed X-Real-IP -> falls back to REMOTE_ADDR
+        req_malformed = rf.get("/", REMOTE_ADDR="127.0.0.1", HTTP_X_REAL_IP="spoofed-ip-header' OR 1=1")
+        self.assertEqual(get_client_ip(req_malformed), "127.0.0.1")
+
+        # Untrusted public REMOTE_ADDR + forged X-Real-IP -> ignores X-Real-IP
+        req_untrusted = rf.get("/", REMOTE_ADDR="198.51.100.77", HTTP_X_REAL_IP="10.0.0.1")
+        self.assertEqual(get_client_ip(req_untrusted), "198.51.100.77")
+
+    def test_h10_h11_h12_decimal_precision_cache_persistence_usd_voids_and_bank_balance_continuity(self):
+        from .services.persistence_common import to_decimal
+        from .services.excel_parsers import (
+            _ADDITIONAL_ERP_CACHE,
+            store_additional_erp_movements,
+            get_additional_erp_movements,
+            validate_bank_statement_running_balance,
+        )
+
+        # H-10: float 0.1 + 0.2 and half-up rounding
+        self.assertEqual(to_decimal(0.1 + 0.2), Decimal("0.30"))
+        self.assertEqual(to_decimal("10.005"), Decimal("10.01"))
+
+        # H-11: Django cache fallback survives in-memory dict eviction
+        sample_rows = [{"document_number": "1001", "amount": Decimal("50000.00")}]
+        token = store_additional_erp_movements(sample_rows)
+        _ADDITIONAL_ERP_CACHE.clear()
+        recovered = get_additional_erp_movements(token)
+        self.assertEqual(len(recovered), 1)
+        self.assertEqual(recovered[0]["document_number"], "1001")
+
+        # H-12 (part 1): Running balance continuity detector
+        movs_ok = [
+            BankStatementMovement(balance_amount=Decimal("1000.00"), deposit_amount=Decimal("500.00"), charge_amount=Decimal("0.00"), document_number="1"),
+            BankStatementMovement(balance_amount=Decimal("800.00"), deposit_amount=Decimal("0.00"), charge_amount=Decimal("200.00"), document_number="2"),
+        ]
+        self.assertTrue(validate_bank_statement_running_balance(movs_ok)["continuity_ok"])
+
+        movs_broken = [
+            BankStatementMovement(balance_amount=Decimal("1000.00"), deposit_amount=Decimal("500.00"), charge_amount=Decimal("0.00"), document_number="1"),
+            BankStatementMovement(balance_amount=Decimal("9999.00"), deposit_amount=Decimal("0.00"), charge_amount=Decimal("200.00"), document_number="2"),
+        ]
+        check_broken = validate_bank_statement_running_balance(movs_broken)
+        self.assertFalse(check_broken["continuity_ok"])
+        self.assertEqual(len(check_broken["discontinuities"]), 1)
+
+        # H-12 (part 2): USD sale + void pair nets out instead of raising false orphan voucher
+        preview_void = calculate_usd_preview(
+            erp_file=_build_usd_bordero_file([
+                (401, 1800001, "VUS$", "Visa US$", 300001, -95000, "777111", "26/11/2025", "10:00:00", "caj1", "VALID SALE"),
+            ]),
+            transbank_file=_build_usd_tbk_file([
+                ("26/11/2025", "VI", "4551 74** **** 1111", 100.00, "777111"),
+                ("26/11/2025", "VI", "4551 74** **** 9999", 80.00, "VOID99"),
+                ("26/11/2025", "VI", "4551 74** **** 9999", -80.00, "VOID99"),
+            ]),
+            bank_statement_file=build_cartola([("01/12/2025", "Pago: Abono Divisas Transbank", 100.00)]),
+            amex_file=_build_operator_file("AX_V.xlsx", []),
+            diners_file=_build_operator_file("DI_V.xlsx", []),
+            visa_file=_build_operator_file("VI_V.xlsx", [(1800001, 1, 100.00, 95000, 95000)]),
+            mastercard_file=_build_operator_file("MC_V.xlsx", []),
+        )
+        self.assertEqual(len(preview_void["matched_vouchers"]), 1)
+        self.assertEqual(len(preview_void["orphan_vouchers"]), 0)
+

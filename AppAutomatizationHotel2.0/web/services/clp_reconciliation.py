@@ -10,7 +10,7 @@ Supports multiple ERP files (e.g. daily extracts, shifts, auxiliary borderos) wi
 
 import os
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
@@ -673,7 +673,12 @@ def calculate_clp_preview(
         for (modality, card_code), acc in sorted(brand_accumulators.items())
     ]
     clp_totals = {
-        key: sum(row[key] for row in modality_table)
+        key: float(
+            sum(
+                (Decimal(str(row[key])) for row in modality_table),
+                Decimal("0.00"),
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        )
         for key in ("tbk_sales", "erp_sales", "difference", "commissions", "net_deposit")
     }
 

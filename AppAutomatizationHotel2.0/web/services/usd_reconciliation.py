@@ -205,12 +205,14 @@ def _resolve_operator_for_erp(
     card_code: str,
     card_operator_index: Dict[str, Dict[str, List[Dict[str, Any]]]],
 ) -> Tuple[Optional[Dict[str, Any]], Decimal, Decimal, str]:
-    """Finds the matching Card Operator record for an ERP entry by document number and CLP balance."""
+    """Finds the matching Card Operator record for an ERP entry by document number and CLP balance, preferring unclaimed rows."""
     erp_clp = erp_entry["amount_clp"]
     candidates = card_operator_index.get(card_code, {}).get(erp_entry["document_number"], [])
+    unclaimed = [c for c in candidates if not c.get("_claimed")]
+    ordered_candidates = unclaimed + [c for c in candidates if c.get("_claimed")]
 
     chosen_op, obs = None, "No encontrado en Posición por Clientes"
-    for cand in candidates:
+    for cand in ordered_candidates:
         if cand["balance_clp"] == erp_clp:
             chosen_op, obs = cand, f"Coincide con SALDO {cand['balance_clp']}"
             break
@@ -218,8 +220,8 @@ def _resolve_operator_for_erp(
             chosen_op, obs = cand, f"Coincide con SALDO CORREGIDO {cand['corrected_balance_clp']}"
             break
 
-    if not chosen_op and candidates:
-        chosen_op = candidates[0]
+    if not chosen_op and ordered_candidates:
+        chosen_op = ordered_candidates[0]
 
     op_usd = chosen_op["foreign_currency_usd"] if chosen_op else Decimal("0.00")
     op_clp = (
@@ -497,14 +499,34 @@ def calculate_usd_preview(
     }
 
     start_row = detail_header_row + 1 if detail_header_row > 0 else 0
+    raw_tbk_rows = []
     for _, row in tbk_df.iloc[start_row:].iterrows():
         auth_code = clean_code_string(safe_cell(row, tbk_cols["authorization_code"]))
         gross_amount_usd = safe_decimal(safe_cell(row, tbk_cols["gross_amount"]))
-        if not auth_code or gross_amount_usd <= 0:
+        if not auth_code or gross_amount_usd == 0:
             continue
-
         movement_type = normalize_text(safe_cell(row, tbk_cols.get("movement_type", -1)))
         if movement_type and "venta" not in movement_type and "anulac" not in movement_type:
+            continue
+        is_void = gross_amount_usd < 0 or ("anulac" in movement_type if movement_type else False)
+        raw_tbk_rows.append((row, auth_code, abs(gross_amount_usd), is_void))
+
+    # Pair and net out void/chargeback rows against matching positive sales (same normalized auth code & USD amount)
+    voided_sale_indices: set = set()
+    for void_idx, (_, v_auth, v_amt, is_void) in enumerate(raw_tbk_rows):
+        if not is_void:
+            continue
+        voided_sale_indices.add(void_idx)
+        v_norm = normalize_auth_code(v_auth)
+        for sale_idx, (_, s_auth, s_amt, s_is_void) in enumerate(raw_tbk_rows):
+            if s_is_void or sale_idx in voided_sale_indices:
+                continue
+            if normalize_auth_code(s_auth) == v_norm and s_amt == v_amt:
+                voided_sale_indices.add(sale_idx)
+                break
+
+    for row_idx, (row, auth_code, gross_amount_usd, is_void) in enumerate(raw_tbk_rows):
+        if is_void or row_idx in voided_sale_indices or gross_amount_usd <= 0:
             continue
 
         masked_card = str(safe_cell(row, tbk_cols["masked_card_number"]) or "").strip()
@@ -561,6 +583,7 @@ def calculate_usd_preview(
                 operator_doc_number = selected_op["instance"].document_number if selected_op and selected_op.get("instance") else ""
                 operator_index = selected_op["operator_index"] if selected_op else None
                 if selected_op and operator_index is not None:
+                    selected_op["_claimed"] = True
                     card_operator_transactions_data[operator_index]["authorization_code"] = auth_code
             else:
                 primary_cand = next((c for c in resolved_candidates if c[0]["amount_clp"] > 0), resolved_candidates[0])
@@ -588,6 +611,7 @@ def calculate_usd_preview(
                     operator_usd += op_usd
                     operator_clp += op_clp
                     if chosen_op and chosen_op.get("operator_index") is not None:
+                        chosen_op["_claimed"] = True
                         card_operator_transactions_data[chosen_op["operator_index"]]["authorization_code"] = auth_code
                         if chosen_op.get("instance") and chosen_op["instance"].document_number:
                             op_d = chosen_op["instance"].document_number

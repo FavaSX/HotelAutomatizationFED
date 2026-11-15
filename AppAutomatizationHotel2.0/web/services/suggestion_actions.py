@@ -231,34 +231,53 @@ def _require_open(match: CrossMatchResult) -> Dict[str, Any]:
 @transaction.atomic
 def accept_suggestion(match: CrossMatchResult, user, value: Any = None) -> Dict[str, Any]:
     """Applies the suggested change; `value` lets the accountant adjust the suggested value before accepting."""
-    suggestion = _require_open(match)
+    locked_match = (
+        CrossMatchResult.objects.select_for_update()
+        .select_related("process", "transbank_transaction", "card_type", "management_status")
+        .get(pk=match.pk)
+    )
+    suggestion = _require_open(locked_match)
     proposal = suggestion["proposed_change"]
     new_value = value if value not in (None, "") else proposal["new"]
-    row = ErpTransaction.objects.filter(pk=proposal["erp_id"]).first()
+    row = ErpTransaction.objects.select_for_update().filter(pk=proposal["erp_id"]).first()
     if row is None:
         raise CorrectionError("La fila de la sugerencia ya no está en el ERP (fue eliminada). Corrígelo a mano.")
+    claimed_elsewhere = (
+        CrossMatchResult.objects.filter(erp_transaction_id=row.pk, system_result="MATCHED")
+        .exclude(pk=locked_match.pk)
+        .exists()
+    )
+    if claimed_elsewhere or (row.reconciled and locked_match.erp_transaction_id != row.pk):
+        raise CorrectionError("La fila del ERP ya fue conciliada con otro voucher. Revísala y corrígela a mano.")
     if _as_text(getattr(row, proposal["field"])) != proposal["old"]:
         raise CorrectionError("La fila cambió desde que se hizo la sugerencia. Revísala y corrígela a mano.")
     outcome = edit_row(
-        row, {proposal["field"]: new_value}, user, match=match,
+        row, {proposal["field"]: new_value}, user, match=locked_match,
         source=ErpTransactionChange.SOURCE_SUGGESTION,
         reason="Sugerencia aceptada" if new_value == proposal["new"] else "Sugerencia aceptada con el valor ajustado",
     )
-    _mark(match, suggestion, ACCEPTED)
+    _mark(locked_match, suggestion, ACCEPTED)
+    match.refresh_from_db()
     return outcome
 
 
 @transaction.atomic
 def reject_suggestion(match: CrossMatchResult, user, comment: str = "") -> None:
-    suggestion = _require_open(match)
-    previous_status = match.management_status
+    locked_match = (
+        CrossMatchResult.objects.select_for_update()
+        .select_related("management_status")
+        .get(pk=match.pk)
+    )
+    suggestion = _require_open(locked_match)
+    previous_status = locked_match.management_status
     rejected = ReconciliationStatus.objects.get(code="REJECTED")
-    match.management_status = rejected
-    match.save(update_fields=["management_status"])
-    _mark(match, suggestion, REJECTED)
+    locked_match.management_status = rejected
+    locked_match.save(update_fields=["management_status"])
+    _mark(locked_match, suggestion, REJECTED)
     note = f"Sugerencia rechazada ({suggestion['proposed_change']['label']}). El ERP no se modificó"
     comment = (comment or "").strip()
     AuditResolutionLog.objects.create(
-        cross_match_result=match, user=user, previous_status=previous_status, new_status=rejected,
+        cross_match_result=locked_match, user=user, previous_status=previous_status, new_status=rejected,
         comment=f"{note}. {comment}" if comment else note + ".",
     )
+    match.refresh_from_db()

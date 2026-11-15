@@ -7,9 +7,10 @@ Solves both column renaming and column reordering in Excel files:
 """
 
 import math
+import re
 import unicodedata
 from datetime import date, datetime, time as dt_time
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict
 import pandas as pd
 
@@ -152,16 +153,82 @@ def clean_code_string(raw_value: Any) -> str:
     return code_string
 
 
+_CURRENCY_CLEAN_RE = re.compile(r"[^\d,.\-+()]")
+_THOUSANDS_DOT_RE = re.compile(r"^-?\d{1,3}(\.\d{3})+$")
+_THOUSANDS_COMMA_RE = re.compile(r"^-?\d{1,3}(,\d{3})+$")
+
+
 def safe_decimal(raw_value: Any, default: Decimal = Decimal("0.00")) -> Decimal:
-    """Converts raw cell values to Decimal safely, treating NaN and text as zero."""
-    if pd.isna(raw_value):
+    """
+    Converts raw cell values to Decimal safely, supporting Chilean/European ('1.250,50',
+    '15.000'), US ('1,250.50'), accounting negative parentheses ('(500,25)'), trailing
+    minus ('500-'), and currency prefixes ('$ 15.000', 'US$ 120.50').
+    """
+    if raw_value is None or raw_value is pd.NaT or raw_value is pd.NA:
         return default
-    try:
-        if isinstance(raw_value, float) and math.isnan(raw_value):
+    if isinstance(raw_value, Decimal):
+        return default if raw_value.is_nan() else raw_value
+    if isinstance(raw_value, int) and not isinstance(raw_value, bool):
+        return Decimal(raw_value)
+    if isinstance(raw_value, float):
+        if math.isnan(raw_value) or math.isinf(raw_value):
             return default
-        string_value = str(raw_value).strip().replace(",", ".")
-        return Decimal(string_value)
+        return Decimal(str(raw_value))
+    try:
+        if pd.isna(raw_value):
+            return default
     except Exception:
+        pass
+
+    try:
+        raw_str = str(raw_value).strip()
+        if not raw_str or raw_str.lower() in ("nan", "none", "nat", "<na>"):
+            return default
+
+        # Scientific notation fast-path (e.g. '1.5E+04')
+        if "e" in raw_str.lower() and "," not in raw_str:
+            return Decimal(raw_str)
+
+        text = _CURRENCY_CLEAN_RE.sub("", raw_str)
+        if not text:
+            return default
+
+        is_negative = False
+        if text.startswith("(") and text.endswith(")"):
+            is_negative = True
+            text = text[1:-1].strip()
+        elif text.endswith("-"):
+            is_negative = True
+            text = text[:-1].strip()
+        elif text.startswith("-"):
+            is_negative = True
+            text = text[1:].strip()
+        elif text.startswith("+"):
+            text = text[1:].strip()
+
+        if not text:
+            return default
+
+        if "," in text and "." in text:
+            if text.rfind(",") > text.rfind("."):
+                # Chilean/European: '1.250,50' -> '1250.50'
+                text = text.replace(".", "").replace(",", ".")
+            else:
+                # US/International: '1,250.50' -> '1250.50'
+                text = text.replace(",", "")
+        elif "," in text:
+            if _THOUSANDS_COMMA_RE.match(text):
+                # Pure US thousands integer: '1,250,000' or '15,000' -> '1250000' / '15000'
+                text = text.replace(",", "")
+            else:
+                text = text.replace(",", ".")
+        elif "." in text and _THOUSANDS_DOT_RE.match(text):
+            # Pure Chilean thousands integer in text cell: '15.000' or '1.250.000' -> '15000'
+            text = text.replace(".", "")
+
+        val = Decimal(text)
+        return -abs(val) if is_negative else val
+    except (InvalidOperation, ValueError, Exception):
         return default
 
 
@@ -202,11 +269,13 @@ def _fast_parse_date_str(text: str):
                 return date.fromisoformat(text)
             if text[2] == "-" and text[5] == "-":
                 return datetime.strptime(text, "%d-%m-%Y").date()
-        elif n == 19 and (text[10] == " " or text[10] == "T"):
-            if text[2] == "/" and text[5] == "/" and text[13] == ":" and text[16] == ":":
+        elif n > 10 and (text[10] == " " or text[10] == "T"):
+            if text[2] == "/" and text[5] == "/":
                 return datetime.strptime(text[:10], "%d/%m/%Y").date()
             if text[4] == "-" and text[7] == "-":
                 return date.fromisoformat(text[:10])
+            if text[2] == "-" and text[5] == "-":
+                return datetime.strptime(text[:10], "%d-%m-%Y").date()
     except ValueError:
         return None
     return None

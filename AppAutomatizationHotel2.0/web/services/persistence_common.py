@@ -23,7 +23,7 @@ from ..models import (
     ReconciliationStatus,
     TransbankTransaction,
 )
-from .column_detector import safe_date, safe_time
+from .column_detector import safe_date, safe_time, safe_decimal
 from .erp_corrections import (
     active_claimed_sales_by_erp_id,
     modified_excel_rows_by_current_key,
@@ -91,8 +91,15 @@ def get_protected_tbk_match_ids(
 
 
 def to_decimal(value: Any) -> Decimal:
-    """Safely converts a numeric/string value into a 2-decimal-place Decimal."""
-    return round(Decimal(str(value or 0)), 2)
+    """Safely converts a numeric/string value into a 2-decimal-place Decimal using ROUND_HALF_UP."""
+    from decimal import ROUND_HALF_UP
+    if isinstance(value, Decimal):
+        d = value
+    elif isinstance(value, float):
+        d = Decimal(f"{value:.6f}")
+    else:
+        d = Decimal(str(value or 0))
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def get_model_at(model_list: List[Any], index_val: Optional[int]) -> Optional[Any]:
@@ -158,7 +165,7 @@ def sync_bank_statement_movements(
             bank_models.append(new_obj)
         else:
             changed = False
-            if existing_obj.process_id != process.id:
+            if existing_obj.process_id is None:
                 existing_obj.process = process
                 changed = True
             if account_number and not existing_obj.bank_account_number:
@@ -483,7 +490,7 @@ def sync_transbank_transactions_for_process(
             ):
                 existing_tbk.reconciled = t_rec
                 changed = True
-            if existing_tbk.process_id != process.id:
+            if existing_tbk.process_id is None:
                 existing_tbk.process = process
                 changed = True
             if changed and existing_tbk.pk and existing_tbk.pk not in seen_tbk_update_ids:
