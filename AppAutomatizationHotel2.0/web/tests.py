@@ -1,4 +1,5 @@
 import io
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -280,7 +281,10 @@ class ClpPersistenceTests(TestCase):
         self.assertEqual(matched_405544.document_number, "405544")
 
         workbook = openpyxl.load_workbook(generate_committed_clp_excel_bytes(process.id))
-        self.assertEqual(workbook.sheetnames, ["Resumen Pesos", "Vouchers Cuadrados", "Reporte de Excepciones"])
+        self.assertEqual(
+            workbook.sheetnames,
+            ["Resumen Pesos", "Vouchers Cuadrados", "Reporte de Excepciones", "Sugerencias Asistidas"],
+        )
         matched_headers = [c.value for c in workbook["Vouchers Cuadrados"][1]]
         self.assertIn("Cuenta", matched_headers)
         self.assertIn("Documento Borderó", matched_headers)
@@ -296,6 +300,28 @@ class ClpPersistenceTests(TestCase):
         self.assertEqual(first_exception[4], "—")
         self.assertEqual(first_exception[5], "—")
 
+        sug_ws = workbook["Sugerencias Asistidas"]
+        sug_headers = [c.value for c in sug_ws[1]]
+        self.assertEqual(len(sug_headers), 18)
+        self.assertIn("Doc. ERP Sugerido", sug_headers)
+        self.assertIn("Cuenta ERP Sugerida", sug_headers)
+        self.assertIn("Cambio Propuesto / Estado", sug_headers)
+        self.assertIn("Origen Sugerencia", sug_headers)
+        self.assertNotIn("Doc. Pos. Clientes", sug_headers)
+        self.assertNotIn("Huésped", sug_headers)
+        sug_by_voucher = {
+            sug_ws.cell(r, 2).value: [sug_ws.cell(r, c).value for c in range(1, 19)]
+            for r in range(2, sug_ws.max_row + 1)
+        }
+        self.assertIn("F0FUAZ", sug_by_voucher)
+        f0_row = sug_by_voucher["F0FUAZ"]
+        self.assertEqual(f0_row[2], "Error de tipeo")
+        self.assertEqual(f0_row[6], "0FOFUAZ")
+        self.assertGreater(f0_row[10], 0)
+        self.assertEqual(sug_ws.cell(2, 11).number_format, "$#,##0")
+        self.assertEqual(f0_row[13], "ALTA")
+        self.assertTrue(str(f0_row[14]).startswith("[Pendiente]"))
+
         again = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
         self.assertEqual(again.id, process.id)
         self.assertEqual(ReconciliationProcess.objects.count(), 1)
@@ -303,6 +329,69 @@ class ClpPersistenceTests(TestCase):
             counts,
             (TransbankTransaction.objects.count(), ErpTransaction.objects.count(),
              CrossMatchResult.objects.count(), BankStatementMovement.objects.count()),
+        )
+
+    def test_clp_suggestions_sheet_empty_and_proposal_statuses(self):
+        process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        orphan = process.cross_match_results.get(authorization_code="F0FUAZ")
+        accept_suggestion(orphan, self.user)
+        orphan.refresh_from_db()
+        self.assertEqual(orphan.system_result, "MATCHED")
+
+        # Mark an accepted + a rejected DB suggestion to ensure both render with clear status & origin.
+        discrepancy = process.cross_match_results.filter(system_result="AMOUNT_MISMATCH").first()
+        self.assertIsNotNone(discrepancy)
+        erp_row = process.erp_transactions.first()
+        discrepancy.auditor_comment = json.dumps(
+            {
+                "confidence": "MEDIA",
+                "headline": "Diferencia en proceso anterior",
+                "action": "Revisar en BD",
+                "manual_check_note": "Nota manual de prueba.",
+                "reasons": [{"label": "Mismo Código"}],
+                "erp_row": {
+                    "authorization_code": erp_row.authorization_code or "—",
+                    "account_code": erp_row.account_code or "—",
+                    "payment_code": erp_row.payment_code or "—",
+                    "transaction_date": "05/09/2026",
+                    "amount": float(erp_row.amount),
+                    "cashier_username": "CAJERO1",
+                },
+                "db_match": {"process_id": process.id, "accounting_period": process.accounting_period},
+                "proposed_change": {
+                    "erp_id": erp_row.id,
+                    "field": "amount",
+                    "old": "1000.00",
+                    "new": "2500.00",
+                    "label": "Doc 007626 · Monto: $1.000 → $2.500",
+                    "status": "rejected",
+                },
+            },
+            ensure_ascii=False,
+        )
+        discrepancy.save(update_fields=["auditor_comment"])
+
+        wb = openpyxl.load_workbook(generate_committed_clp_excel_bytes(process.id))
+        sug_ws = wb["Sugerencias Asistidas"]
+        by_voucher = {
+            sug_ws.cell(r, 2).value: [sug_ws.cell(r, c).value for c in range(1, 19)]
+            for r in range(2, sug_ws.max_row + 1)
+        }
+        self.assertIn("F0FUAZ", by_voucher)
+        self.assertEqual(by_voucher["F0FUAZ"][2], "Cuadrado (Sugerencia aplicada)")
+        self.assertTrue(str(by_voucher["F0FUAZ"][14]).startswith("[Aceptada]"))
+        self.assertIn(discrepancy.authorization_code, by_voucher)
+        disc_row = by_voucher[discrepancy.authorization_code]
+        self.assertTrue(str(disc_row[12]).startswith(f"BD Proceso #{process.id}"))
+        self.assertEqual(disc_row[13], "MEDIA")
+        self.assertTrue(str(disc_row[14]).startswith("[Rechazada]"))
+
+        # Without any suggestions saved, sheet 4 shows the explicit empty-state note.
+        process.cross_match_results.update(auditor_comment=None)
+        wb_empty = openpyxl.load_workbook(generate_committed_clp_excel_bytes(process.id))
+        self.assertEqual(
+            wb_empty["Sugerencias Asistidas"].cell(2, 1).value,
+            "No se detectaron sugerencias asistidas secundarias para los vouchers con excepción.",
         )
 
 

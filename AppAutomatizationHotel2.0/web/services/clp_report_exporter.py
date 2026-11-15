@@ -6,12 +6,16 @@ using shared styling helpers from `excel_styles.py`.
 
 import io
 from datetime import date
+from typing import Any, Dict, List
 import openpyxl
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
+from openpyxl.worksheet.worksheet import Worksheet
 
-from ..models import ReconciliationProcess
+from ..models import CrossMatchResult, ReconciliationProcess
 from .clp_reconciliation import MODALITY_LABELS as BASE_MODALITY_LABELS
+from .clp_suggestion_engine import EXCEPTION_ERROR_TYPES
 from .excel_styles import (
+    CLP_FORMAT,
     GOLD_FILL,
     LIGHT_FILL,
     NAVY_BOLD,
@@ -20,6 +24,7 @@ from .excel_styles import (
     write_data_row,
     write_header_row,
 )
+from .suggestion_actions import load_suggestion
 
 # Most actionable exceptions first; out-of-period sales are only pending another Bordero.
 EXCEPTION_ORDER = {
@@ -34,6 +39,12 @@ MODALITY_LABELS = {
     **{f"CLP_{k}": v for k, v in BASE_MODALITY_LABELS.items()},
 }
 
+PROPOSAL_STATUS_LABELS = {
+    "accepted": "Aceptada",
+    "rejected": "Rechazada",
+    "applied": "Aplicada",
+}
+
 
 def _split_status_detail(detail: str):
     """system_status_detail is stored as 'Medio · Tipo de error · Acción sugerida'."""
@@ -41,8 +52,146 @@ def _split_status_detail(detail: str):
     return (parts + ["", "", ""])[:3]
 
 
+def _to_amount(value: Any, fallback: Any = 0) -> float:
+    candidate = fallback if value in (None, "", "—") else value
+    try:
+        return float(candidate or 0)
+    except (TypeError, ValueError):
+        return float(fallback or 0)
+
+
+def _suggestion_origin(sug: Dict[str, Any], erp_row: Dict[str, Any]) -> str:
+    db_match = sug.get("db_match") if isinstance(sug.get("db_match"), dict) else {}
+    if db_match.get("process_id"):
+        pid = db_match["process_id"]
+        period = db_match.get("accounting_period") or ""
+        return f"BD Proceso #{pid}" + (f" ({period})" if period and period != f"Proceso #{pid}" else "")
+    files_involved = sug.get("files_involved") if isinstance(sug.get("files_involved"), dict) else {}
+    erp_file = erp_row.get("source_file") or files_involved.get("erp") or "Borderó"
+    excel_row = erp_row.get("excel_row")
+    if isinstance(excel_row, int):
+        return f"{erp_file} (Fila {excel_row})"
+    return str(erp_file)
+
+
+def _suggestion_proposal_text(sug: Dict[str, Any]) -> str:
+    proposal = sug.get("proposed_change")
+    if isinstance(proposal, dict):
+        state = PROPOSAL_STATUS_LABELS.get(proposal.get("status"), "Pendiente")
+        label = proposal.get("label") or ""
+        return f"[{state}] {label}" if label else state
+    return sug.get("action") or "Revisión manual"
+
+
+def _suggestion_case_label(match: CrossMatchResult) -> str:
+    if match.system_result == "MATCHED":
+        return "Cuadrado (Sugerencia aplicada)"
+    _, error_type, _ = _split_status_detail(match.system_status_detail)
+    return error_type or EXCEPTION_ERROR_TYPES.get(match.system_result, match.system_result)
+
+
+def _populate_clp_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
+    """Writes Level 2 assisted suggestions persisted in `CrossMatchResult.auditor_comment` for CLP."""
+    headers = [
+        "#",
+        "Voucher TBK",
+        "Tipo Excepción",
+        "Tarjeta / Medio",
+        "Fecha POS",
+        "Monto TBK (CLP)",
+        "Doc. ERP Sugerido",
+        "Cuenta ERP Sugerida",
+        "Medio ERP",
+        "Fecha ERP",
+        "Monto ERP (CLP)",
+        "Cajero ERP",
+        "Origen Sugerencia",
+        "Confianza",
+        "Cambio Propuesto / Estado",
+        "Diagnóstico Sugerido",
+        "Motivos Coincidencia",
+        "Nota de Auditoría",
+    ]
+    write_header_row(ws, 1, headers, fill=NAVY_FILL, center=True, wrap_text=True)
+
+    center_align = Alignment(horizontal="center")
+    ordered_matches = sorted(
+        cross_matches,
+        key=lambda m: (EXCEPTION_ORDER.get(m.system_result, 9), m.sale_date or date.min, m.authorization_code or ""),
+    )
+
+    sug_count, curr_row = 0, 2
+    for match in ordered_matches:
+        sug = load_suggestion(match)
+        if not sug:
+            continue
+
+        sug_count += 1
+        erp_row = sug.get("erp_row") if isinstance(sug.get("erp_row"), dict) else {}
+        modality_label, _, _ = _split_status_detail(match.system_status_detail)
+        if not modality_label and match.transbank_transaction_id:
+            modality_label = MODALITY_LABELS.get(match.transbank_transaction.payment_modality, "")
+        card_name = match.card_type.name if match.card_type else ""
+        if modality_label and card_name and modality_label.lower() not in card_name.lower():
+            card_display = f"{modality_label} · {card_name}"
+        else:
+            card_display = card_name or modality_label or "—"
+
+        cashier_erp = erp_row.get("cashier_username")
+        if not cashier_erp or cashier_erp == "—":
+            cashier_erp = match.cashier_username if match.cashier_username and match.cashier_username != "—" else "—"
+
+        confidence = sug.get("confidence", "MEDIA")
+        reasons_str = ", ".join(
+            r.get("label", "")
+            for r in sug.get("reasons", [])
+            if isinstance(r, dict) and r.get("label")
+        )
+
+        write_data_row(
+            ws,
+            curr_row,
+            [
+                sug_count,
+                match.authorization_code or "",
+                _suggestion_case_label(match),
+                card_display,
+                match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
+                float(match.transbank_amount),
+                erp_row.get("authorization_code") or match.display_erp_document or "—",
+                erp_row.get("account_code") or match.display_account_code or "—",
+                erp_row.get("payment_code") or "—",
+                erp_row.get("transaction_date") or "—",
+                _to_amount(erp_row.get("amount"), fallback=match.erp_amount_clp),
+                cashier_erp,
+                _suggestion_origin(sug, erp_row),
+                confidence,
+                _suggestion_proposal_text(sug),
+                sug.get("headline", ""),
+                reasons_str,
+                sug.get("manual_check_note", ""),
+            ],
+            money_columns=(6, 11),
+            number_format=CLP_FORMAT,
+        )
+        for col_idx in (1, 2, 5, 7, 9, 10, 14):
+            ws.cell(row=curr_row, column=col_idx).alignment = center_align
+        ws.cell(row=curr_row, column=14).font = Font(
+            bold=True, color="059669" if confidence == "ALTA" else "D97706"
+        )
+        curr_row += 1
+
+    if sug_count == 0:
+        c_empty = ws.cell(
+            row=2,
+            column=1,
+            value="No se detectaron sugerencias asistidas secundarias para los vouchers con excepción.",
+        )
+        c_empty.font = Font(italic=True, color="64748B")
+
+
 def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
-    """Builds the styled 3-sheet Excel report from a committed CLP ReconciliationProcess."""
+    """Builds the styled 4-sheet Excel report from a committed CLP ReconciliationProcess."""
     process = ReconciliationProcess.objects.select_related("user").get(id=process_id, process_currency="CLP")
     validations = list(process.bank_validations.select_related("bank_movement").order_by("payment_modality"))
     summaries = list(process.summaries.filter(currency_table="CLP").select_related("card_type"))
@@ -167,6 +316,9 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     row = 2
     for match in exceptions:
         modality_label, error_type, action = _split_status_detail(match.system_status_detail)
+        sug = load_suggestion(match)
+        if sug and sug.get("action"):
+            action = sug["action"]
         cashier = match.cashier_username if match.cashier_username and match.cashier_username != "—" else "—"
         write_data_row(
             ws_exc,
@@ -190,7 +342,11 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
         )
         row += 1
 
-    auto_adjust_columns((ws_matched, ws_exc), min_width=14, max_width=45)
+    # Sheet 4: Sugerencias Asistidas (Nivel 2 desde auditor_comment)
+    ws_sug = wb.create_sheet(title="Sugerencias Asistidas")
+    _populate_clp_suggestions_sheet(ws_sug, cross_matches)
+
+    auto_adjust_columns((ws_matched, ws_exc, ws_sug), min_width=14, max_width=45)
 
     stream = io.BytesIO()
     wb.save(stream)
