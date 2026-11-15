@@ -84,8 +84,9 @@
 
 
   <div class="card card-executive p-4 mb-4">
+    {% include "partials/erp_upload_precheck.html" %}
     <!-- FASE 1: Zona de Carga Masiva -->
-    <div id="expPhase1Dropzone">
+    <div id="expPhase1Dropzone" class="d-none">
       <div class="mb-2">
         <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-1 rounded-pill">
           <i class="bi bi-1-circle-fill me-1 text-warning"></i> Carga Masiva de Archivos
@@ -120,6 +121,7 @@
     <!-- FASE 2: Tabla de Alineación Detectada y Confirmación -->
     <div id="expPhase2Alignment" class="d-none">
       <div id="alignmentSummaryAlert" class="alert rounded-4 mb-3 py-2 px-3 small"></div>
+      <div id="erpUploadWarningsBox" class="mb-3 d-none"></div>
 
       <div class="table-responsive border rounded-4 mb-4">
         <table class="table table-hover align-middle mb-0">
@@ -149,5 +151,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=8"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=10"></script>
 {% endblock %}

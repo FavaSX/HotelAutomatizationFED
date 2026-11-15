@@ -12,10 +12,13 @@ possible duplicate for the accountant to decide.
 """
 
 import hashlib
+from datetime import date, datetime, time as dt_time
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from ..models import ErpTransaction
+from django.db.models import Q
+
+from ..models import CrossMatchResult, ErpTransaction, ErpTransactionChange
 from .column_detector import normalize_auth_code, safe_date, safe_time
 
 # Fields the accountant may correct; their DB value replaces the Excel value on a new upload.
@@ -43,9 +46,17 @@ def erp_source_key(
     Accepts raw Excel/session values or model values; both normalize to the same key.
     Migration 0006 inlines this algorithm for the backfill: keep both in sync.
     """
-    amount_dec = round(Decimal(str(amount or 0)), 2)
-    date_val = safe_date(transaction_date) if transaction_date not in (None, "") else None
-    time_val = safe_time(transaction_time) if transaction_time not in (None, "") else None
+    amount_dec = round(amount, 2) if isinstance(amount, Decimal) else round(Decimal(str(amount or 0)), 2)
+    date_val = (
+        transaction_date
+        if isinstance(transaction_date, date) and not isinstance(transaction_date, datetime)
+        else (safe_date(transaction_date) if transaction_date not in (None, "") else None)
+    )
+    time_val = (
+        transaction_time
+        if isinstance(transaction_time, dt_time)
+        else (safe_time(transaction_time) if transaction_time not in (None, "") else None)
+    )
     parts = [
         source_currency or "",
         str(document_number or ""),
@@ -84,6 +95,7 @@ def _corrected_rows_by_key(source_currency: str, keys: Iterable[str]) -> Dict[st
         rows = (
             ErpTransaction.all_objects.filter(source_currency=source_currency, source_key__in=chunk)
             .filter(changes__isnull=False)
+            .select_related("card_type", "process")
             .distinct()
         )
         for row in rows:
@@ -91,12 +103,182 @@ def _corrected_rows_by_key(source_currency: str, keys: Iterable[str]) -> Dict[st
     return result
 
 
+def _reconciled_rows_by_key(source_currency: str, keys: Iterable[str]) -> Dict[str, ErpTransaction]:
+    """Active ERP rows already reconciled in DB for these fingerprints."""
+    keys = [k for k in set(keys) if k]
+    if not keys:
+        return {}
+    result: Dict[str, ErpTransaction] = {}
+    for start in range(0, len(keys), 900):
+        chunk = keys[start : start + 900]
+        rows = (
+            ErpTransaction.objects.filter(source_currency=source_currency, source_key__in=chunk, reconciled=True)
+            .select_related("card_type", "process")
+            .order_by("id")
+        )
+        for row in rows:
+            result.setdefault(row.source_key, row)
+    return result
+
+
+def modified_excel_rows_by_current_key(
+    source_currency: Optional[str] = None,
+) -> Dict[str, ErpTransaction]:
+    """
+    Maps current-value natural keys -> active modified ORIGIN_EXCEL DB rows whose
+    editable fields diverged from their immutable upload `source_key`.
+    """
+    qs = (
+        ErpTransaction.objects.filter(origin=ErpTransaction.ORIGIN_EXCEL, changes__isnull=False)
+        .select_related("card_type", "process")
+        .order_by("id")
+        .distinct()
+    )
+    if source_currency:
+        qs = qs.filter(source_currency=source_currency)
+
+    result: Dict[str, ErpTransaction] = {}
+    for row in qs:
+        curr_key = erp_source_key(
+            row.source_currency,
+            row.document_number or row.account_code or "",
+            row.invoice_number,
+            row.authorization_code,
+            row.amount,
+            row.transaction_date,
+            row.transaction_time,
+        )
+        if curr_key and curr_key != row.source_key:
+            result.setdefault(curr_key, row)
+    return result
+
+
+def _sale_key_for_match(m: CrossMatchResult) -> Optional[Tuple[str, str]]:
+    tbk = m.transbank_transaction
+    if not tbk:
+        return None
+    return (
+        tbk.sale_date.isoformat() if tbk.sale_date else "",
+        normalize_auth_code(tbk.authorization_code or ""),
+    )
+
+
+def _match_claims_secondary_row(
+    m: CrossMatchResult,
+    row_info: Dict[str, Any],
+    row_norm: str,
+) -> bool:
+    """True when `m` (already MATCHED) owns `row_info` as a secondary split/reversal ERP row."""
+    if m.erp_transaction_id == row_info["id"] or not m.erp_transaction or not m.transbank_transaction:
+        return False
+    if m.erp_transaction.source_currency != row_info["source_currency"]:
+        return False
+    m_norm = normalize_auth_code(m.authorization_code or m.erp_transaction.authorization_code or "")
+    if not m_norm or m_norm != row_norm:
+        return False
+
+    m_acc = (m.account_code or "").strip()
+    m_obs = (m.system_observation or "").lower()
+    m_tokens = {tok.strip() for tok in m_acc.split("/") if tok.strip()}
+    row_acc = (row_info["account_code"] or "").strip()
+    row_doc = (row_info["document_number"] or "").strip()
+    row_keys = {k for k in (row_acc, row_doc) if k}
+    m_primary_acc = (m.erp_transaction.account_code or m.erp_transaction.document_number or "").strip()
+    same_process = row_info["process_id"] in (m.process_id, m.erp_transaction.process_id)
+
+    # USD split-invoice matches store `"acc1 / acc2"` in `account_code` (up to 50 chars).
+    if len(m_tokens) > 1 and (row_keys & m_tokens):
+        return True
+    if "voucher dividido en" in m_obs:
+        return same_process or bool(m_primary_acc and m_primary_acc in row_keys)
+
+    # CLP split-folio / reversal matches group reconciled rows sharing account_code under one primary FK.
+    if "cuadrado sumando" in m_obs and m_primary_acc and m_primary_acc in row_keys:
+        return True
+    return False
+
+
+def active_claimed_sales_by_erp_id(erp_ids: Iterable[int]) -> Dict[int, Set[Tuple[str, str]]]:
+    """
+    Returns {erp_id: {(tbk_sale_date_iso, norm_tbk_auth), ...}} for active matched
+    CrossMatchResult records claiming those ERP rows (both primary FK and split/reversal siblings).
+    """
+    clean_ids = sorted({eid for eid in erp_ids if eid})
+    if not clean_ids:
+        return {}
+
+    matches = (
+        CrossMatchResult.objects.filter(system_result="MATCHED", erp_transaction_id__in=clean_ids)
+        .select_related("transbank_transaction")
+    )
+    claimed: Dict[int, Set[Tuple[str, str]]] = {}
+    for m in matches:
+        if not m.erp_transaction_id:
+            continue
+        sale_key = _sale_key_for_match(m)
+        if sale_key is not None:
+            claimed.setdefault(m.erp_transaction_id, set()).add(sale_key)
+
+    remaining_ids = [eid for eid in clean_ids if eid not in claimed]
+    if remaining_ids:
+        secondary_rows = list(
+            ErpTransaction.objects.filter(id__in=remaining_ids, reconciled=True).values(
+                "id", "source_currency", "authorization_code", "account_code", "document_number", "process_id"
+            )
+        )
+        rows_with_norm: List[Tuple[Dict[str, Any], str]] = []
+        currencies: Set[str] = set()
+        needed_norms: List[str] = []
+        for row_info in secondary_rows:
+            norm = normalize_auth_code(row_info["authorization_code"] or "")
+            if norm:
+                rows_with_norm.append((row_info, norm))
+                currencies.add(row_info["source_currency"])
+                if norm not in needed_norms:
+                    needed_norms.append(norm)
+
+        if rows_with_norm and needed_norms:
+            split_matches_by_key: Dict[Tuple[str, str], List[CrossMatchResult]] = {}
+            for start in range(0, len(needed_norms), 100):
+                chunk = needed_norms[start : start + 100]
+                q_auth = Q()
+                for code in chunk:
+                    q_auth |= (
+                        Q(authorization_code__icontains=code)
+                        | Q(erp_transaction__authorization_code__icontains=code)
+                        | Q(transbank_transaction__authorization_code__icontains=code)
+                    )
+                cand_qs = (
+                    CrossMatchResult.objects.filter(
+                        system_result="MATCHED",
+                        erp_transaction_id__isnull=False,
+                        erp_transaction__source_currency__in=currencies,
+                    )
+                    .filter(q_auth)
+                    .select_related("transbank_transaction", "erp_transaction")
+                )
+                for m in cand_qs:
+                    if not m.erp_transaction:
+                        continue
+                    m_norm = normalize_auth_code(m.authorization_code or m.erp_transaction.authorization_code or "")
+                    if m_norm:
+                        split_matches_by_key.setdefault((m.erp_transaction.source_currency, m_norm), []).append(m)
+
+            for row_info, row_norm in rows_with_norm:
+                for m in split_matches_by_key.get((row_info["source_currency"], row_norm), ()):
+                    if _match_claims_secondary_row(m, row_info, row_norm):
+                        sale_key = _sale_key_for_match(m)
+                        if sale_key is not None:
+                            claimed.setdefault(row_info["id"], set()).add(sale_key)
+
+    return claimed
+
+
 def _manual_rows_for_codes(source_currency: str, voucher_codes: Optional[Set[str]]) -> List[ErpTransaction]:
     """Active hand-added rows whose authorization code belongs to one of the uploaded vouchers."""
     clean_codes = {c for c in (voucher_codes or set()) if c}
     if not clean_codes:
         return []
-    from django.db.models import Q
     q = Q()
     for c in clean_codes:
         q |= Q(authorization_code__icontains=c)
@@ -185,8 +367,56 @@ def _clp_raw_from_model(row: ErpTransaction) -> Dict[str, Any]:
         "is_reversal": row.amount < 0,
         "reconciled": False,
         "manual_id": row.id,
+        "db_id": row.id,
+        "db_process_id": row.process_id,
+        "db_reconciled": bool(row.reconciled),
         "is_manual": True,
     }
+
+
+def _should_include_manual_row(
+    row: ErpTransaction,
+    claimed_sales: Set[Tuple[str, str]],
+    tbk_sale_keys: Optional[Set[Tuple[str, str]]],
+    later_installment_codes: Optional[Set[str]],
+) -> bool:
+    if not row.reconciled or not claimed_sales:
+        return True
+    if tbk_sale_keys is None:
+        return True
+    if claimed_sales & tbk_sale_keys:
+        return True
+    if later_installment_codes:
+        norm = normalize_auth_code(row.authorization_code or "")
+        if norm and norm in later_installment_codes:
+            return True
+    return False
+
+
+def _stamp_db_claim_dict(
+    e_data: Dict[str, Any],
+    db_row: ErpTransaction,
+    claimed_by_id: Dict[int, Set[Tuple[str, str]]],
+) -> None:
+    claimed_sales = claimed_by_id.get(db_row.id, ())
+    e_data["db_id"] = db_row.id
+    e_data["db_process_id"] = db_row.process_id
+    e_data["db_reconciled"] = bool(db_row.reconciled and claimed_sales)
+    e_data["db_claimed_sales"] = sorted(claimed_sales)
+
+
+def _stamp_db_claim_instance(
+    inst: ErpTransaction,
+    db_row: ErpTransaction,
+    claimed_by_id: Dict[int, Set[Tuple[str, str]]],
+) -> None:
+    claimed_sales = set(claimed_by_id.get(db_row.id, ()))
+    inst.db_id = db_row.id
+    inst.db_process_id = db_row.process_id
+    inst._db_id = db_row.id
+    inst._db_process_id = db_row.process_id
+    inst._db_reconciled = bool(db_row.reconciled and claimed_sales)
+    inst._db_claimed_sales = claimed_sales
 
 
 def apply_saved_corrections(
@@ -194,6 +424,8 @@ def apply_saved_corrections(
     source_currency: str,
     doc_field: str = "document_number",
     voucher_codes: Optional[Set[str]] = None,
+    tbk_sale_keys: Optional[Set[Tuple[str, str]]] = None,
+    later_installment_codes: Optional[Set[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Stamps every preview row with its `source_key`, applies the corrections saved in the database
@@ -202,6 +434,27 @@ def apply_saved_corrections(
     """
     for e_data in erp_rows:
         e_data["source_key"] = source_key_for_raw(e_data, source_currency, doc_field)
+
+    incoming_raw_keys = {r["source_key"] for r in erp_rows if r.get("source_key")}
+    modified_curr = modified_excel_rows_by_current_key(source_currency)
+    for e_data in erp_rows:
+        raw_key = e_data.get("source_key")
+        curr_db = modified_curr.get(raw_key) if raw_key else None
+        if curr_db is not None and curr_db.source_key not in incoming_raw_keys:
+            e_data["raw_source_key"] = raw_key
+            e_data["source_key"] = curr_db.source_key
+
+    all_keys = {r["source_key"] for r in erp_rows if r.get("source_key")}
+    corrected = _corrected_rows_by_key(source_currency, all_keys)
+    reconciled_map = _reconciled_rows_by_key(source_currency, all_keys - set(corrected.keys()))
+    manual_rows = _manual_rows_for_codes(source_currency, voucher_codes)
+
+    claim_lookup_ids = [
+        r.id
+        for r in (list(corrected.values()) + list(reconciled_map.values()) + manual_rows)
+        if not r.is_deleted and (r.reconciled or r.origin == ErpTransaction.ORIGIN_MANUAL)
+    ]
+    claimed_by_id = active_claimed_sales_by_erp_id(claim_lookup_ids)
 
     report = {
         "corrected": 0,
@@ -213,24 +466,35 @@ def apply_saved_corrections(
             for r in erp_rows
         ]),
     }
-    corrected = _corrected_rows_by_key(source_currency, (r["source_key"] for r in erp_rows))
 
     kept: List[Dict[str, Any]] = []
     for e_data in erp_rows:
-        db_row = corrected.get(e_data["source_key"])
-        if db_row is None:
+        skey = e_data["source_key"]
+        db_row = corrected.get(skey)
+        if db_row is not None:
+            if db_row.is_deleted:
+                report["deleted"] += 1
+                continue
+            _overlay_db_values(e_data, db_row, doc_field)
+            _stamp_db_claim_dict(e_data, db_row, claimed_by_id)
+            e_data["is_corrected"] = True
+            report["corrected"] += 1
             kept.append(e_data)
             continue
-        if db_row.is_deleted:
-            report["deleted"] += 1
-            continue
-        _overlay_db_values(e_data, db_row, doc_field)
-        e_data["is_corrected"] = True
-        report["corrected"] += 1
+
+        rec_row = reconciled_map.get(skey)
+        if rec_row is not None:
+            _stamp_db_claim_dict(e_data, rec_row, claimed_by_id)
         kept.append(e_data)
 
-    for row in _manual_rows_for_codes(source_currency, voucher_codes):
-        kept.append(_clp_raw_from_model(row))
+    for row in manual_rows:
+        row_claims = claimed_by_id.get(row.id, set())
+        if not _should_include_manual_row(row, row_claims, tbk_sale_keys, later_installment_codes):
+            continue
+        raw_manual = _clp_raw_from_model(row)
+        raw_manual["db_reconciled"] = bool(row.reconciled and row_claims)
+        raw_manual["db_claimed_sales"] = sorted(row_claims)
+        kept.append(raw_manual)
         report["manual"] += 1
     return kept, report
 
@@ -267,18 +531,41 @@ def overlay_on_instances(
     instances: List[ErpTransaction],
     source_currency: str,
     voucher_codes: Optional[Set[str]] = None,
+    tbk_sale_keys: Optional[Set[Tuple[str, str]]] = None,
 ) -> Tuple[List[ErpTransaction], Dict[str, Any]]:
     """Same as `apply_saved_corrections`, for the unsaved ErpTransaction instances of the USD flow."""
     for inst in instances:
-        inst.source_key = erp_source_key(
-            source_currency,
-            inst.document_number or inst.account_code or "",
-            inst.invoice_number,
-            inst.authorization_code,
-            inst.amount,
-            inst.transaction_date,
-            inst.transaction_time,
-        )
+        if not getattr(inst, "source_key", None):
+            inst.source_key = erp_source_key(
+                source_currency,
+                inst.document_number or inst.account_code or "",
+                inst.invoice_number,
+                inst.authorization_code,
+                inst.amount,
+                inst.transaction_date,
+                inst.transaction_time,
+            )
+
+    incoming_raw_keys = {i.source_key for i in instances if getattr(i, "source_key", None)}
+    modified_curr = modified_excel_rows_by_current_key(source_currency)
+    for inst in instances:
+        curr_db = modified_curr.get(inst.source_key) if inst.source_key else None
+        if curr_db is not None and curr_db.source_key not in incoming_raw_keys:
+            inst._raw_source_key = inst.source_key
+            inst.source_key = curr_db.source_key
+
+    all_keys = {i.source_key for i in instances if getattr(i, "source_key", None)}
+    corrected = _corrected_rows_by_key(source_currency, all_keys)
+    reconciled_map = _reconciled_rows_by_key(source_currency, all_keys - set(corrected.keys()))
+    manual_rows = _manual_rows_for_codes(source_currency, voucher_codes)
+
+    claim_lookup_ids = [
+        r.id
+        for r in (list(corrected.values()) + list(reconciled_map.values()) + manual_rows)
+        if not r.is_deleted and (r.reconciled or r.origin == ErpTransaction.ORIGIN_MANUAL)
+    ]
+    claimed_by_id = active_claimed_sales_by_erp_id(claim_lookup_ids)
+
     report = {
         "corrected": 0,
         "deleted": 0,
@@ -289,24 +576,34 @@ def overlay_on_instances(
             for i in instances
         ]),
     }
-    corrected = _corrected_rows_by_key(source_currency, (i.source_key for i in instances))
 
     kept: List[ErpTransaction] = []
     for inst in instances:
         db_row: Optional[ErpTransaction] = corrected.get(inst.source_key)
-        if db_row is None:
+        if db_row is not None:
+            if db_row.is_deleted:
+                report["deleted"] += 1
+                continue
+            for field_name in CORRECTABLE_FIELDS:
+                setattr(inst, field_name, getattr(db_row, field_name))
+            inst.card_type = db_row.card_type
+            inst.account_code = db_row.account_code or db_row.document_number
+            _stamp_db_claim_instance(inst, db_row, claimed_by_id)
+            inst.is_corrected = True
+            report["corrected"] += 1
             kept.append(inst)
             continue
-        if db_row.is_deleted:
-            report["deleted"] += 1
-            continue
-        for field_name in CORRECTABLE_FIELDS:
-            setattr(inst, field_name, getattr(db_row, field_name))
-        inst.is_corrected = True
-        report["corrected"] += 1
+
+        rec_row = reconciled_map.get(inst.source_key)
+        if rec_row is not None:
+            _stamp_db_claim_instance(inst, rec_row, claimed_by_id)
         kept.append(inst)
 
-    for row in _manual_rows_for_codes(source_currency, voucher_codes):
+    for row in manual_rows:
+        row_claims = claimed_by_id.get(row.id, set())
+        if not _should_include_manual_row(row, row_claims, tbk_sale_keys, None):
+            continue
+        _stamp_db_claim_instance(row, row, claimed_by_id)
         row.source_file = MANUAL_SOURCE_LABEL
         kept.append(row)
         report["manual"] += 1

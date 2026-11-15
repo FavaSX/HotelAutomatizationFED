@@ -95,6 +95,10 @@ class ReconciliationProcess(models.Model):
 
     # Tolerance snapshot used when this process was reconciled (USD or CLP depending on process_currency)
     tolerance_applied = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
+    # Coverage range of the uploaded Bordero(s) in this closing and whether the last day remained open/incomplete
+    erp_min_date = models.DateField(blank=True, null=True)
+    erp_max_date = models.DateField(blank=True, null=True)
+    erp_last_day_incomplete = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'reconciliation_process'
@@ -370,8 +374,18 @@ class CrossMatchResult(models.Model):
         return "" if val in ("", "—") else val
 
     @property
+    def _has_erp_link(self) -> bool:
+        """Unlinked ERP exceptions must not surface unaccepted suggestion codes as matched."""
+        return bool(
+            self.erp_transaction_id
+            or self.system_result not in ("NOT_FOUND_IN_ERP", "OUT_OF_PERIOD")
+        )
+
+    @property
     def display_account_code(self) -> str:
         """Bordero Col. D ('Cuenta'), supporting both new rows and historical DB rows."""
+        if not self._has_erp_link:
+            return ""
         direct = self._clean_code(self.account_code)
         if direct:
             return direct
@@ -386,6 +400,8 @@ class CrossMatchResult(models.Model):
     @property
     def display_erp_document(self) -> str:
         """Bordero Col. J ('Documento'), supporting both new rows and historical DB rows."""
+        if not self._has_erp_link:
+            return ""
         if self.erp_transaction_id:
             from_erp = self._clean_code(self.erp_transaction.authorization_code)
             if from_erp:

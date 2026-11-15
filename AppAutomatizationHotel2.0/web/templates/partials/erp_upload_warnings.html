@@ -1,0 +1,28 @@
+{% load currency_filters %}
+{% if preview.erp_coverage_meta or preview.erp_warnings %}
+  {% with meta=preview.erp_coverage_meta %}
+    {% if meta and meta.erp_min_date_str %}
+    <div class="alert alert-secondary bg-white border rounded-4 small py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <div>
+        <i class="bi bi-calendar2-week text-primary me-1"></i>
+        <strong>Cobertura Borderó cargado:</strong>
+        <span class="font-mono">{{ meta.erp_min_date_str }} al {{ meta.erp_max_date_str }}</span>
+        · {{ meta.total_movements|num_clp }} mov. totales
+        ({{ meta.card_movements|num_clp }} tarjetas / {{ meta.non_card_movements|num_clp }} otros cargos y pagos)
+      </div>
+      {% if meta.erp_last_day_incomplete %}
+      <span class="badge bg-warning-subtle text-dark border border-warning rounded-pill px-3 py-1">
+        <i class="bi bi-clock-history me-1"></i>Último día incompleto ({{ meta.erp_max_date_str }}) · se solicitará recargar en el próximo cierre
+      </span>
+      {% endif %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  {% for warn in preview.erp_warnings %}
+  <div class="alert alert-{% if warn.level == 'danger' %}danger{% else %}warning{% endif %} border-0 rounded-4 small py-2 px-3 mb-3" role="alert">
+    <i class="bi bi-{% if warn.level == 'danger' %}exclamation-octagon-fill{% else %}exclamation-triangle-fill{% endif %} me-1"></i>
+    <strong>{{ warn.title }}:</strong> {{ warn.message }}
+  </div>
+  {% endfor %}
+{% endif %}

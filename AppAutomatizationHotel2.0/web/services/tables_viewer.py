@@ -6,6 +6,7 @@ Read-only visualization data preparation helpers for the 6 table panels:
 Never exposes guest_name or room_number in rendered payloads.
 """
 
+import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional, Tuple
@@ -14,6 +15,7 @@ from django.db.models import Count, Exists, OuterRef, Q, Sum
 from django.utils import timezone
 
 from ..models import (
+    AuditResolutionLog,
     BankDepositValidation,
     BankStatementMovement,
     CardOperatorTransaction,
@@ -43,6 +45,7 @@ RESULT_META: Dict[str, Tuple[str, str]] = {
     "NOT_FOUND_IN_ERP": ("No está en ERP", "status-danger"),
     "OUT_OF_PERIOD": ("Fuera de período", "status-neutral"),
 }
+_AUTO_CLOSING_RE = re.compile(r"\(Cierre #(\d+)\)")
 
 ERP_CHANGE_FIELD_LABELS: Dict[str, str] = {
     "authorization_code": "Cód. Autorización",
@@ -327,15 +330,18 @@ def _sanitize_preview_erp_row(
 
     if idx in status_by_idx:
         match_status, match_label = status_by_idx[idx]
-    elif raw.get("reconciled") and (currency != "USD" or auth in usd_linked_auths or not usd_linked_auths):
+    elif (raw.get("reconciled") or raw.get("db_reconciled")) and (currency != "USD" or auth in usd_linked_auths or not usd_linked_auths):
         match_status, match_label = ("matched", "Conciliado")
-    elif raw.get("reconciled"):
+    elif raw.get("reconciled") or raw.get("db_reconciled"):
         match_status, match_label = ("diff", "Vinculado")
     else:
         match_status, match_label = ("unlinked", "Solo en ERP (sin TBK)")
 
     if raw.get("manual_id"):
         origin_label = "Agregada a mano"
+    elif raw.get("from_db"):
+        proc_id = raw.get("db_process_id")
+        origin_label = f"Base de Datos (#{proc_id})" if proc_id else "Base de Datos"
     elif raw.get("is_auxiliary"):
         origin_label = "Borderó adicional"
     else:
@@ -444,7 +450,11 @@ def _preview_erp_history_for_rows(
     source_keys = {
         raw["source_key"] for raw in raw_rows if raw.get("is_corrected") and raw.get("source_key")
     }
-    manual_ids = {raw["manual_id"] for raw in raw_rows if raw.get("manual_id")}
+    manual_ids = {
+        raw.get("db_id") or raw.get("manual_id")
+        for raw in raw_rows
+        if raw.get("db_id") or raw.get("manual_id")
+    }
 
     db_changes_by_key: Dict[str, List[ErpTransactionChange]] = {}
     db_changes_by_id: Dict[int, List[ErpTransactionChange]] = {}
@@ -485,8 +495,9 @@ def _preview_erp_history_for_rows(
     result: Dict[int, Dict[str, Any]] = {}
     for idx, raw in enumerate(raw_rows):
         combined: List[Dict[str, Any]] = []
-        if raw.get("manual_id") and raw["manual_id"] in db_changes_by_id:
-            combined.extend(_change_models_to_raw_list(db_changes_by_id[raw["manual_id"]]))
+        row_db_id = raw.get("db_id") or raw.get("manual_id")
+        if row_db_id and row_db_id in db_changes_by_id:
+            combined.extend(_change_models_to_raw_list(db_changes_by_id[row_db_id]))
         elif raw.get("is_corrected") and raw.get("source_key") and raw["source_key"] in db_changes_by_key:
             combined.extend(_change_models_to_raw_list(db_changes_by_key[raw["source_key"]]))
         if idx in pending_by_idx:
@@ -530,6 +541,7 @@ def build_preview_source_tables_context(preview: Dict[str, Any], currency: str) 
             idx, row, currency, status_by_idx, usd_linked_auths, history_by_idx.get(idx)
         )
         for idx, row in enumerate(raw_erp_rows)
+        if not row.get("from_db") or idx in status_by_idx
     ]
     bank_rows = [
         _serialize_preview_bank_row(idx, row)
@@ -796,6 +808,19 @@ def build_cruce_view_data(
         if item.erp_transaction_id and item.erp_transaction is not None
     }
     erp_history_map = _fetch_erp_history_map_for_rows(linked_erp_by_id)
+    matched_ids = [item.pk for item in page.object_list if item.system_result == "MATCHED"]
+    auto_resolved_logs = {}
+    if matched_ids:
+        for log in (
+            AuditResolutionLog.objects.filter(
+                cross_match_result_id__in=matched_ids,
+                new_status__code="ACCEPTED_ROUNDING",
+                comment__startswith="Actualización automática",
+            )
+            .order_by("created_at", "id")
+        ):
+            auto_resolved_logs[log.cross_match_result_id] = log
+
     for item in page.object_list:
         label, tone = result_label_and_tone(item.system_result)
         item.result_label = label
@@ -805,6 +830,20 @@ def build_cruce_view_data(
         item.has_erp_modifications = bool(key and key in erp_history_map)
         item.erp_history_key = key if item.has_erp_modifications else ""
         item.erp_modifications_count = erp_history_map[key]["changes_count"] if item.has_erp_modifications else 0
+        auto_log = auto_resolved_logs.get(item.pk)
+        if auto_log:
+            closing_match = _AUTO_CLOSING_RE.search(auto_log.comment or "")
+            item.matched_by_new_input = True
+            item.matched_new_input_label = (
+                f"Conciliado con nuevo cierre (#{closing_match.group(1)})"
+                if closing_match
+                else "Conciliado con nuevo cierre"
+            )
+            item.matched_new_input_title = auto_log.comment
+        else:
+            item.matched_by_new_input = False
+            item.matched_new_input_label = ""
+            item.matched_new_input_title = ""
 
     return {
         "page": page,

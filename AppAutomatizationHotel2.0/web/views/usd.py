@@ -18,6 +18,7 @@ from ..services import (
     detect_and_align_usd_files,
     enrich_preview_with_suggestions,
 )
+from ..services.erp_coverage import get_erp_coverage_summary
 from ..services.tables_viewer import build_preview_source_tables_context
 from .common import (
     handle_preview_correction,
@@ -68,6 +69,7 @@ def usd_upload_view(request):
 
     return render(request, "usd_upload.html", {
         "saved_processes_count": ReconciliationProcess.objects.count(),
+        "erp_coverage": get_erp_coverage_summary(),
     })
 
 

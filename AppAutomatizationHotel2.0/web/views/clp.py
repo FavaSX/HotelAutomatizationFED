@@ -15,6 +15,7 @@ from ..services import (
     generate_committed_clp_excel_bytes,
     detect_and_align_clp_files,
 )
+from ..services.erp_coverage import get_erp_coverage_summary
 from ..services.tables_viewer import build_preview_source_tables_context
 from .common import (
     handle_preview_correction,
@@ -86,6 +87,7 @@ def clp_upload_view(request):
     context = {
         "saved_processes_count": ReconciliationProcess.objects.count(),
         "saved_clp_processes_count": ReconciliationProcess.objects.filter(process_currency="CLP").count(),
+        "erp_coverage": get_erp_coverage_summary(),
     }
     return render(request, "clp_upload.html", context)
 

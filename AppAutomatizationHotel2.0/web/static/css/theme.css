@@ -1354,6 +1354,7 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
 .status-warning { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); border-color: var(--bs-warning-border-subtle); }
 .status-danger { background: var(--bs-danger-bg-subtle); color: var(--bs-danger-text-emphasis); border-color: var(--bs-danger-border-subtle); }
 .status-success { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); border-color: var(--bs-success-border-subtle); }
+.status-info { background: var(--bs-info-bg-subtle); color: var(--bs-info-text-emphasis); border-color: var(--bs-info-border-subtle); }
 
 /* Compact dashboard table */
 .table-dash { --bs-table-bg: transparent; --bs-table-color: var(--text); --bs-table-border-color: var(--border); }

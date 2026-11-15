@@ -467,6 +467,7 @@ def apply_pending_corrections(preview: Dict[str, Any], erp_models: List[Any], tb
                 source=ErpTransactionChange.SOURCE_SUGGESTION,
                 reason="Sugerencia aceptada en la vista previa (paso 2)",
                 previous_result=entry["previous_result"],
+                recross_others=False,
             )
         except CorrectionError:
             continue

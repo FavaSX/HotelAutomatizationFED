@@ -155,7 +155,7 @@
         <p class="small text-muted mb-3">Revisa la comparación de cada voucher, ajusta el valor nuevo si hace falta y acepta. Puedes seguir con el siguiente sin salir de esta ventana; la bandeja se actualiza al cerrarla.</p>
         {% csrf_token %}
         <div class="d-flex flex-column gap-3">
-          {% for s in suggestion_items %}<div data-suggestion-case="{{ s.id }}" data-suffix="p" data-index="{{ forloop.counter }}"></div>{% endfor %}
+          {% for s in suggestion_items %}<div data-suggestion-case="{{ s.id|unlocalize }}" data-suffix="p" data-index="{{ forloop.counter|unlocalize }}"></div>{% endfor %}
         </div>
       </div>
       <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-between align-items-center">
@@ -223,7 +223,7 @@
             {% endif %}
           </td>
           <td class="text-end">
-            <button type="button" class="btn btn-sm {% if e.is_pending %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#exc-{{ e.id }}">
+            <button type="button" class="btn btn-sm {% if e.is_pending %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#exc-{{ e.id|unlocalize }}">
               {% if e.is_pending %}Resolver{% else %}Ver{% endif %}
             </button>
           </td>
@@ -239,11 +239,11 @@
     <nav aria-label="Paginación de excepciones">
       <ul class="pagination pagination-sm mb-0">
         {% if page.has_previous %}
-        <li class="page-item"><a class="page-link" href="?{{ query_string }}&page={{ page.previous_page_number }}">‹</a></li>
+        <li class="page-item"><a class="page-link" href="?{{ query_string }}&page={{ page.previous_page_number|unlocalize }}">‹</a></li>
         {% endif %}
         <li class="page-item active"><span class="page-link">{{ page.number }} / {{ page.paginator.num_pages }}</span></li>
         {% if page.has_next %}
-        <li class="page-item"><a class="page-link" href="?{{ query_string }}&page={{ page.next_page_number }}">›</a></li>
+        <li class="page-item"><a class="page-link" href="?{{ query_string }}&page={{ page.next_page_number|unlocalize }}">›</a></li>
         {% endif %}
       </ul>
     </nav>
@@ -259,7 +259,7 @@
 
 <!-- One modal per row: what happened, what to do, what was done -->
 {% for e in rows %}
-<div class="modal fade exc-modal" id="exc-{{ e.id }}" tabindex="-1" aria-labelledby="exc-{{ e.id }}-title" aria-hidden="true">
+<div class="modal fade exc-modal" id="exc-{{ e.id|unlocalize }}" tabindex="-1" aria-labelledby="exc-{{ e.id|unlocalize }}-title" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content border-0 rounded-4 overflow-hidden">
 
@@ -269,8 +269,8 @@
             <i class="bi bi-receipt fs-5"></i>
           </div>
           <div class="min-w-0">
-            <h5 class="modal-title fw-bold mb-0" id="exc-{{ e.id }}-title">Voucher <span class="font-mono">{{ e.authorization_code|default:"—" }}</span></h5>
-            <div class="exc-header-sub">{{ e.type_label }} · {{ e.card_type.name }} · Cierre #{{ e.process_id }} del {{ e.process.execution_date|date:"d/m/Y" }}</div>
+            <h5 class="modal-title fw-bold mb-0" id="exc-{{ e.id|unlocalize }}-title">Voucher <span class="font-mono">{{ e.authorization_code|default:"—" }}</span></h5>
+            <div class="exc-header-sub">{{ e.type_label }} · {{ e.card_type.name }} · Cierre #{{ e.process_id|unlocalize }} del {{ e.process.execution_date|date:"d/m/Y" }}</div>
           </div>
         </div>
         <div class="d-flex align-items-center gap-3 ms-auto">
@@ -313,7 +313,7 @@
         <section class="exc-section">
           <h6 class="exc-section-title">Sugerencia del sistema</h6>
           {% if e.suggestion %}
-          <div data-suggestion-case="{{ e.id }}" data-suffix="m"></div>
+          <div data-suggestion-case="{{ e.id|unlocalize }}" data-suffix="m"></div>
           {% elif e.action %}
           <div class="exc-callout"><i class="bi bi-lightbulb me-2"></i>{{ e.action }}</div>
           {% endif %}
@@ -329,18 +329,18 @@
           <h6 class="exc-section-title">{% if e.proposal %}¿O lo resuelves a mano?{% else %}¿Cómo lo resuelves?{% endif %}</h6>
           <div class="segmented exc-tabs" role="tablist">
             {% if e.can_correct and e.erp_rows %}
-            <button type="button" class="segmented-item active" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id }}-fix" role="tab" aria-selected="true"><i class="bi bi-pencil-square"></i>Corregir fila del ERP</button>
+            <button type="button" class="segmented-item active" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-fix" role="tab" aria-selected="true"><i class="bi bi-pencil-square"></i>Corregir fila del ERP</button>
             {% endif %}
             {% if e.can_correct %}
-            <button type="button" class="segmented-item {% if not e.erp_rows %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id }}-add" role="tab" aria-selected="{% if e.erp_rows %}false{% else %}true{% endif %}"><i class="bi bi-plus-circle"></i>Agregar fila al ERP</button>
+            <button type="button" class="segmented-item {% if not e.erp_rows %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-add" role="tab" aria-selected="{% if e.erp_rows %}false{% else %}true{% endif %}"><i class="bi bi-plus-circle"></i>Agregar fila al ERP</button>
             {% endif %}
-            <button type="button" class="segmented-item {% if not e.can_correct %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id }}-close" role="tab" aria-selected="{% if e.can_correct %}false{% else %}true{% endif %}"><i class="bi bi-check2-circle"></i>Cerrar sin cambiar el ERP</button>
+            <button type="button" class="segmented-item {% if not e.can_correct %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-close" role="tab" aria-selected="{% if e.can_correct %}false{% else %}true{% endif %}"><i class="bi bi-check2-circle"></i>Cerrar sin cambiar el ERP</button>
           </div>
 
           <div class="tab-content pt-3">
             {% if e.can_correct and e.erp_rows %}
             <!-- 3a. Fix an existing Bordero row -->
-            <div class="tab-pane fade show active" id="exc-{{ e.id }}-fix" role="tabpanel">
+            <div class="tab-pane fade show active" id="exc-{{ e.id|unlocalize }}-fix" role="tabpanel">
               <p class="exc-hint">Elige la fila del Borderó que está mal. Al guardar, el voucher se vuelve a cruzar y, si cuadra, queda como “Corregido en ERP”.</p>
               {% for row in e.erp_rows %}
               <div class="erp-row-card">
@@ -359,64 +359,64 @@
                     </div>
                   </div>
                   <div class="erp-row-actions">
-                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-toggle="collapse" data-bs-target="#edit-{{ e.id }}-{{ row.id }}" aria-expanded="false" aria-controls="edit-{{ e.id }}-{{ row.id }}"><i class="bi bi-pencil me-1"></i>Editar</button>
-                    <button type="button" class="btn btn-link btn-sm text-danger text-decoration-none px-2" data-bs-toggle="collapse" data-bs-target="#del-{{ e.id }}-{{ row.id }}" aria-expanded="false" aria-controls="del-{{ e.id }}-{{ row.id }}" title="La fila sobra en el ERP"><i class="bi bi-trash"></i><span class="visually-hidden">Eliminar fila</span></button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-toggle="collapse" data-bs-target="#edit-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" aria-expanded="false" aria-controls="edit-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}"><i class="bi bi-pencil me-1"></i>Editar</button>
+                    <button type="button" class="btn btn-link btn-sm text-danger text-decoration-none px-2" data-bs-toggle="collapse" data-bs-target="#del-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" aria-expanded="false" aria-controls="del-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" title="La fila sobra en el ERP"><i class="bi bi-trash"></i><span class="visually-hidden">Eliminar fila</span></button>
                   </div>
                 </div>
 
-                <div class="collapse" id="edit-{{ e.id }}-{{ row.id }}" data-bs-parent="#exc-{{ e.id }}-fix">
+                <div class="collapse" id="edit-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" data-bs-parent="#exc-{{ e.id|unlocalize }}-fix">
                   <form method="post" action="{% url 'exception_erp_edit' e.id row.id %}" class="erp-row-form row g-2">
                     {% csrf_token %}
-                    <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+                    <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number|unlocalize }}{% endif %}">
                     <div class="col-6 col-md-4">
-                      <label class="form-label small mb-0" for="doc-{{ e.id }}-{{ row.id }}">Cuenta</label>
-                      <input id="doc-{{ e.id }}-{{ row.id }}" name="document_number" class="form-control form-control-sm font-mono" value="{{ row.account_code|default:row.document_number }}">
+                      <label class="form-label small mb-0" for="doc-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Cuenta</label>
+                      <input id="doc-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="document_number" class="form-control form-control-sm font-mono" value="{{ row.account_code|default:row.document_number }}">
                     </div>
                     <div class="col-6 col-md-4">
-                      <label class="form-label small mb-0" for="pay-{{ e.id }}-{{ row.id }}">Cod. Deb.</label>
-                      <select id="pay-{{ e.id }}-{{ row.id }}" name="payment_code" class="form-select form-select-sm">
+                      <label class="form-label small mb-0" for="pay-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Cod. Deb.</label>
+                      <select id="pay-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="payment_code" class="form-select form-select-sm">
                         {% for code, label, card in e.payment_choices %}<option value="{{ code }}" {% if code == row.payment_code %}selected{% endif %}>{{ label }}</option>{% endfor %}
                       </select>
                     </div>
                     <div class="col-6 col-md-4">
-                      <label class="form-label small mb-0" for="amt-{{ e.id }}-{{ row.id }}">Valor ($)</label>
-                      <input id="amt-{{ e.id }}-{{ row.id }}" name="amount" class="form-control form-control-sm font-mono text-end" inputmode="decimal" value="{{ row.amount|unlocalize }}">
+                      <label class="form-label small mb-0" for="amt-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Valor ($)</label>
+                      <input id="amt-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="amount" class="form-control form-control-sm font-mono text-end" inputmode="decimal" value="{{ row.amount|unlocalize }}">
                     </div>
                     <div class="col-6 col-md-4">
-                      <label class="form-label small mb-0" for="auth-{{ e.id }}-{{ row.id }}">Documento</label>
-                      <input id="auth-{{ e.id }}-{{ row.id }}" name="authorization_code" class="form-control form-control-sm font-mono" value="{{ row.authorization_code|default:'' }}" title="Código de autorización del voucher">
+                      <label class="form-label small mb-0" for="auth-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Documento</label>
+                      <input id="auth-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="authorization_code" class="form-control form-control-sm font-mono" value="{{ row.authorization_code|default:'' }}" title="Código de autorización del voucher">
                     </div>
                     <div class="col-6 col-md-4">
-                      <label class="form-label small mb-0" for="date-{{ e.id }}-{{ row.id }}">Fecha</label>
-                      <input id="date-{{ e.id }}-{{ row.id }}" type="date" name="transaction_date" class="form-control form-control-sm" value="{{ row.transaction_date|date:'Y-m-d' }}">
+                      <label class="form-label small mb-0" for="date-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Fecha</label>
+                      <input id="date-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" type="date" name="transaction_date" class="form-control form-control-sm" value="{{ row.transaction_date|date:'Y-m-d' }}">
                     </div>
                     <div class="col-6 col-md-4">
-                      <label class="form-label small mb-0" for="time-{{ e.id }}-{{ row.id }}">Hora</label>
-                      <input id="time-{{ e.id }}-{{ row.id }}" type="time" step="1" name="transaction_time" class="form-control form-control-sm" value="{{ row.transaction_time|time:'H:i:s' }}">
+                      <label class="form-label small mb-0" for="time-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Hora</label>
+                      <input id="time-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" type="time" step="1" name="transaction_time" class="form-control form-control-sm" value="{{ row.transaction_time|time:'H:i:s' }}">
                     </div>
 
                     <div class="col-12">
-                      <button type="button" class="btn btn-link btn-sm px-0 text-decoration-none exc-more" data-bs-toggle="collapse" data-bs-target="#more-{{ e.id }}-{{ row.id }}" aria-expanded="false" aria-controls="more-{{ e.id }}-{{ row.id }}">
+                      <button type="button" class="btn btn-link btn-sm px-0 text-decoration-none exc-more" data-bs-toggle="collapse" data-bs-target="#more-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" aria-expanded="false" aria-controls="more-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">
                         <i class="bi bi-chevron-right me-1"></i>Más datos del Borderó
                       </button>
                     </div>
-                    <div class="collapse col-12" id="more-{{ e.id }}-{{ row.id }}">
+                    <div class="collapse col-12" id="more-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">
                       <div class="row g-2">
                         <div class="col-6 col-md-3">
-                          <label class="form-label small mb-0" for="rtype-{{ e.id }}-{{ row.id }}">Tipo Hab</label>
-                          <input id="rtype-{{ e.id }}-{{ row.id }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20" value="{{ row.room_type|default:'' }}">
+                          <label class="form-label small mb-0" for="rtype-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Tipo Hab</label>
+                          <input id="rtype-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20" value="{{ row.room_type|default:'' }}">
                         </div>
                         <div class="col-6 col-md-3">
-                          <label class="form-label small mb-0" for="res-{{ e.id }}-{{ row.id }}">Reserva</label>
-                          <input id="res-{{ e.id }}-{{ row.id }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50" value="{{ row.reservation_number|default:'' }}">
+                          <label class="form-label small mb-0" for="res-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Reserva</label>
+                          <input id="res-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50" value="{{ row.reservation_number|default:'' }}">
                         </div>
                         <div class="col-6 col-md-3">
-                          <label class="form-label small mb-0" for="inv-{{ e.id }}-{{ row.id }}">Factura</label>
-                          <input id="inv-{{ e.id }}-{{ row.id }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50" value="{{ row.invoice_number|default:'' }}">
+                          <label class="form-label small mb-0" for="inv-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Factura</label>
+                          <input id="inv-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50" value="{{ row.invoice_number|default:'' }}">
                         </div>
                         <div class="col-6 col-md-3">
-                          <label class="form-label small mb-0" for="cash-{{ e.id }}-{{ row.id }}">Usuario</label>
-                          <input id="cash-{{ e.id }}-{{ row.id }}" name="cashier_username" class="form-control form-control-sm font-mono text-uppercase" maxlength="50" value="{{ row.cashier_username|default:'' }}">
+                          <label class="form-label small mb-0" for="cash-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">Usuario</label>
+                          <input id="cash-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="cashier_username" class="form-control form-control-sm font-mono text-uppercase" maxlength="50" value="{{ row.cashier_username|default:'' }}">
                         </div>
                         <div class="col-12 exc-hint mb-0">Un campo opcional que dejes vacío se borra de la fila.</div>
                       </div>
@@ -429,13 +429,13 @@
                   </form>
                 </div>
 
-                <div class="collapse" id="del-{{ e.id }}-{{ row.id }}" data-bs-parent="#exc-{{ e.id }}-fix">
+                <div class="collapse" id="del-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" data-bs-parent="#exc-{{ e.id|unlocalize }}-fix">
                   <form method="post" action="{% url 'exception_erp_delete' e.id row.id %}" class="erp-row-form erp-row-form-danger">
                     {% csrf_token %}
-                    <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
-                    <label class="form-label small fw-semibold mb-1" for="delwhy-{{ e.id }}-{{ row.id }}">¿Por qué sobra esta fila?</label>
+                    <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number|unlocalize }}{% endif %}">
+                    <label class="form-label small fw-semibold mb-1" for="delwhy-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}">¿Por qué sobra esta fila?</label>
                     <div class="exc-form-footer">
-                      <input id="delwhy-{{ e.id }}-{{ row.id }}" name="reason" class="form-control form-control-sm" maxlength="500" required placeholder="Ej.: fila duplicada del mismo pago">
+                      <input id="delwhy-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" name="reason" class="form-control form-control-sm" maxlength="500" required placeholder="Ej.: fila duplicada del mismo pago">
                       <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3 text-nowrap"><i class="bi bi-trash me-1"></i>Eliminar fila</button>
                     </div>
                     <div class="exc-hint mb-0 mt-1">No se borra de la base: queda marcada como eliminada en el historial.</div>
@@ -448,56 +448,56 @@
 
             {% if e.can_correct %}
             <!-- 3b. Add the missing Bordero row -->
-            <div class="tab-pane fade {% if not e.erp_rows %}show active{% endif %}" id="exc-{{ e.id }}-add" role="tabpanel">
+            <div class="tab-pane fade {% if not e.erp_rows %}show active{% endif %}" id="exc-{{ e.id|unlocalize }}-add" role="tabpanel">
               <p class="exc-hint">Úsalo si el pago no quedó registrado en el Borderó. Los campos siguen el orden de las columnas del Excel; Valor, Documento, Fecha y Cod. Deb. vienen de Transbank. <span class="text-danger">*</span> obligatorio.</p>
               <form method="post" action="{% url 'exception_erp_add' e.id %}" class="row g-2 bordero-form">
                 {% csrf_token %}
-                <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+                <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number|unlocalize }}{% endif %}">
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="nacc-{{ e.id }}">Cuenta</label>
-                  <input id="nacc-{{ e.id }}" name="account_code" class="form-control form-control-sm font-mono" maxlength="50">
+                  <label class="form-label small mb-0" for="nacc-{{ e.id|unlocalize }}">Cuenta</label>
+                  <input id="nacc-{{ e.id|unlocalize }}" name="account_code" class="form-control form-control-sm font-mono" maxlength="50">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="npay-{{ e.id }}">Cod. Deb. <span class="text-danger" aria-hidden="true">*</span></label>
-                  <select id="npay-{{ e.id }}" name="payment_code" class="form-select form-select-sm font-mono js-erp-paycode" data-desc-target="ndesc-{{ e.id }}" required>
+                  <label class="form-label small mb-0" for="npay-{{ e.id|unlocalize }}">Cod. Deb. <span class="text-danger" aria-hidden="true">*</span></label>
+                  <select id="npay-{{ e.id|unlocalize }}" name="payment_code" class="form-select form-select-sm font-mono js-erp-paycode" data-desc-target="ndesc-{{ e.id|unlocalize }}" required>
                     {% for code, label, card in e.payment_choices %}<option value="{{ code }}" data-desc="{% if code == 'RCO' %}Red Compra{% elif card %}{{ card.name }} {% if e.process.process_currency == 'USD' %}US${% else %}${% endif %}{% endif %}" {% if code == e.new_row.payment_code %}selected{% endif %}>{{ code }}</option>{% endfor %}
                   </select>
                 </div>
                 <div class="col-12 col-md-4">
-                  <label class="form-label small mb-0" for="ndesc-{{ e.id }}">Descripción</label>
-                  <input id="ndesc-{{ e.id }}" class="form-control form-control-sm" readonly tabindex="-1" title="Se completa según el Cod. Deb.">
+                  <label class="form-label small mb-0" for="ndesc-{{ e.id|unlocalize }}">Descripción</label>
+                  <input id="ndesc-{{ e.id|unlocalize }}" class="form-control form-control-sm" readonly tabindex="-1" title="Se completa según el Cod. Deb.">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="namt-{{ e.id }}">Valor <span class="text-danger" aria-hidden="true">*</span></label>
-                  <input id="namt-{{ e.id }}" name="amount" class="form-control form-control-sm font-mono text-end" inputmode="decimal" required value="{{ e.new_row.bordero_amount }}" title="Como en el Borderó: los pagos van en negativo">
+                  <label class="form-label small mb-0" for="namt-{{ e.id|unlocalize }}">Valor <span class="text-danger" aria-hidden="true">*</span></label>
+                  <input id="namt-{{ e.id|unlocalize }}" name="amount" class="form-control form-control-sm font-mono text-end" inputmode="decimal" required value="{{ e.new_row.bordero_amount }}" title="Como en el Borderó: los pagos van en negativo">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="nauth-{{ e.id }}">Documento <span class="text-danger" aria-hidden="true">*</span></label>
-                  <input id="nauth-{{ e.id }}" name="authorization_code" class="form-control form-control-sm font-mono" maxlength="50" required value="{{ e.new_row.authorization_code|default:'' }}" title="Código de autorización del voucher">
+                  <label class="form-label small mb-0" for="nauth-{{ e.id|unlocalize }}">Documento <span class="text-danger" aria-hidden="true">*</span></label>
+                  <input id="nauth-{{ e.id|unlocalize }}" name="authorization_code" class="form-control form-control-sm font-mono" maxlength="50" required value="{{ e.new_row.authorization_code|default:'' }}" title="Código de autorización del voucher">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="ndate-{{ e.id }}">Fecha <span class="text-danger" aria-hidden="true">*</span></label>
-                  <input id="ndate-{{ e.id }}" type="date" name="transaction_date" class="form-control form-control-sm" required value="{{ e.new_row.transaction_date|date:'Y-m-d' }}">
+                  <label class="form-label small mb-0" for="ndate-{{ e.id|unlocalize }}">Fecha <span class="text-danger" aria-hidden="true">*</span></label>
+                  <input id="ndate-{{ e.id|unlocalize }}" type="date" name="transaction_date" class="form-control form-control-sm" required value="{{ e.new_row.transaction_date|date:'Y-m-d' }}">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="ntime-{{ e.id }}">Hora</label>
-                  <input id="ntime-{{ e.id }}" type="time" step="1" name="transaction_time" class="form-control form-control-sm">
+                  <label class="form-label small mb-0" for="ntime-{{ e.id|unlocalize }}">Hora</label>
+                  <input id="ntime-{{ e.id|unlocalize }}" type="time" step="1" name="transaction_time" class="form-control form-control-sm">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="ninv-{{ e.id }}">Factura</label>
-                  <input id="ninv-{{ e.id }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50">
+                  <label class="form-label small mb-0" for="ninv-{{ e.id|unlocalize }}">Factura</label>
+                  <input id="ninv-{{ e.id|unlocalize }}" name="invoice_number" class="form-control form-control-sm font-mono" maxlength="50">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="ncash-{{ e.id }}">Usuario</label>
-                  <input id="ncash-{{ e.id }}" name="cashier_username" class="form-control form-control-sm font-mono text-uppercase" maxlength="50">
+                  <label class="form-label small mb-0" for="ncash-{{ e.id|unlocalize }}">Usuario</label>
+                  <input id="ncash-{{ e.id|unlocalize }}" name="cashier_username" class="form-control form-control-sm font-mono text-uppercase" maxlength="50">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="nres-{{ e.id }}">Reserva</label>
-                  <input id="nres-{{ e.id }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50">
+                  <label class="form-label small mb-0" for="nres-{{ e.id|unlocalize }}">Reserva</label>
+                  <input id="nres-{{ e.id|unlocalize }}" name="reservation_number" class="form-control form-control-sm font-mono" maxlength="50">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="nrtype-{{ e.id }}">Tipo Hab</label>
-                  <input id="nrtype-{{ e.id }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20">
+                  <label class="form-label small mb-0" for="nrtype-{{ e.id|unlocalize }}">Tipo Hab</label>
+                  <input id="nrtype-{{ e.id|unlocalize }}" name="room_type" class="form-control form-control-sm font-mono" maxlength="20">
                 </div>
                 <div class="col-12 exc-form-footer">
                   <input name="reason" class="form-control form-control-sm" maxlength="500" placeholder="Motivo (opcional). Ej.: cajero no registró el pago" aria-label="Motivo">
@@ -508,20 +508,20 @@
             {% endif %}
 
             <!-- 3c. Close without touching the ERP -->
-            <div class="tab-pane fade {% if not e.can_correct %}show active{% endif %}" id="exc-{{ e.id }}-close" role="tabpanel">
+            <div class="tab-pane fade {% if not e.can_correct %}show active{% endif %}" id="exc-{{ e.id|unlocalize }}-close" role="tabpanel">
               <p class="exc-hint">Para casos que se arreglaron fuera del sistema o en que la diferencia se acepta.</p>
               <form method="post" action="{% url 'exception_resolve' e.id %}" class="row g-2">
                 {% csrf_token %}
-                <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
+                <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number|unlocalize }}{% endif %}">
                 <div class="col-12">
-                  <label class="form-label small mb-0" for="status-{{ e.id }}">{{ form.status.label }}</label>
-                  <select name="status" id="status-{{ e.id }}" class="form-select form-select-sm" required>
+                  <label class="form-label small mb-0" for="status-{{ e.id|unlocalize }}">{{ form.status.label }}</label>
+                  <select name="status" id="status-{{ e.id|unlocalize }}" class="form-select form-select-sm" required>
                     {% for value, label in form.fields.status.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
                   </select>
                 </div>
                 <div class="col-12">
-                  <label class="form-label small mb-0" for="comment-{{ e.id }}">{{ form.comment.label }}</label>
-                  <textarea name="comment" id="comment-{{ e.id }}" class="form-control form-control-sm" rows="2" maxlength="1000" placeholder="Qué se hizo, N° del ajuste, quién lo informó… (obligatorio si aceptas la diferencia)"></textarea>
+                  <label class="form-label small mb-0" for="comment-{{ e.id|unlocalize }}">{{ form.comment.label }}</label>
+                  <textarea name="comment" id="comment-{{ e.id|unlocalize }}" class="form-control form-control-sm" rows="2" maxlength="1000" placeholder="Qué se hizo, N° del ajuste, quién lo informó… (obligatorio si aceptas la diferencia)"></textarea>
                 </div>
                 <div class="col-12 d-flex justify-content-end">
                   <button type="submit" class="btn btn-success btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-check2-circle me-1"></i>Marcar como resuelto</button>
@@ -540,10 +540,10 @@
           </p>
           <form method="post" action="{% url 'exception_reopen' e.id %}">
             {% csrf_token %}
-            <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number }}{% endif %}">
-            <label class="form-label small mb-1" for="reopen-{{ e.id }}">¿Hay que volver a revisarlo? Indica por qué.</label>
+            <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number|unlocalize }}{% endif %}">
+            <label class="form-label small mb-1" for="reopen-{{ e.id|unlocalize }}">¿Hay que volver a revisarlo? Indica por qué.</label>
             <div class="exc-form-footer">
-              <input name="comment" id="reopen-{{ e.id }}" class="form-control form-control-sm" maxlength="1000" required>
+              <input name="comment" id="reopen-{{ e.id|unlocalize }}" class="form-control form-control-sm" maxlength="1000" required>
               <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill px-3 text-nowrap"><i class="bi bi-arrow-counterclockwise me-1"></i>Reabrir</button>
             </div>
           </form>
@@ -579,7 +579,7 @@
 
 {% block extra_js %}
 {{ suggestion_cards|json_script:"inboxSuggestionData" }}
-<script src="{% static 'js/suggestion_card.js' %}?v=6"></script>
+<script src="{% static 'js/suggestion_card.js' %}?v=7"></script>
 <script>
   // "Agregar a mano": the Descripción column follows the chosen Cod. Deb.
   document.querySelectorAll(".js-erp-paycode").forEach((select) => {

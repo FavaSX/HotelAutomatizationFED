@@ -37,11 +37,11 @@
         {% for item in cruce_rows %}
         <tr{% if item.has_erp_modifications %} class="erp-row-modified js-erp-history-row" data-history-key="{{ item.erp_history_key }}" title="Fila ERP modificada: clic para ver cómo era antes"{% endif %}>
           <td class="ps-4">
-            {% if item.display_erp_document %}
+            {% if item.display_erp_document and item.system_result != "NOT_FOUND_IN_ERP" and item.system_result != "OUT_OF_PERIOD" %}
             <div class="voucher-dual-pill">
               <span class="voucher-dual-tbk"><small>TBK:</small> {{ item.authorization_code|default:"—" }}</span>
               <span class="voucher-dual-equal">=</span>
-              <span class="voucher-dual-erp"><small>Doc ERP:</small> {{ item.display_erp_document }}<span class="voucher-check">&#10003;</span></span>
+              <span class="voucher-dual-erp"><small>Doc ERP:</small> {{ item.display_erp_document }}{% if item.system_result == "MATCHED" %}<span class="voucher-check">&#10003;</span>{% else %}<i class="bi bi-exclamation-triangle-fill text-warning ms-auto flex-shrink-0" title="{{ item.result_label }}"></i>{% endif %}</span>
             </div>
             {% else %}
             <span class="font-mono fw-semibold">{{ item.authorization_code|default:"—" }}</span>
@@ -94,6 +94,11 @@
           <td>
             <div class="d-flex flex-wrap align-items-center gap-1">
               <span class="status-chip {{ item.result_tone }}" title="{{ item.system_observation|default:'' }}">{{ item.result_label }}</span>
+              {% if item.matched_by_new_input %}
+              <span class="status-chip status-info" title="{{ item.matched_new_input_title|default:'' }}">
+                <i class="bi bi-arrow-repeat"></i> {{ item.matched_new_input_label }}
+              </span>
+              {% endif %}
               {% if item.has_erp_modifications %}
               <button type="button"
                       class="status-chip status-warning erp-modified-chip js-erp-history-trigger"

@@ -23,7 +23,7 @@ from ..models import (
     SystemConfiguration,
 )
 from ..templatetags.currency_filters import fmt_clp, fmt_usd
-from .clp_reconciliation import _cross_match_sale, get_clp_tolerance
+from .clp_reconciliation import _cross_match_sale, _installment_is_later, get_clp_tolerance
 from .column_detector import normalize_auth_code
 
 NOT_LINKED_RESULTS = ("NOT_FOUND_IN_ERP", "OUT_OF_PERIOD")
@@ -54,12 +54,39 @@ def _rows_with_code(currency: str, code: str) -> List[ErpTransaction]:
 
 
 def _claimed_by_other_vouchers(match: CrossMatchResult, row_ids: List[int]) -> set:
+    if not row_ids:
+        return set()
     return set(
         CrossMatchResult.objects.filter(erp_transaction_id__in=row_ids)
         .exclude(pk=match.pk)
         .exclude(system_result__in=NOT_LINKED_RESULTS)
         .values_list("erp_transaction_id", flat=True)
     )
+
+
+def _erp_row_allowed_for_pending_recross(
+    row: ErpTransaction,
+    match: CrossMatchResult,
+    tbk,
+    is_later_installment: bool = False,
+) -> bool:
+    """
+    Safety guard for background re-crossing of old PENDING cases:
+    - Allow later CLP installments (`2/3`, `3/3`, ...) to match the original ERP sale even when quota `1/3` reconciled it.
+    - Otherwise never steal a row already reconciled elsewhere (unless already linked to this match).
+    - Allow rows of the same ReconciliationProcess unconditionally.
+    - Across different closings, enforce a [-7, +14] day window around the Transbank sale date.
+    """
+    if is_later_installment:
+        return True
+    if row.reconciled and row.pk != match.erp_transaction_id:
+        return False
+    if row.process_id == match.process_id:
+        return True
+    if row.transaction_date is not None and tbk.sale_date is not None:
+        delta_days = (row.transaction_date - tbk.sale_date).days
+        return -7 <= delta_days <= 14
+    return True
 
 
 # ------------------------------------------------------------------------------
@@ -96,21 +123,25 @@ def _clp_row_view(row: ErpTransaction) -> Dict[str, Any]:
     }
 
 
-def _recross_clp(match: CrossMatchResult) -> Dict[str, Any]:
+def _recross_clp(match: CrossMatchResult, restrict_to_date_window: bool = False) -> Dict[str, Any]:
     tbk = match.transbank_transaction
     gross = tbk.original_sale_amount
+    installment_number = tbk.installment_number or ""
     sale = {
         "payment_modality": tbk.payment_modality,
         "gross_amount": gross,
         "valid_amount": gross,
         "authorization_code": tbk.authorization_code,
         "sale_date": tbk.sale_date,
-        "installment_number": tbk.installment_number or "",
+        "installment_number": installment_number,
     }
     code = normalize_auth_code(tbk.authorization_code)
     candidates = _rows_with_code("CLP", code)
-    claimed_ids = _claimed_by_other_vouchers(match, [r.id for r in candidates])
+    is_later = _installment_is_later(installment_number)
+    claimed_ids = set() if is_later else _claimed_by_other_vouchers(match, [r.id for r in candidates])
     rows = [r for r in candidates if r.id not in claimed_ids]
+    if restrict_to_date_window:
+        rows = [r for r in rows if _erp_row_allowed_for_pending_recross(r, match, tbk, is_later_installment=is_later)]
     views = [_clp_row_view(r) for r in rows]
 
     result = _cross_match_sale(
@@ -135,8 +166,8 @@ def _recross_clp(match: CrossMatchResult) -> Dict[str, Any]:
             "erp_transaction": primary,
             "erp_amount_clp": Decimal(str(result["erp_amount"])).quantize(Decimal("0.01")),
             "difference_clp": Decimal(str(result["difference"])).quantize(Decimal("0.01")),
-            "account_code": ((primary.account_code or primary.document_number) if primary else (match.account_code or "")) or "",
-            "document_number": (primary.authorization_code if primary else match.document_number) or "",
+            "account_code": ((primary.account_code or primary.document_number) if primary else "") or "",
+            "document_number": (primary.authorization_code if primary else "") or "",
             "system_observation": result["observation"][:255],
         },
         "remaining": fmt_clp(abs(result["difference"])),
@@ -166,16 +197,22 @@ def _op_clp(op: Optional[CardOperatorTransaction]) -> Decimal:
     return op.balance_amount if op.balance_amount > 0 else op.corrected_balance_amount
 
 
-def _recross_usd(match: CrossMatchResult) -> Dict[str, Any]:
+def _recross_usd(match: CrossMatchResult, restrict_to_date_window: bool = False) -> Dict[str, Any]:
     tbk = match.transbank_transaction
     gross_usd = tbk.original_sale_amount
-    card_code = match.card_type.code
+    card_code = (
+        match.card_type.code
+        if match.card_type_id
+        else (tbk.card_type.code if tbk.card_type_id else "")
+    )
     tolerance = SystemConfiguration.get_solo().usd_rounding_tolerance
 
     code = normalize_auth_code(tbk.authorization_code)
     candidates = _rows_with_code("USD", code)
     claimed_ids = _claimed_by_other_vouchers(match, [r.id for r in candidates])
     rows = [r for r in candidates if r.id not in claimed_ids]
+    if restrict_to_date_window:
+        rows = [r for r in rows if _erp_row_allowed_for_pending_recross(r, match, tbk, is_later_installment=False)]
     rows = [r for r in rows if r.invoice_number] or rows
 
     if not rows:
@@ -297,15 +334,21 @@ def recalculate_process_summaries(process: ReconciliationProcess) -> None:
                     summary.save(update_fields=["erp_sales_total", "transbank_sales_total", "difference"])
 
 
-def recross_voucher(match: CrossMatchResult) -> Dict[str, Any]:
+def recross_voucher(match: CrossMatchResult, restrict_to_date_window: bool = False) -> Dict[str, Any]:
     """
     Recomputes the cross-match of one voucher from the database and writes the new result on `match`
     (not saved: the caller saves it with the status change, inside its transaction).
+    When `restrict_to_date_window=True`, only considers unclaimed (`reconciled=False` or already linked
+    to `match`) ERP rows within the coherent [-7, +14] day window across different closings.
     Returns {"system_result", "previous_result", "remaining", "linked_rows"}.
     """
     if match.transbank_transaction_id is None:
         raise RecrossError("Este caso no tiene un voucher de Transbank asociado; no se puede volver a cruzar.")
-    outcome = _recross_clp(match) if match.process.process_currency == "CLP" else _recross_usd(match)
+    outcome = (
+        _recross_clp(match, restrict_to_date_window=restrict_to_date_window)
+        if match.process.process_currency == "CLP"
+        else _recross_usd(match, restrict_to_date_window=restrict_to_date_window)
+    )
     previous = match.system_result
     for field_name, value in outcome["fields"].items():
         setattr(match, field_name, value)

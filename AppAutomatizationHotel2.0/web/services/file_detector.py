@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .column_detector import normalize_text, safe_date
+from .erp_coverage import evaluate_bordero_upload_warnings, extract_bordero_df_stats
 from .excel_parsers import read_excel_or_html_df
 
 
@@ -124,11 +125,13 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
         if any(tok in combined_raw_text.upper() for tok in ("AME$", "VIS$", "MAS$", "DIN$", "AMEX $", "VISA $")) or (
             "reserva" in normalized_content and "factura" in normalized_content
         ):
-            return _build_result(
+            res = _build_result(
                 "erp",
                 "HIGH",
                 "'HOTELERA SAN FRANCISCO S.A' + Códigos de tarjeta ERP (AME$, VIS$, MAS$, DIN$)",
             )
+            res["_erp_stats"] = extract_bordero_df_stats(dataframe)
+            return res
 
     except Exception:
         pass
@@ -206,6 +209,18 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
                 "extra_files": [],
             })
 
+    erp_stats_list: List[Dict[str, Any]] = []
+    for item in inspected_files:
+        st = item.pop("_erp_stats", None)
+        if st and item.get("detected_role") == "erp" and item["file_index"] in used_file_indices:
+            erp_stats_list.append(st)
+
+    erp_coverage_meta, erp_warnings = (
+        evaluate_bordero_upload_warnings(erp_stats_list)
+        if erp_stats_list
+        else (None, [])
+    )
+
     return {
         "aligned_roles": aligned_roles,
         "inspected_files": inspected_files,
@@ -213,6 +228,8 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
         "all_matched": all(r["matched"] for r in aligned_roles),
         "matched_count": sum(1 for r in aligned_roles if r["matched"]),
         "total_required": len(required_roles),
+        "erp_coverage": erp_coverage_meta,
+        "erp_warnings": erp_warnings,
     }
 
 
@@ -316,6 +333,7 @@ def inspect_single_clp_excel_file(uploaded_file, file_index: int) -> Dict[str, A
                 detected_role="erp",
                 confidence="HIGH",
                 evidence=f"Borderó FrontOffice 'Cargos de Débitos y Créditos'{period_label}",
+                _erp_stats=extract_bordero_df_stats(dataframe),
             )
             return result
 

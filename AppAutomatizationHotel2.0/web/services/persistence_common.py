@@ -8,7 +8,7 @@ Centralizes natural-key bulk deduplication for:
 """
 
 from decimal import Decimal
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from django.contrib.auth.models import User
 from django.utils import timezone
 
@@ -18,13 +18,76 @@ from ..models import (
     CardType,
     CrossMatchResult,
     ErpTransaction,
+    ErpTransactionChange,
     ReconciliationProcess,
     ReconciliationStatus,
     TransbankTransaction,
 )
 from .column_detector import safe_date, safe_time
-from .erp_corrections import source_key_for_raw
+from .erp_corrections import (
+    active_claimed_sales_by_erp_id,
+    modified_excel_rows_by_current_key,
+    source_key_for_raw,
+)
 from .excel_parsers import get_additional_erp_movements
+
+
+def _modified_erp_ids(erp_ids: Sequence[int]) -> Set[int]:
+    ids = [eid for eid in erp_ids if eid]
+    if not ids:
+        return set()
+    return set(
+        ErpTransactionChange.objects.filter(erp_transaction_id__in=ids)
+        .values_list("erp_transaction_id", flat=True)
+    )
+
+
+def get_protected_tbk_match_ids(
+    tbk_ids: Sequence[int],
+    target_process_id: Optional[int] = None,
+) -> Set[int]:
+    """
+    Returns TransbankTransaction IDs whose existing MATCHED CrossMatchResult must NOT be
+    downgraded or overwritten by a raw re-upload (manual rows, manually edited ERP rows,
+    manually RESOLVED_* cases, or cross-closing matches owned by another closing).
+    Soft-deleted ERP links are intentionally NOT protected so deletions trigger recalculation.
+    """
+    ids = [tid for tid in tbk_ids if tid]
+    if not ids:
+        return set()
+
+    matches = list(
+        CrossMatchResult.objects.filter(
+            transbank_transaction_id__in=ids,
+            system_result="MATCHED",
+        ).select_related("management_status")
+    )
+    if not matches:
+        return set()
+
+    all_erp_ids: Set[int] = {m.erp_transaction_id for m in matches if m.erp_transaction_id}
+    active_erps = ErpTransaction.objects.in_bulk(all_erp_ids) if all_erp_ids else {}
+    modified_ids = _modified_erp_ids(list(active_erps.keys()))
+
+    protected: Set[int] = set()
+    for m in matches:
+        erp_row = active_erps.get(m.erp_transaction_id) if m.erp_transaction_id else None
+        if erp_row is None:
+            continue
+
+        status_code = m.management_status.code if m.management_status else ""
+        if status_code.startswith("RESOLVED_"):
+            protected.add(m.transbank_transaction_id)
+            continue
+
+        if (
+            erp_row.origin == ErpTransaction.ORIGIN_MANUAL
+            or erp_row.id in modified_ids
+            or (target_process_id is not None and erp_row.process_id != target_process_id)
+        ):
+            protected.add(m.transbank_transaction_id)
+
+    return protected
 
 
 def to_decimal(value: Any) -> Decimal:
@@ -113,6 +176,51 @@ def sync_bank_statement_movements(
     return bank_models
 
 
+def _apply_existing_erp_updates(
+    obj: ErpTransaction,
+    *,
+    process: ReconciliationProcess,
+    rec_val: bool,
+    desc_val: Optional[str],
+    modified_erp_ids: Set[int],
+    actively_claimed_ids: Set[int],
+    seen_erp_update_ids: Set[int],
+    erp_to_update: List[ErpTransaction],
+) -> None:
+    """Updates reconciliation/ownership/description on an existing ERP row without erasing manual edits."""
+    is_editable_origin = (
+        obj.origin == ErpTransaction.ORIGIN_EXCEL
+        and obj.id not in modified_erp_ids
+    )
+    can_adopt_cross_currency = (
+        not obj.reconciled
+        and is_editable_origin
+        and obj.process_id != process.id
+        and obj.process.process_currency != process.process_currency
+        and obj.source_currency == process.process_currency
+    )
+    changed = False
+    if rec_val and not obj.reconciled:
+        obj.reconciled = True
+        # Preserve original closing ownership for same-currency rows; adopt only auxiliary cross-currency rows.
+        if can_adopt_cross_currency:
+            obj.process = process
+        changed = True
+    elif not rec_val and obj.reconciled and obj.id not in actively_claimed_ids:
+        # Heal orphaned/stale reconciled=True flags when no active MATCHED CrossMatchResult claims this row.
+        obj.reconciled = False
+        changed = True
+    elif not obj.reconciled and can_adopt_cross_currency:
+        obj.process = process
+        changed = True
+    if desc_val and not obj.payment_description and is_editable_origin:
+        obj.payment_description = desc_val
+        changed = True
+    if changed and obj.pk and obj.pk not in seen_erp_update_ids:
+        seen_erp_update_ids.add(obj.pk)
+        erp_to_update.append(obj)
+
+
 def sync_erp_transactions_by_currency(
     process: ReconciliationProcess,
     erp_raw: List[Dict[str, Any]],
@@ -126,8 +234,21 @@ def sync_erp_transactions_by_currency(
     the ORIGINAL Excel row. A row the accountant corrected is still found, and is never overwritten by the
     Excel values; a soft-deleted row is found too and stays deleted.
     """
-    manual_rows = ErpTransaction.all_objects.in_bulk([e["manual_id"] for e in erp_raw if e.get("manual_id")])
-    incoming_keys = [source_key_for_raw(e, source_currency, doc_field) for e in erp_raw if not e.get("manual_id")]
+    db_row_ids = [
+        e.get("db_id") or e.get("manual_id")
+        for e in erp_raw
+        if e.get("db_id") or e.get("manual_id")
+    ]
+    existing_by_id = (
+        ErpTransaction.all_objects.select_related("process").in_bulk(db_row_ids)
+        if db_row_ids
+        else {}
+    )
+    incoming_keys = [
+        source_key_for_raw(e, source_currency, doc_field)
+        for e in erp_raw
+        if not e.get("manual_id") and not e.get("db_id")
+    ]
     unique_keys = list(dict.fromkeys(k for k in incoming_keys if k))
     existing_map: Dict[str, ErpTransaction] = {}
     for start in range(0, len(unique_keys), 900):
@@ -140,27 +261,43 @@ def sync_erp_transactions_by_currency(
         for existing in qs:
             existing_map.setdefault(existing.source_key, existing)  # oldest wins if old uploads left duplicates
 
-    erp_models: List[ErpTransaction] = []
+    modified_curr_map = modified_excel_rows_by_current_key(source_currency)
+    candidate_objs = list(existing_by_id.values()) + list(existing_map.values()) + list(modified_curr_map.values())
+    candidate_ids = [obj.id for obj in candidate_objs if obj.id]
+    modified_erp_ids = _modified_erp_ids(candidate_ids)
+    stale_reconciled_ids = [obj.id for obj in candidate_objs if obj.id and obj.reconciled]
+    actively_claimed_ids = (
+        {eid for eid, sales in active_claimed_sales_by_erp_id(stale_reconciled_ids).items() if sales}
+        if stale_reconciled_ids
+        else set()
+    )
+
+    erp_models: List[Optional[ErpTransaction]] = []
     new_erp: List[ErpTransaction] = []
     erp_to_update: List[ErpTransaction] = []
     seen_erp_update_ids: set = set()
 
     for e_data in erp_raw:
-        manual_obj = manual_rows.get(e_data.get("manual_id"))
-        if manual_obj is not None:
-            # Hand-added row taking part in this upload's cross-match: it already exists, update its process/flag
-            changed = False
-            if e_data.get("reconciled") and not manual_obj.reconciled:
-                manual_obj.reconciled = True
-                manual_obj.process = process
-                changed = True
-            elif not manual_obj.reconciled and manual_obj.process_id != process.id:
-                manual_obj.process = process
-                changed = True
-            if changed and manual_obj.pk and manual_obj.pk not in seen_erp_update_ids:
-                seen_erp_update_ids.add(manual_obj.pk)
-                erp_to_update.append(manual_obj)
-            erp_models.append(manual_obj)
+        rec_val = e_data.get("reconciled", False)
+        desc_val = (e_data.get("payment_description") or "").strip()[:100] or None
+
+        db_id_val = e_data.get("db_id") or e_data.get("manual_id")
+        linked_obj = existing_by_id.get(db_id_val) if db_id_val else None
+        if linked_obj is not None:
+            if linked_obj.is_deleted:
+                erp_models.append(None)
+                continue
+            _apply_existing_erp_updates(
+                linked_obj,
+                process=process,
+                rec_val=rec_val,
+                desc_val=desc_val,
+                modified_erp_ids=modified_erp_ids,
+                actively_claimed_ids=actively_claimed_ids,
+                seen_erp_update_ids=seen_erp_update_ids,
+                erp_to_update=erp_to_update,
+            )
+            erp_models.append(linked_obj)
             continue
 
         doc_val = e_data.get(doc_field) or e_data.get("account_code") or ""
@@ -169,33 +306,23 @@ def sync_erp_transactions_by_currency(
         amt_val = to_decimal(e_data.get("amount"))
         date_val = safe_date(e_data.get("transaction_date"))
         time_val = safe_time(e_data.get("transaction_time"))
-        rec_val = e_data.get("reconciled", False)
-        desc_val = (e_data.get("payment_description") or "").strip()[:100] or None
 
         natural_key = source_key_for_raw(e_data, source_currency, doc_field)
-        existing_obj = existing_map.get(natural_key)
+        existing_obj = existing_map.get(natural_key) or modified_curr_map.get(natural_key)
         if existing_obj is not None:
-            changed = False
-            if rec_val and not existing_obj.reconciled:
-                existing_obj.reconciled = True
-                if existing_obj.process_id != process.id:
-                    existing_obj.process = process
-                changed = True
-            elif (
-                not existing_obj.reconciled
-                and existing_obj.process_id != process.id
-                and existing_obj.process.process_currency != process.process_currency
-                and existing_obj.source_currency == process.process_currency
-            ):
-                # Pre-loaded as an auxiliary row during the other currency's upload; adopt into native currency closing
-                existing_obj.process = process
-                changed = True
-            if desc_val and not existing_obj.payment_description:
-                existing_obj.payment_description = desc_val
-                changed = True
-            if changed and existing_obj.pk and existing_obj.pk not in seen_erp_update_ids:
-                seen_erp_update_ids.add(existing_obj.pk)
-                erp_to_update.append(existing_obj)
+            if existing_obj.is_deleted:
+                erp_models.append(None)
+                continue
+            _apply_existing_erp_updates(
+                existing_obj,
+                process=process,
+                rec_val=rec_val,
+                desc_val=desc_val,
+                modified_erp_ids=modified_erp_ids,
+                actively_claimed_ids=actively_claimed_ids,
+                seen_erp_update_ids=seen_erp_update_ids,
+                erp_to_update=erp_to_update,
+            )
             erp_models.append(existing_obj)
             continue
 
@@ -255,28 +382,47 @@ def sync_additional_erp_movements(
         for existing in ErpTransaction.all_objects.filter(source_key__in=chunk).order_by("id"):
             existing_by_key.setdefault(existing.source_key, existing)
 
+    modified_curr_map = modified_excel_rows_by_current_key()
+    modified_ids = _modified_erp_ids([obj.id for obj in existing_by_key.values() if obj.id])
+
     new_erp: List[ErpTransaction] = []
     to_update: List[ErpTransaction] = []
     seen_update_ids: set = set()
+    card_get = card_types.get
+    proc_currency = process.process_currency
 
     for m_data in additional_rows:
         skey = m_data.get("source_key")
         if not skey:
             continue
-        desc_val = (m_data.get("payment_description") or "").strip()[:100] or None
-        existing_obj = existing_by_key.get(skey)
+        existing_obj = existing_by_key.get(skey) or modified_curr_map.get(skey)
         if existing_obj is not None:
-            if desc_val and not existing_obj.payment_description and existing_obj.pk and existing_obj.pk not in seen_update_ids:
-                existing_obj.payment_description = desc_val
-                seen_update_ids.add(existing_obj.pk)
-                to_update.append(existing_obj)
+            if (
+                not existing_obj.is_deleted
+                and existing_obj.origin == ErpTransaction.ORIGIN_EXCEL
+                and existing_obj.id not in modified_ids
+                and not existing_obj.payment_description
+            ):
+                desc_val = (m_data.get("payment_description") or "").strip()[:100] or None
+                if desc_val and existing_obj.pk and existing_obj.pk not in seen_update_ids:
+                    existing_obj.payment_description = desc_val
+                    seen_update_ids.add(existing_obj.pk)
+                    to_update.append(existing_obj)
             continue
 
+        desc_val = (m_data.get("payment_description") or "").strip()[:100] or None
         doc_val = m_data.get("document_number") or m_data.get("account_code") or ""
         card_code = m_data.get("card_code") or ""
+        tx_date_val = m_data.get("_date_obj")
+        if tx_date_val is None and m_data.get("transaction_date") is not None:
+            tx_date_val = safe_date(m_data.get("transaction_date"))
+        tx_time_val = m_data.get("_time_obj")
+        if tx_time_val is None and m_data.get("transaction_time") is not None:
+            tx_time_val = safe_time(m_data.get("transaction_time"))
+
         new_obj = ErpTransaction(
             process=process,
-            card_type=card_types.get(card_code) if card_code else None,
+            card_type=card_get(card_code) if card_code else None,
             room_number=m_data.get("room_number"),
             room_type=m_data.get("room_type"),
             reservation_number=m_data.get("reservation_number"),
@@ -286,12 +432,12 @@ def sync_additional_erp_movements(
             invoice_number=m_data.get("invoice_number") or "",
             document_number=doc_val,
             authorization_code=m_data.get("authorization_code") or "",
-            transaction_date=safe_date(m_data.get("transaction_date")),
-            transaction_time=safe_time(m_data.get("transaction_time")),
+            transaction_date=tx_date_val,
+            transaction_time=tx_time_val,
             cashier_username=m_data.get("cashier_username"),
             guest_name=m_data.get("guest_name"),
             amount=to_decimal(m_data.get("amount")),
-            source_currency=m_data.get("source_currency") or process.process_currency,
+            source_currency=m_data.get("source_currency") or proc_currency,
             reconciled=False,
             origin=ErpTransaction.ORIGIN_EXCEL,
             source_key=skey,
@@ -317,6 +463,10 @@ def sync_transbank_transactions_for_process(
     """
     Deduplicates and bulk-syncs TransbankTransaction rows using the caller-provided natural_key_fn.
     """
+    protected_tbk_ids = get_protected_tbk_match_ids(
+        [t.id for t in existing_tbk_map.values() if t and t.id],
+        target_process_id=process.id,
+    )
     tbk_models: List[TransbankTransaction] = []
     new_tbk: List[TransbankTransaction] = []
     tbk_to_update: List[TransbankTransaction] = []
@@ -328,7 +478,9 @@ def sync_transbank_transactions_for_process(
         existing_tbk = existing_tbk_map.get(natural_key)
         if existing_tbk is not None:
             changed = False
-            if existing_tbk.reconciled != t_rec:
+            if existing_tbk.reconciled != t_rec and not (
+                existing_tbk.reconciled and existing_tbk.id in protected_tbk_ids
+            ):
                 existing_tbk.reconciled = t_rec
                 changed = True
             if existing_tbk.process_id != process.id:
@@ -375,12 +527,15 @@ def upsert_cross_match_and_audit_logs(
     tbk_models: List[TransbankTransaction],
     prepared_entries: Iterable[Tuple[Optional[TransbankTransaction], Dict[str, Any], Optional[ReconciliationStatus]]],
     accepted_status: Optional[ReconciliationStatus],
-) -> None:
+    target_process_id: Optional[int] = None,
+) -> Set[int]:
     """
     Bulk-creates or bulk-updates CrossMatchResult records keyed by transbank_transaction_id,
     and emits AuditResolutionLog records whenever a re-upload transitions a voucher's system_result.
+    Preserves protected matches (manual ERP rows/edits, RESOLVED_* cases, cross-closing matches).
     """
     tbk_ids = [t.id for t in tbk_models if t and t.id]
+    protected_tbk_ids = get_protected_tbk_match_ids(tbk_ids, target_process_id=target_process_id)
     existing_matches_by_tbk_id = {
         m.transbank_transaction_id: m
         for m in CrossMatchResult.objects.select_related("management_status").filter(transbank_transaction_id__in=tbk_ids)
@@ -408,6 +563,15 @@ def upsert_cross_match_and_audit_logs(
                 existing_matches_by_tbk_id[tbk_obj.id] = new_match
             matches_to_create.append(new_match)
             continue
+
+        if tbk_obj and tbk_obj.id in protected_tbk_ids:
+            incoming_erp = match_fields.get("erp_transaction")
+            incoming_erp_id = incoming_erp.id if incoming_erp is not None else match_fields.get("erp_transaction_id")
+            if sys_result != "MATCHED" or (
+                existing_match.erp_transaction_id
+                and incoming_erp_id != existing_match.erp_transaction_id
+            ):
+                continue
 
         prev_sys_result = existing_match.system_result
         prev_status = existing_match.management_status
@@ -447,4 +611,5 @@ def upsert_cross_match_and_audit_logs(
         CrossMatchResult.objects.bulk_update(matches_to_update, update_field_names)
     if audit_logs_to_create:
         AuditResolutionLog.objects.bulk_create(audit_logs_to_create)
+    return protected_tbk_ids
 
