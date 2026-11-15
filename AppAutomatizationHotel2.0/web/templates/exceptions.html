@@ -3,6 +3,19 @@
 
 {% block page_title %}Hotel Plaza San Francisco | Pendientes{% endblock %}
 
+{% block extra_css %}
+<style>
+  .table-dash tbody tr.closing-group-row td {
+    background: var(--surface-2);
+    border-top: 2px solid var(--border-strong);
+    padding-top: .5rem; padding-bottom: .5rem;
+    font-size: .85rem;
+  }
+  .table-dash tbody tr.closing-group-row:first-child td { border-top: 0; }
+  .table-dash tbody tr.closing-group-row.is-newest td { box-shadow: inset 3px 0 0 var(--accent); }
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- Header -->
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
@@ -187,6 +200,17 @@
       </thead>
       <tbody>
         {% for e in rows %}
+        {% if e.closing_header %}
+        <tr class="closing-group-row{% if e.closing_is_newest %} is-newest{% endif %}">
+          <td colspan="7">
+            <i class="bi bi-calendar-check me-1"></i>
+            <span class="fw-semibold">Cierre #{{ e.process_id }}</span>
+            <span class="text-muted">· {{ e.process.execution_date|date:"d/m/Y H:i" }}{% if e.closing_user %} · {{ e.closing_user }}{% endif %}{% if e.process.accounting_period %} · Período {{ e.process.accounting_period }}{% endif %}</span>
+            <span class="text-muted">· {{ e.closing_count }} caso{{ e.closing_count|pluralize }}</span>
+            {% if e.closing_is_newest %}<span class="status-chip status-success ms-2">Más reciente</span>{% endif %}
+          </td>
+        </tr>
+        {% endif %}
         <tr>
           <td>
             <div class="fw-semibold font-mono">{{ e.authorization_code|default:"—" }}</div>

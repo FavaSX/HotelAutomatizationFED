@@ -517,7 +517,7 @@ async function executeCommitToDatabase() {
 
     const data = await response.json();
     if (!response.ok || !data.success) {
-      alert(data.error || 'No se pudo guardar el proceso en la base de datos.');
+      notify(data.error || 'No se pudo guardar el cierre.', 'error');
       setButtonsDisabled(false);
       btnExecute.innerHTML = originalHtml;
       isCommitting = false;
@@ -534,7 +534,8 @@ async function executeCommitToDatabase() {
     document.getElementById('commitStepConfirm').classList.add('d-none');
     document.getElementById('commitStepSuccess').classList.remove('d-none');
   } catch (err) {
-    alert('Error de conexión al guardar en la base de datos: ' + err);
+    console.error(err);
+    notify('Sin conexión con el servidor. El cierre no se guardó.', 'error');
     setButtonsDisabled(false);
     btnExecute.innerHTML = originalHtml;
     isCommitting = false;

@@ -73,6 +73,7 @@ def _filtered_exceptions(params):
         CrossMatchResult.objects.filter(~Q(system_result="MATCHED") | Q(id__in=fixed_in_erp))
         .select_related(
             "process",
+            "process__user",
             "card_type",
             "management_status",
             "resolved_by",
@@ -80,7 +81,7 @@ def _filtered_exceptions(params):
             "erp_transaction",
             "card_operator_transaction",
         )
-        .order_by("process__execution_date", "-transbank_amount")
+        .order_by("process__execution_date", "process_id", "-transbank_amount")
     )
     state = params.get("estado") or "pendientes"
     if state == "pendientes":
@@ -151,6 +152,7 @@ def exceptions_view(request):
     page = Paginator(qs, EXCEPTIONS_PAGE_SIZE).get_page(params.get("page"))
     today = timezone.localdate()
     rows = [_decorate_exception(item, today) for item in page.object_list]
+    _mark_closing_groups(qs, rows)
     logs = {}
     for log in AuditResolutionLog.objects.filter(cross_match_result__in=rows).select_related("user", "previous_status", "new_status"):
         logs.setdefault(log.cross_match_result_id, []).append(log)
@@ -210,6 +212,25 @@ def exceptions_view(request):
         "suggestion_total": suggestion_total,
         "panel_payment_choices": choices[currency.upper()],
     })
+
+
+def _mark_closing_groups(qs, rows):
+    """
+    Cases of the same closing are listed together; the first row of each closing carries a header
+    (closing number, date and time, who ran it, how many of its cases match the filters) so cases from a
+    reconciliation just run don't blend with earlier ones. The newest closing in the list is flagged.
+    """
+    counts = dict(qs.order_by().values_list("process_id").annotate(n=Count("id")))
+    newest_id = qs.order_by("-process__execution_date", "-process_id").values_list("process_id", flat=True).first()
+    previous_id = None
+    for item in rows:
+        item.closing_header = item.process_id != previous_id
+        if item.closing_header:
+            item.closing_count = counts.get(item.process_id, 0)
+            item.closing_is_newest = item.process_id == newest_id and len(counts) > 1
+            user = item.process.user
+            item.closing_user = (user.get_full_name() or user.username) if user else ""
+        previous_id = item.process_id
 
 
 SUGGESTION_PANEL_LIMIT = 30

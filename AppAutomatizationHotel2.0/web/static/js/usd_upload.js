@@ -92,14 +92,15 @@ async function handleBulkFilesSelected(fileList) {
     });
     const data = await response.json();
     if (!response.ok) {
-      alert(data.error || 'Error al analizar los archivos.');
+      notify(data.error || 'No se pudieron analizar los archivos.', 'error');
       resetExperimentalFiles();
       return;
     }
     latestDetectionReport = data;
     renderAlignmentTable(data);
   } catch (err) {
-    alert('Error de conexión al inspeccionar los archivos: ' + err);
+    console.error(err);
+    notify('Sin conexión con el servidor. No se pudieron revisar los archivos.', 'error');
     resetExperimentalFiles();
   } finally {
     document.getElementById('expScanningSpinner').classList.add('d-none');
@@ -357,7 +358,7 @@ async function uploadExtraErpFile(inputElem) {
     });
     const data = await response.json();
     if (!response.ok || !data.inspected_files || data.inspected_files.length === 0) {
-      alert(data.error || 'No se pudo analizar el archivo.');
+      notify(data.error || 'No se pudo analizar el archivo.', 'error');
       return;
     }
     const newFileIndex = bulkUploadedFiles.length;
@@ -371,7 +372,8 @@ async function uploadExtraErpFile(inputElem) {
     renderExtraTbkWidgets();
     validateCurrentAlignmentSelection();
   } catch (err) {
-    alert('Error al subir el archivo ERP adicional: ' + err);
+    console.error(err);
+    notify('No se pudo subir el archivo ERP adicional.', 'error');
   }
 }
 
@@ -420,7 +422,7 @@ async function uploadExtraTbkFile(inputElem) {
     });
     const data = await response.json();
     if (!response.ok || !data.inspected_files || data.inspected_files.length === 0) {
-      alert(data.error || 'No se pudo analizar el archivo.');
+      notify(data.error || 'No se pudo analizar el archivo.', 'error');
       return;
     }
     const newFileIndex = bulkUploadedFiles.length;
@@ -434,7 +436,8 @@ async function uploadExtraTbkFile(inputElem) {
     renderExtraTbkWidgets();
     validateCurrentAlignmentSelection();
   } catch (err) {
-    alert('Error al subir el archivo Transbank adicional: ' + err);
+    console.error(err);
+    notify('No se pudo subir el archivo Transbank adicional.', 'error');
   }
 }
 
@@ -461,7 +464,7 @@ async function uploadSingleFileForRole(roleKey, inputElem) {
     });
     const data = await response.json();
     if (!response.ok || !data.inspected_files || data.inspected_files.length === 0) {
-      alert(data.error || 'No se pudo analizar el archivo.');
+      notify(data.error || 'No se pudo analizar el archivo.', 'error');
       onManualAlignmentChange();
       return;
     }
@@ -487,7 +490,8 @@ async function uploadSingleFileForRole(roleKey, inputElem) {
 
     onManualAlignmentChange();
   } catch (err) {
-    alert('Error al subir el archivo individual: ' + err);
+    console.error(err);
+    notify('No se pudo subir el archivo.', 'error');
     onManualAlignmentChange();
   }
 }
@@ -565,7 +569,7 @@ function confirmAlignmentAndSubmit() {
     const roleKey = sel.getAttribute('data-role-key');
     const fileIdx = sel.value !== '' ? parseInt(sel.value, 10) : null;
     if (fileIdx === null || !bulkUploadedFiles[fileIdx]) {
-      alert(`Por favor asegúrese de que los ${getRequiredFileCount()} roles tengan un archivo asignado.`);
+      notify(`Falta asignar archivo: los ${getRequiredFileCount()} roles deben tener uno.`, 'warning');
       return;
     }
     chosenSet.add(String(fileIdx));

@@ -32,6 +32,45 @@ window.escapeHtmlStr = escapeHtmlStr;
 window.formatClpClient = formatClpClient;
 window.formatUsdClient = formatUsdClient;
 
+/**
+ * Non-blocking notification (replaces window.alert).
+ * type: 'error' | 'warning' | 'success' | 'info'
+ */
+function notify(message, type = 'info', timeoutMs) {
+  let stack = document.getElementById('toastStack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'toastStack';
+    stack.className = 'toast-stack';
+    stack.setAttribute('aria-live', 'polite');
+    document.body.appendChild(stack);
+  }
+  const icons = {
+    error: 'bi-x-octagon-fill',
+    warning: 'bi-exclamation-triangle-fill',
+    success: 'bi-check-circle-fill',
+    info: 'bi-info-circle-fill',
+  };
+  const toast = document.createElement('div');
+  toast.className = 'app-toast app-toast-' + type;
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  toast.innerHTML =
+    '<i class="bi ' + (icons[type] || icons.info) + '"></i>' +
+    '<div class="app-toast-msg">' + escapeHtmlStr(message) + '</div>' +
+    '<button type="button" class="btn-close" aria-label="Cerrar"></button>';
+  const close = () => {
+    toast.classList.add('is-leaving');
+    setTimeout(() => toast.remove(), 200);
+  };
+  toast.querySelector('.btn-close').addEventListener('click', close);
+  stack.prepend(toast);  // newest on top
+  const ms = timeoutMs ?? (type === 'error' ? 8000 : 5000);
+  if (ms > 0) setTimeout(close, ms);
+  return toast;
+}
+
+window.notify = notify;
+
 (function () {
   const btn = document.getElementById('themeToggleBtn');
   const icon = document.getElementById('themeToggleIcon');

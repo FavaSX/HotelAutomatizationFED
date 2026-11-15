@@ -2361,7 +2361,7 @@ class UnifiedPaginationTests(TestCase):
         self.assertContains(detail_resp, "js-db-page-size-form")
         self.assertContains(detail_resp, '<input type="hidden" name="vista" value="erp">', html=True)
         self.assertContains(detail_resp, '<input type="hidden" name="cruce" value="solo_erp">', html=True)
-        self.assertContains(detail_resp, "app.js?v=6")
+        self.assertContains(detail_resp, "app.js?v=8")
 
         closings_resp = self.client.get(reverse("closings_list"))
         self.assertEqual(closings_resp.status_code, 200)
