@@ -202,15 +202,114 @@ def display_value(field_name: str, value: Any, currency: str) -> str:
 # Re-cross and case status
 # ------------------------------------------------------------------------------
 
-def _affected_matches(row: ErpTransaction, match: Optional[CrossMatchResult]) -> List[CrossMatchResult]:
-    """The case being worked on first, then any other case that was crossed with this row."""
-    others = list(
-        CrossMatchResult.objects.filter(erp_transaction_id=row.pk)
+MANUALLY_CLOSED_STATUS_CODES = ("RESOLVED_ADJUSTMENT", "RESOLVED_CASHIER", "RESOLVED_ACCEPTED", "ESCALATED")
+
+
+def _affected_matches(
+    row: ErpTransaction,
+    match: Optional[CrossMatchResult],
+    prior_auth_code: Optional[str] = None,
+) -> List[CrossMatchResult]:
+    """
+    The case being worked on first, then any other case that was crossed with this row
+    (either directly via `erp_transaction_id` or as a secondary row in a 1:N split-folio/reversal).
+    """
+    from .column_detector import normalize_auth_code
+
+    currency = row.source_currency or (match.process.process_currency if match else "CLP")
+    norm_codes = {
+        c
+        for c in (
+            normalize_auth_code(row.authorization_code or ""),
+            normalize_auth_code(prior_auth_code or ""),
+        )
+        if c
+    }
+    direct_q = Q(erp_transaction_id=row.pk)
+    if norm_codes:
+        code_q = Q()
+        for c in norm_codes:
+            code_q |= Q(authorization_code__icontains=c)
+        direct_q |= Q(process__process_currency=currency) & code_q
+
+    candidates = (
+        CrossMatchResult.objects.filter(direct_q)
         .exclude(pk=match.pk if match else None)
         .exclude(system_result__in=NOT_LINKED_RESULTS)
         .select_related("process", "transbank_transaction", "card_type", "management_status")
     )
+    others = [
+        cm
+        for cm in candidates
+        if cm.erp_transaction_id == row.pk
+        or (normalize_auth_code(cm.authorization_code or "") in norm_codes)
+    ]
     return ([match] if match else []) + others
+
+
+def _lock_and_validate_case(match: Optional[CrossMatchResult]) -> Optional[CrossMatchResult]:
+    if match is None:
+        return None
+    locked = (
+        CrossMatchResult.objects.select_for_update()
+        .select_related("process", "transbank_transaction", "card_type", "management_status")
+        .get(pk=match.pk)
+    )
+    status_code = locked.management_status.code if locked.management_status_id else "PENDING"
+    if status_code in MANUALLY_CLOSED_STATUS_CODES:
+        raise CorrectionError("Este caso ya está resuelto manualmente. Reábrelo antes de modificar el ERP.")
+    return locked
+
+
+def _lock_and_validate_row_for_case(
+    row: ErpTransaction,
+    match: Optional[CrossMatchResult],
+    source: str = ErpTransactionChange.SOURCE_MANUAL,
+) -> Tuple[ErpTransaction, Optional[CrossMatchResult]]:
+    from .column_detector import normalize_auth_code
+
+    locked_match = _lock_and_validate_case(match)
+    locked_row = (
+        ErpTransaction.all_objects.select_for_update()
+        .select_related("card_type", "process")
+        .get(pk=row.pk)
+    )
+    if locked_match is not None and source == ErpTransactionChange.SOURCE_MANUAL:
+        curr = locked_match.process.process_currency if locked_match.process_id else "CLP"
+        if locked_row.source_currency and locked_row.source_currency != curr:
+            raise CorrectionError(
+                "La fila del ERP seleccionada pertenece a otra moneda y no puede modificarse desde este caso."
+            )
+        row_norm = normalize_auth_code(locked_row.authorization_code or "")
+        match_norm = normalize_auth_code(locked_match.authorization_code or "")
+        is_direct = locked_row.pk == locked_match.erp_transaction_id
+        is_same_code = bool(row_norm and match_norm and row_norm == match_norm)
+        claimed_elsewhere = (
+            CrossMatchResult.objects.filter(erp_transaction_id=locked_row.pk, system_result="MATCHED")
+            .exclude(pk=locked_match.pk)
+            .exists()
+        ) or (locked_row.reconciled and not is_direct and not is_same_code)
+        if claimed_elsewhere:
+            raise CorrectionError(
+                "Esta fila del ERP ya está conciliada con otro voucher; no se puede modificar ni eliminar desde este caso."
+            )
+        if not is_direct and not is_same_code:
+            cand_ids = {r.pk for r in candidate_rows(locked_match, limit=25)}
+            linked_to_other_case = (
+                CrossMatchResult.objects.filter(erp_transaction_id=locked_row.pk)
+                .exclude(pk=locked_match.pk)
+                .exists()
+            )
+            cross_process_unproposed = (
+                locked_row.process_id is not None
+                and locked_match.process_id is not None
+                and locked_row.process_id != locked_match.process_id
+            )
+            if locked_row.pk not in cand_ids and (linked_to_other_case or cross_process_unproposed):
+                raise CorrectionError(
+                    "La fila del ERP seleccionada no pertenece a los candidatos de este voucher."
+                )
+    return locked_row, locked_match
 
 
 def _settle_case(match: CrossMatchResult, user, summary: str, previous_result: Optional[str] = None) -> Dict[str, Any]:
@@ -245,8 +344,9 @@ def _settle_all(
     summary: str,
     previous_result: Optional[str] = None,
     recross_others: bool = True,
+    prior_auth_code: Optional[str] = None,
 ) -> Dict[str, Any]:
-    affected = _affected_matches(row, match)
+    affected = _affected_matches(row, match, prior_auth_code=prior_auth_code)
     results = [
         _settle_case(m, user, summary, previous_result if m is match else None) for m in affected
     ]
@@ -296,8 +396,10 @@ def edit_row(
     recross_others: bool = True,
 ) -> Dict[str, Any]:
     """Opción B "la fila existe" (and Opción A "Aceptar"): changes the given fields of a Bordero row."""
+    row, match = _lock_and_validate_row_for_case(row, match, source=source)
     if row.is_deleted:
         raise CorrectionError("Esta fila del ERP está eliminada; no se puede corregir.")
+    prior_auth_code = row.authorization_code
     currency = row.source_currency or (match.process.process_currency if match else "CLP")
     changes = []
     for field_name, raw in values.items():
@@ -333,12 +435,15 @@ def edit_row(
     summary += ": " + "; ".join(
         f"{FIELD_LABELS[f]} {display_value(f, o, currency)} → {display_value(f, n, currency)}" for f, o, n in changes
     )
-    return _settle_all(row, match, user, summary, previous_result, recross_others=recross_others)
+    return _settle_all(
+        row, match, user, summary, previous_result, recross_others=recross_others, prior_auth_code=prior_auth_code
+    )
 
 
 @transaction.atomic
 def add_row(match: CrossMatchResult, values: Dict[str, Any], user, reason: str = "") -> Dict[str, Any]:
     """Opción B "la fila no existe": adds a Bordero row by hand, prefilled from the Transbank voucher."""
+    match = _lock_and_validate_case(match)
     currency = match.process.process_currency
     # The Bordero shows payments as negative values (-15572): accept it as written or as a positive amount
     amount = abs(_parse_value("amount", values.get("amount"), currency))
@@ -403,8 +508,10 @@ def soft_delete_row(row: ErpTransaction, user, reason: str, match: Optional[Cros
     reason = (reason or "").strip()
     if not reason:
         raise CorrectionError("Indica por qué se elimina la fila.")
+    row, match = _lock_and_validate_row_for_case(row, match, source=ErpTransactionChange.SOURCE_MANUAL)
     if row.is_deleted:
         raise CorrectionError("Esta fila ya estaba eliminada.")
+    prior_auth_code = row.authorization_code
     row.is_deleted = True
     row.deleted_at = timezone.now()
     row.deleted_by = user
@@ -416,7 +523,7 @@ def soft_delete_row(row: ErpTransaction, user, reason: str, match: Optional[Cros
     )
     currency = row.source_currency or "CLP"
     summary = f"Fila eliminada del ERP (Doc {row.document_number}, {display_value('amount', row.amount, currency)}): {reason}"
-    return _settle_all(row, match, user, summary)
+    return _settle_all(row, match, user, summary, prior_auth_code=prior_auth_code)
 
 
 def candidate_rows_by_match(matches: List[CrossMatchResult], limit: int = 4) -> Dict[int, List[ErpTransaction]]:

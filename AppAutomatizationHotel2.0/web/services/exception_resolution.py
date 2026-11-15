@@ -33,7 +33,12 @@ def _log(match: CrossMatchResult, user, previous_status, new_status, comment: st
 
 @transaction.atomic
 def resolve_exception(match: CrossMatchResult, status_code: str, comment: str, user) -> None:
-    if match.system_result == "MATCHED":
+    locked = (
+        CrossMatchResult.objects.select_for_update()
+        .select_related("management_status")
+        .get(pk=match.pk)
+    )
+    if locked.system_result == "MATCHED":
         raise ResolutionError("Este voucher ya está cuadrado; no hay nada que resolver.")
     new_status = resolution_statuses().filter(code=status_code).first()
     if new_status is None:
@@ -42,12 +47,13 @@ def resolve_exception(match: CrossMatchResult, status_code: str, comment: str, u
     if status_code in COMMENT_REQUIRED_CODES and not comment:
         raise ResolutionError(f"“{new_status.display_name}” requiere un comentario que lo justifique.")
 
-    previous_status = match.management_status
-    match.management_status = new_status
-    match.resolved_by = user
-    match.resolution_date = timezone.now()
-    match.save(update_fields=["management_status", "resolved_by", "resolution_date"])
-    _log(match, user, previous_status, new_status, comment)
+    previous_status = locked.management_status
+    locked.management_status = new_status
+    locked.resolved_by = user
+    locked.resolution_date = timezone.now()
+    locked.save(update_fields=["management_status", "resolved_by", "resolution_date"])
+    _log(locked, user, previous_status, new_status, comment)
+    match.refresh_from_db()
 
 
 @transaction.atomic
@@ -55,13 +61,19 @@ def reopen_exception(match: CrossMatchResult, comment: str, user) -> None:
     comment = (comment or "").strip()
     if not comment:
         raise ResolutionError("Indica por qué se reabre el caso.")
+    locked = (
+        CrossMatchResult.objects.select_for_update()
+        .select_related("management_status")
+        .get(pk=match.pk)
+    )
     pending_status = ReconciliationStatus.objects.get(code="PENDING")
-    if match.management_status_id == pending_status.id:
+    if locked.management_status_id == pending_status.id:
         raise ResolutionError("El caso ya está pendiente.")
 
-    previous_status = match.management_status
-    match.management_status = pending_status
-    match.resolved_by = None
-    match.resolution_date = None
-    match.save(update_fields=["management_status", "resolved_by", "resolution_date"])
-    _log(match, user, previous_status, pending_status, comment)
+    previous_status = locked.management_status
+    locked.management_status = pending_status
+    locked.resolved_by = None
+    locked.resolution_date = None
+    locked.save(update_fields=["management_status", "resolved_by", "resolution_date"])
+    _log(locked, user, previous_status, pending_status, comment)
+    match.refresh_from_db()

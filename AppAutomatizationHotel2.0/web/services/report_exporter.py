@@ -24,6 +24,8 @@ from .excel_styles import (
     THIN_BORDER,
     USD_FORMAT,
     auto_adjust_columns,
+    sanitize_excel_cell,
+    write_data_row,
     write_header_row,
 )
 
@@ -85,16 +87,25 @@ def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]
         erp_doc = v.display_erp_document or tbk_code
         erp_acc = v.display_account_code
         op_doc = v.display_operator_document or erp_acc
-        ws.cell(row=r_idx, column=1, value=v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—")
-        ws.cell(row=r_idx, column=2, value=f"TBK: {tbk_code} = Doc. ERP: {erp_doc}" if tbk_code else "")
-        ws.cell(row=r_idx, column=3, value=f"Cta. ERP: {erp_acc} = Doc. PC: {op_doc}" if erp_acc else "")
-        ws.cell(row=r_idx, column=4, value=v.cashier_username or "")
-        ws.cell(row=r_idx, column=5, value=v.card_type.name if v.card_type else "")
-        ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = USD_FORMAT
-        ws.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
-        ws.cell(row=r_idx, column=8, value=float(v.difference_usd)).number_format = USD_FORMAT
-        ws.cell(row=r_idx, column=9, value=float(v.erp_amount_clp)).number_format = CLP_FORMAT
-        ws.cell(row=r_idx, column=10, value=format_observation(v.system_observation or ""))
+        write_data_row(
+            ws,
+            r_idx,
+            [
+                v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—",
+                f"TBK: {tbk_code} = Doc. ERP: {erp_doc}" if tbk_code else "",
+                f"Cta. ERP: {erp_acc} = Doc. PC: {op_doc}" if erp_acc else "",
+                v.cashier_username or "",
+                v.card_type.name if v.card_type else "",
+                float(v.transbank_amount),
+                float(v.operator_amount_usd),
+                float(v.difference_usd),
+                float(v.erp_amount_clp),
+                format_observation(v.system_observation or ""),
+            ],
+            money_columns=(6, 7, 8),
+            number_format=USD_FORMAT,
+        )
+        ws.cell(row=r_idx, column=9).number_format = CLP_FORMAT
 
 
 def _populate_discrepancies_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
@@ -105,15 +116,23 @@ def _populate_discrepancies_sheet(ws: Worksheet, cross_matches: List[CrossMatchR
     write_header_row(ws, 1, headers, fill=GOLD_FILL)
 
     for r_idx, v in enumerate((m for m in cross_matches if m.system_result != "MATCHED"), 2):
-        ws.cell(row=r_idx, column=1, value=v.authorization_code or "")
-        ws.cell(row=r_idx, column=2, value=v.display_account_code or "")
-        ws.cell(row=r_idx, column=3, value=v.display_erp_document or "")
-        ws.cell(row=r_idx, column=4, value=v.display_operator_document or "")
-        ws.cell(row=r_idx, column=5, value=v.card_type.name if v.card_type else "")
-        ws.cell(row=r_idx, column=6, value=float(v.transbank_amount)).number_format = USD_FORMAT
-        ws.cell(row=r_idx, column=7, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
-        ws.cell(row=r_idx, column=8, value=float(v.difference_usd)).number_format = USD_FORMAT
-        ws.cell(row=r_idx, column=9, value=format_observation(v.system_observation or ""))
+        write_data_row(
+            ws,
+            r_idx,
+            [
+                v.authorization_code or "",
+                v.display_account_code or "",
+                v.display_erp_document or "",
+                v.display_operator_document or "",
+                v.card_type.name if v.card_type else "",
+                float(v.transbank_amount),
+                float(v.operator_amount_usd),
+                float(v.difference_usd),
+                format_observation(v.system_observation or ""),
+            ],
+            money_columns=(6, 7, 8),
+            number_format=USD_FORMAT,
+        )
 
 
 def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
@@ -150,30 +169,37 @@ def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchRes
 
         sale_date_str = v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—"
 
-        ws.cell(row=curr_sug_row, column=1, value=sug_count).alignment = center_align
-        ws.cell(row=curr_sug_row, column=2, value=v.authorization_code or "").alignment = center_align
-        ws.cell(row=curr_sug_row, column=3, value=case_type)
-        ws.cell(row=curr_sug_row, column=4, value=v.card_type.name if v.card_type else "")
-        ws.cell(row=curr_sug_row, column=5, value=float(v.transbank_amount)).number_format = USD_FORMAT
-        ws.cell(row=curr_sug_row, column=6, value=sale_date_str).alignment = center_align
-        ws.cell(row=curr_sug_row, column=7, value=r_auth.get("erp_value") or v.display_erp_document or "—").alignment = center_align
-        ws.cell(row=curr_sug_row, column=8, value=r_doc.get("erp_value") or v.display_account_code or "—")
-        ws.cell(row=curr_sug_row, column=9, value=float(v.erp_amount_clp)).number_format = CLP_FORMAT
-        ws.cell(row=curr_sug_row, column=10, value=sug.get("erp_cashier", v.cashier_username or "—"))
-        ws.cell(row=curr_sug_row, column=11, value=r_doc.get("op_value") or v.display_operator_document or "—")
-        ws.cell(row=curr_sug_row, column=12, value=float(v.operator_amount_usd)).number_format = USD_FORMAT
-        ws.cell(row=curr_sug_row, column=13, value=r_clp.get("op_value", ""))
-
-        c_conf = ws.cell(row=curr_sug_row, column=14, value=confidence)
-        c_conf.alignment = center_align
-        c_conf.font = Font(bold=True, color="059669" if confidence == "ALTA" else "D97706")
-
-        ws.cell(row=curr_sug_row, column=15, value=sug.get("headline", ""))
-        ws.cell(row=curr_sug_row, column=16, value=reasons_str)
-        ws.cell(row=curr_sug_row, column=17, value=sug.get("manual_check_note", ""))
-
-        for col_i in range(1, 18):
-            ws.cell(row=curr_sug_row, column=col_i).border = THIN_BORDER
+        write_data_row(
+            ws,
+            curr_sug_row,
+            [
+                sug_count,
+                v.authorization_code or "",
+                case_type,
+                v.card_type.name if v.card_type else "",
+                float(v.transbank_amount),
+                sale_date_str,
+                r_auth.get("erp_value") or v.display_erp_document or "—",
+                r_doc.get("erp_value") or v.display_account_code or "—",
+                float(v.erp_amount_clp),
+                sug.get("erp_cashier", v.cashier_username or "—"),
+                r_doc.get("op_value") or v.display_operator_document or "—",
+                float(v.operator_amount_usd),
+                r_clp.get("op_value", ""),
+                confidence,
+                sug.get("headline", ""),
+                reasons_str,
+                sug.get("manual_check_note", ""),
+            ],
+        )
+        ws.cell(row=curr_sug_row, column=5).number_format = USD_FORMAT
+        ws.cell(row=curr_sug_row, column=9).number_format = CLP_FORMAT
+        ws.cell(row=curr_sug_row, column=12).number_format = USD_FORMAT
+        for col_c in (1, 2, 6, 7, 14):
+            ws.cell(row=curr_sug_row, column=col_c).alignment = center_align
+        ws.cell(row=curr_sug_row, column=14).font = Font(
+            bold=True, color="059669" if confidence == "ALTA" else "D97706"
+        )
         curr_sug_row += 1
 
     if sug_count == 0:
@@ -281,16 +307,19 @@ def generate_exceptions_excel_bytes(exceptions: List[CrossMatchResult]) -> io.By
         resolved_by = v.resolved_by.get_full_name() or v.resolved_by.username if v.resolved_by else ""
         values = [
             v.process_id, v.process.process_currency, v.authorization_code or "",
-            v.display_account_code or "", v.display_document_number or "",
+            v.display_account_code or "", getattr(v, "display_document_number", None) or v.display_erp_document or "",
             v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "", v.card_type.name if v.card_type else "",
-            v.type_label,
+            getattr(v, "type_label", None) or v.system_result,
             v.cashier_username if v.cashier_username and v.cashier_username != "—" else "", float(v.transbank_amount),
-            float(v.difference_clp if is_clp else v.difference_usd), v.days_open,
+            float(v.difference_clp if is_clp else v.difference_usd), getattr(v, "days_open", 0),
             v.management_status.display_name if v.management_status else "Pendiente", resolved_by,
-            _local_naive(v.resolution_date), v.action or (v.suggestion or {}).get("headline", ""),
+            _local_naive(v.resolution_date), getattr(v, "action", None) or (getattr(v, "suggestion", None) or {}).get("headline", "") or (v.auditor_comment or ""),
         ]
         for c_idx, value in enumerate(values, 1):
-            cell = ws.cell(row=r_idx, column=c_idx, value=value)
+            safe_val = sanitize_excel_cell(value)
+            cell = ws.cell(row=r_idx, column=c_idx, value=safe_val)
+            if isinstance(safe_val, str):
+                cell.data_type = "s"
             cell.border = THIN_BORDER
             if c_idx in (10, 11):
                 cell.number_format = num_fmt

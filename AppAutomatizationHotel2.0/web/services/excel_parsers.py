@@ -61,6 +61,48 @@ def read_excel_or_html_df(file_or_df: Any, header: Optional[int] = None) -> pd.D
 # 1. BANK STATEMENT PARSERS (USD & CLP)
 # ==============================================================================
 
+def validate_bank_statement_running_balance(
+    movements: List[BankStatementMovement],
+    tolerance: Decimal = Decimal("0.05"),
+) -> Dict[str, Any]:
+    """
+    Verifies running-balance continuity across sequential bank statement movements:
+    Saldo[i-1] + Abono[i] - Cargo[i] == Saldo[i] (or reverse chronological order).
+    Returns a summary dict with `continuity_ok` and any detected `discontinuities`.
+    """
+    valid = [m for m in movements if m.balance_amount and m.balance_amount != Decimal("0.00")]
+    if len(valid) < 2:
+        return {"continuity_ok": True, "discontinuities": []}
+
+    forward_breaks = []
+    reverse_breaks = []
+    for idx in range(1, len(valid)):
+        prev_m = valid[idx - 1]
+        curr_m = valid[idx]
+        expected_fwd = (prev_m.balance_amount or Decimal("0.00")) + (curr_m.deposit_amount or Decimal("0.00")) - (curr_m.charge_amount or Decimal("0.00"))
+        if abs(expected_fwd - (curr_m.balance_amount or Decimal("0.00"))) > tolerance:
+            forward_breaks.append({
+                "index": idx,
+                "document_number": curr_m.document_number,
+                "expected_balance": float(expected_fwd),
+                "actual_balance": float(curr_m.balance_amount or Decimal("0.00")),
+            })
+        expected_rev = (curr_m.balance_amount or Decimal("0.00")) + (prev_m.deposit_amount or Decimal("0.00")) - (prev_m.charge_amount or Decimal("0.00"))
+        if abs(expected_rev - (prev_m.balance_amount or Decimal("0.00"))) > tolerance:
+            reverse_breaks.append({
+                "index": idx,
+                "document_number": prev_m.document_number,
+                "expected_balance": float(expected_rev),
+                "actual_balance": float(prev_m.balance_amount or Decimal("0.00")),
+            })
+
+    breaks = forward_breaks if len(forward_breaks) <= len(reverse_breaks) else reverse_breaks
+    return {
+        "continuity_ok": len(breaks) == 0,
+        "discontinuities": breaks,
+    }
+
+
 def parse_bank_statement_movements(bank_dataframe: pd.DataFrame) -> List[BankStatementMovement]:
     """
     Parses every charge / deposit row of a Bank Statement (cartola.xls or cartola.xlsx)
@@ -294,25 +336,42 @@ def parse_bordero_clp_transactions(
 
 
 _ADDITIONAL_ERP_CACHE: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
-_MAX_ADDITIONAL_ERP_CACHE_ENTRIES = 16
+_MAX_ADDITIONAL_ERP_CACHE_ENTRIES = 128
+_ADDITIONAL_ERP_CACHE_PREFIX = "erp_additional_rows:"
+_ADDITIONAL_ERP_CACHE_TTL_SECONDS = 60 * 60 * 8
 
 
 def store_additional_erp_movements(rows: List[Dict[str, Any]]) -> str:
-    """Stores full-Bordero movements in an in-memory bounded LRU cache so session payload stays lightweight."""
+    """Stores full-Bordero movements in Django cache + bounded in-memory LRU cache so session payload stays lightweight."""
     if not rows:
         return ""
     token = uuid.uuid4().hex
     _ADDITIONAL_ERP_CACHE[token] = rows
     while len(_ADDITIONAL_ERP_CACHE) > _MAX_ADDITIONAL_ERP_CACHE_ENTRIES:
         _ADDITIONAL_ERP_CACHE.popitem(last=False)
+    try:
+        from django.core.cache import cache
+        cache.set(f"{_ADDITIONAL_ERP_CACHE_PREFIX}{token}", rows, timeout=_ADDITIONAL_ERP_CACHE_TTL_SECONDS)
+    except Exception:
+        pass
     return token
 
 
 def get_additional_erp_movements(token: Optional[str]) -> List[Dict[str, Any]]:
-    """Retrieves cached full-Bordero movements by token without evicting them (supports idempotent re-commit)."""
+    """Retrieves cached full-Bordero movements by token without evicting them (supports idempotent re-commit and multi-worker cache)."""
     if not token:
         return []
-    return _ADDITIONAL_ERP_CACHE.get(token, [])
+    if token in _ADDITIONAL_ERP_CACHE:
+        return _ADDITIONAL_ERP_CACHE[token]
+    try:
+        from django.core.cache import cache
+        cached_rows = cache.get(f"{_ADDITIONAL_ERP_CACHE_PREFIX}{token}")
+        if cached_rows is not None:
+            _ADDITIONAL_ERP_CACHE[token] = cached_rows
+            return cached_rows
+    except Exception:
+        pass
+    return []
 
 
 def parse_all_bordero_movements(

@@ -156,30 +156,51 @@ def _sync_operator_transactions(
     operator_raw: List[Dict[str, Any]],
     card_types: Dict[str, CardType],
 ) -> List[CardOperatorTransaction]:
-    """Deduplicates and bulk-syncs CardOperatorTransaction records."""
+    """Deduplicates and bulk-syncs CardOperatorTransaction records, preserving multiple charges on the same guest account."""
     incoming_docs = {o.get("document_number", "") for o in operator_raw}
     existing_qs = (
-        CardOperatorTransaction.objects.filter(document_number__in=incoming_docs)
+        CardOperatorTransaction.objects.filter(document_number__in=incoming_docs).order_by("id")
         if incoming_docs
         else CardOperatorTransaction.objects.none()
     )
-    existing_map = {(o.card_type_id, o.document_number or "", o.sequence_number or ""): o for o in existing_qs}
+    existing_map: Dict[Tuple[Any, ...], CardOperatorTransaction] = {}
+    existing_occ_counts: Dict[Tuple[Any, ...], int] = {}
+    for o in existing_qs:
+        base_key = (
+            o.card_type_id,
+            o.document_number or "",
+            o.sequence_number or "",
+            to_decimal(o.foreign_currency_amount),
+            to_decimal(o.balance_amount),
+            to_decimal(o.corrected_balance_amount),
+        )
+        occ = existing_occ_counts.get(base_key, 0)
+        existing_occ_counts[base_key] = occ + 1
+        existing_map[(*base_key, occ)] = o
+
     op_models, new_ops, ops_to_update = [], [], []
     seen_op_update_ids: set = set()
+    batch_occ_counts: Dict[Tuple[Any, ...], int] = {}
 
     for o_data in operator_raw:
         c_model = card_types.get(o_data.get("card_code"), card_types.get("VI"))
         o_doc = o_data.get("document_number", "")
         o_seq = o_data.get("sequence_number", "")
         o_auth = o_data.get("authorization_code", "")
-        key = (c_model.id, o_doc, o_seq)
+        f_usd = to_decimal(o_data.get("foreign_currency_amount"))
+        bal_clp = to_decimal(o_data.get("balance_amount"))
+        corr_clp = to_decimal(o_data.get("corrected_balance_amount"))
+        base_key = (c_model.id, o_doc, o_seq, f_usd, bal_clp, corr_clp)
+        occ = batch_occ_counts.get(base_key, 0)
+        batch_occ_counts[base_key] = occ + 1
+        key = (*base_key, occ)
         if key in existing_map:
             existing_obj = existing_map[key]
             changed = False
             if o_auth and not existing_obj.authorization_code:
                 existing_obj.authorization_code = o_auth
                 changed = True
-            if existing_obj.process_id != process.id:
+            if existing_obj.process_id is None:
                 existing_obj.process = process
                 changed = True
             if changed and existing_obj.pk and existing_obj.pk not in seen_op_update_ids:
@@ -193,9 +214,9 @@ def _sync_operator_transactions(
                 document_number=o_doc,
                 sequence_number=o_seq,
                 authorization_code=o_auth,
-                foreign_currency_amount=to_decimal(o_data.get("foreign_currency_amount")),
-                balance_amount=to_decimal(o_data.get("balance_amount")),
-                corrected_balance_amount=to_decimal(o_data.get("corrected_balance_amount")),
+                foreign_currency_amount=f_usd,
+                balance_amount=bal_clp,
+                corrected_balance_amount=corr_clp,
             )
             existing_map[key] = new_obj
             new_ops.append(new_obj)

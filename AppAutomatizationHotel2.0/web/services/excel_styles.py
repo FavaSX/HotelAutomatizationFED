@@ -49,6 +49,21 @@ def write_header_row(
             cell.alignment = alignment
 
 
+_FORMULA_DANGEROUS_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def sanitize_excel_cell(value: Any) -> Any:
+    """
+    Neutralizes CSV/Excel Formula Injection (DDE) payloads in string cells while
+    preserving harmless standalone dashes ('-', '—').
+    """
+    if isinstance(value, str) and value and value not in ("-", "—"):
+        stripped = value.lstrip(" ")
+        if stripped.startswith(_FORMULA_DANGEROUS_PREFIXES):
+            return f"'{value}"
+    return value
+
+
 def write_data_row(
     ws: Worksheet,
     row_idx: int,
@@ -57,9 +72,12 @@ def write_data_row(
     red_columns: Sequence[int] = (),
     number_format: str = CLP_FORMAT,
 ) -> None:
-    """Writes a bordered data row with optional currency formatting and discrepancy highlighting."""
+    """Writes a bordered data row with optional currency formatting, formula sanitization, and discrepancy highlighting."""
     for col_idx, value in enumerate(values, 1):
-        cell = ws.cell(row=row_idx, column=col_idx, value=value)
+        safe_val = sanitize_excel_cell(value)
+        cell = ws.cell(row=row_idx, column=col_idx, value=safe_val)
+        if isinstance(safe_val, str):
+            cell.data_type = "s"
         cell.border = THIN_BORDER
         if col_idx in money_columns:
             cell.number_format = number_format
