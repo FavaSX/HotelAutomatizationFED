@@ -83,6 +83,15 @@ def _suggestion_proposal_text(sug: Dict[str, Any]) -> str:
     return sug.get("action") or "Revisión manual"
 
 
+def _format_card_display(match: CrossMatchResult, modality_label: str = "") -> str:
+    if not modality_label and match.transbank_transaction_id:
+        modality_label = MODALITY_LABELS.get(match.transbank_transaction.payment_modality, "")
+    card_name = match.card_type.name if match.card_type else ""
+    if modality_label and card_name and modality_label.lower() not in card_name.lower():
+        return f"{modality_label} · {card_name}"
+    return card_name or modality_label or "—"
+
+
 def _suggestion_case_label(match: CrossMatchResult) -> str:
     if match.system_result == "MATCHED":
         return "Cuadrado (Sugerencia aplicada)"
@@ -95,22 +104,20 @@ def _populate_clp_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatc
     headers = [
         "#",
         "Voucher TBK",
-        "Tipo Excepción",
-        "Tarjeta / Medio",
-        "Fecha POS",
+        "Tipo Discrepancia",
+        "Tarjeta",
         "Monto TBK (CLP)",
-        "Doc. ERP Sugerido",
-        "Cuenta ERP Sugerida",
-        "Medio ERP",
-        "Fecha ERP",
+        "Fecha POS",
+        "Documento ERP",
+        "Cuenta ERP",
         "Monto ERP (CLP)",
         "Cajero ERP",
-        "Origen Sugerencia",
         "Confianza",
-        "Cambio Propuesto / Estado",
         "Diagnóstico Sugerido",
         "Motivos Coincidencia",
         "Nota de Auditoría",
+        "Origen Sugerencia",
+        "Cambio Propuesto / Estado",
     ]
     write_header_row(ws, 1, headers, fill=NAVY_FILL, center=True, wrap_text=True)
 
@@ -129,13 +136,7 @@ def _populate_clp_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatc
         sug_count += 1
         erp_row = sug.get("erp_row") if isinstance(sug.get("erp_row"), dict) else {}
         modality_label, _, _ = _split_status_detail(match.system_status_detail)
-        if not modality_label and match.transbank_transaction_id:
-            modality_label = MODALITY_LABELS.get(match.transbank_transaction.payment_modality, "")
-        card_name = match.card_type.name if match.card_type else ""
-        if modality_label and card_name and modality_label.lower() not in card_name.lower():
-            card_display = f"{modality_label} · {card_name}"
-        else:
-            card_display = card_name or modality_label or "—"
+        card_display = _format_card_display(match, modality_label)
 
         cashier_erp = erp_row.get("cashier_username")
         if not cashier_erp or cashier_erp == "—":
@@ -156,27 +157,25 @@ def _populate_clp_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatc
                 match.authorization_code or "",
                 _suggestion_case_label(match),
                 card_display,
-                match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
                 float(match.transbank_amount),
+                match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
                 erp_row.get("authorization_code") or match.display_erp_document or "—",
                 erp_row.get("account_code") or match.display_account_code or "—",
-                erp_row.get("payment_code") or "—",
-                erp_row.get("transaction_date") or "—",
                 _to_amount(erp_row.get("amount"), fallback=match.erp_amount_clp),
                 cashier_erp,
-                _suggestion_origin(sug, erp_row),
                 confidence,
-                _suggestion_proposal_text(sug),
                 sug.get("headline", ""),
                 reasons_str,
                 sug.get("manual_check_note", ""),
+                _suggestion_origin(sug, erp_row),
+                _suggestion_proposal_text(sug),
             ],
-            money_columns=(6, 11),
+            money_columns=(5, 9),
             number_format=CLP_FORMAT,
         )
-        for col_idx in (1, 2, 5, 7, 9, 10, 14):
+        for col_idx in (1, 2, 6, 7, 11):
             ws.cell(row=curr_row, column=col_idx).alignment = center_align
-        ws.cell(row=curr_row, column=14).font = Font(
+        ws.cell(row=curr_row, column=11).font = Font(
             bold=True, color="059669" if confidence == "ALTA" else "D97706"
         )
         curr_row += 1
@@ -185,7 +184,7 @@ def _populate_clp_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatc
         c_empty = ws.cell(
             row=2,
             column=1,
-            value="No se detectaron sugerencias asistidas secundarias para los vouchers con excepción.",
+            value="No se detectaron sugerencias asistidas secundarias para los vouchers con diferencia o no ubicados.",
         )
         c_empty.font = Font(italic=True, color="64748B")
 
@@ -264,50 +263,45 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     for col_letter in "ABCDEF":
         ws.column_dimensions[col_letter].width = 26
 
-    # Sheet 2: Vouchers Cuadrados
-    ws_matched = wb.create_sheet(title="Vouchers Cuadrados")
+    # Sheet 2: Vouchers Ubicados
+    ws_matched = wb.create_sheet(title="Vouchers Ubicados")
     write_header_row(ws_matched, 1, [
-        "Autorización TBK", "Cuenta", "Documento Borderó", "Medio", "Tarjeta", "Fecha Venta",
-        "Cajero", "Monto TBK", "Monto Borderó", "Diferencia", "Diagnóstico",
+        "Fecha", "Cruce Voucher (TBK ⇄ Doc. ERP)", "Cuenta", "Cajero", "Tarjeta",
+        "Monto TBK CLP", "Diferencia CLP", "Monto ERP CLP", "Diagnóstico",
     ], fill=NAVY_FILL, center=True, wrap_text=True)
     row = 2
     for match in (m for m in cross_matches if m.system_result == "MATCHED"):
-        modality = match.transbank_transaction.payment_modality if match.transbank_transaction else ""
+        tbk_code = match.authorization_code or ""
+        erp_doc = match.display_erp_document or tbk_code
         write_data_row(
             ws_matched,
             row,
             [
-                match.authorization_code or "",
-                match.display_account_code or "",
-                match.display_erp_document or match.authorization_code or "",
-                MODALITY_LABELS.get(modality, modality),
-                match.card_type.name if match.card_type else "",
                 match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
+                f"TBK: {tbk_code} = Doc. ERP: {erp_doc}" if tbk_code else "",
+                match.display_account_code or "",
                 match.cashier_username or "",
+                _format_card_display(match),
                 float(match.transbank_amount),
-                float(match.erp_amount_clp),
                 float(match.difference_clp),
+                float(match.erp_amount_clp),
                 match.system_observation or "",
             ],
-            money_columns=(8, 9, 10),
+            money_columns=(6, 7, 8),
         )
         row += 1
 
-    # Sheet 3: Reporte de Excepciones (sorted by severity, then date)
-    ws_exc = wb.create_sheet(title="Reporte de Excepciones")
+    # Sheet 3: Discrepancias y No Ubicados (sorted by severity, then date)
+    ws_exc = wb.create_sheet(title="Discrepancias y No Ubicados")
     write_header_row(ws_exc, 1, [
-        "Tipo de error",
-        "Fecha de origen",
-        "Medio de pago",
-        "Código en Transbank",
+        "Autorización TBK",
         "Cuenta",
         "Documento Borderó",
-        "Monto Transbank (CLP)",
-        "Monto Borderó (CLP)",
-        "Monto discrepante (CLP)",
-        "Cajero",
-        "Acción sugerida",
-        "Detalle",
+        "Tarjeta",
+        "Monto TBK CLP",
+        "Monto ERP CLP",
+        "Diferencia CLP",
+        "Diagnóstico",
     ], fill=GOLD_FILL, center=True, wrap_text=True)
     exceptions = sorted(
         (m for m in cross_matches if m.system_result != "MATCHED"),
@@ -315,30 +309,22 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     )
     row = 2
     for match in exceptions:
-        modality_label, error_type, action = _split_status_detail(match.system_status_detail)
-        sug = load_suggestion(match)
-        if sug and sug.get("action"):
-            action = sug["action"]
-        cashier = match.cashier_username if match.cashier_username and match.cashier_username != "—" else "—"
+        modality_label, _, _ = _split_status_detail(match.system_status_detail)
         write_data_row(
             ws_exc,
             row,
             [
-                error_type or match.system_result,
-                match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
-                modality_label,
                 match.authorization_code or "",
-                match.display_account_code or "—",
-                match.display_erp_document or "—",
+                match.display_account_code or "",
+                match.display_erp_document or "",
+                _format_card_display(match, modality_label),
                 float(match.transbank_amount),
                 float(match.erp_amount_clp),
                 float(match.difference_clp),
-                cashier,
-                action,
                 match.system_observation or "",
             ],
-            money_columns=(7, 8, 9),
-            red_columns=(1, 9),
+            money_columns=(5, 6, 7),
+            red_columns=(7,),
         )
         row += 1
 

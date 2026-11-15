@@ -283,44 +283,66 @@ class ClpPersistenceTests(TestCase):
         workbook = openpyxl.load_workbook(generate_committed_clp_excel_bytes(process.id))
         self.assertEqual(
             workbook.sheetnames,
-            ["Resumen Pesos", "Vouchers Cuadrados", "Reporte de Excepciones", "Sugerencias Asistidas"],
+            ["Resumen Pesos", "Vouchers Ubicados", "Discrepancias y No Ubicados", "Sugerencias Asistidas"],
         )
-        matched_headers = [c.value for c in workbook["Vouchers Cuadrados"][1]]
-        self.assertIn("Cuenta", matched_headers)
-        self.assertIn("Documento Borderó", matched_headers)
+        matched_headers = [c.value for c in workbook["Vouchers Ubicados"][1]]
+        self.assertEqual(
+            matched_headers,
+            [
+                "Fecha", "Cruce Voucher (TBK ⇄ Doc. ERP)", "Cuenta", "Cajero", "Tarjeta",
+                "Monto TBK CLP", "Diferencia CLP", "Monto ERP CLP", "Diagnóstico",
+            ],
+        )
         self.assertNotIn("Huésped", matched_headers)
         self.assertNotIn("Hab.", matched_headers)
-        exc_headers = [c.value for c in workbook["Reporte de Excepciones"][1]]
-        self.assertIn("Cuenta", exc_headers)
-        self.assertIn("Documento Borderó", exc_headers)
-        self.assertIn("Cajero", exc_headers)
+        matched_rows = [
+            [workbook["Vouchers Ubicados"].cell(r, c).value for c in range(1, 10)]
+            for r in range(2, workbook["Vouchers Ubicados"].max_row + 1)
+        ]
+        self.assertTrue(
+            any(r[1] == "TBK: 405544 = Doc. ERP: 405544" and r[2] == "1786484" for r in matched_rows)
+        )
+
+        exc_headers = [c.value for c in workbook["Discrepancias y No Ubicados"][1]]
+        self.assertEqual(
+            exc_headers,
+            [
+                "Autorización TBK", "Cuenta", "Documento Borderó", "Tarjeta",
+                "Monto TBK CLP", "Monto ERP CLP", "Diferencia CLP", "Diagnóstico",
+            ],
+        )
         self.assertNotIn("Huésped / Hab. / Cajero", exc_headers)
-        first_exception = [c.value for c in workbook["Reporte de Excepciones"][2]]
-        self.assertEqual(first_exception[0], "Error de tipeo")
-        self.assertEqual(first_exception[4], "—")
-        self.assertEqual(first_exception[5], "—")
+        first_exception = [c.value for c in workbook["Discrepancias y No Ubicados"][2]]
+        self.assertEqual(first_exception[0], "F0FUAZ")
+        self.assertIn(first_exception[1], ("", None))
+        self.assertIn(first_exception[2], ("", None))
+        self.assertIn("Sugerencia", first_exception[7])
 
         sug_ws = workbook["Sugerencias Asistidas"]
         sug_headers = [c.value for c in sug_ws[1]]
-        self.assertEqual(len(sug_headers), 18)
-        self.assertIn("Doc. ERP Sugerido", sug_headers)
-        self.assertIn("Cuenta ERP Sugerida", sug_headers)
-        self.assertIn("Cambio Propuesto / Estado", sug_headers)
-        self.assertIn("Origen Sugerencia", sug_headers)
+        self.assertEqual(
+            sug_headers,
+            [
+                "#", "Voucher TBK", "Tipo Discrepancia", "Tarjeta", "Monto TBK (CLP)", "Fecha POS",
+                "Documento ERP", "Cuenta ERP", "Monto ERP (CLP)", "Cajero ERP",
+                "Confianza", "Diagnóstico Sugerido", "Motivos Coincidencia", "Nota de Auditoría",
+                "Origen Sugerencia", "Cambio Propuesto / Estado",
+            ],
+        )
         self.assertNotIn("Doc. Pos. Clientes", sug_headers)
         self.assertNotIn("Huésped", sug_headers)
         sug_by_voucher = {
-            sug_ws.cell(r, 2).value: [sug_ws.cell(r, c).value for c in range(1, 19)]
+            sug_ws.cell(r, 2).value: [sug_ws.cell(r, c).value for c in range(1, 17)]
             for r in range(2, sug_ws.max_row + 1)
         }
         self.assertIn("F0FUAZ", sug_by_voucher)
         f0_row = sug_by_voucher["F0FUAZ"]
         self.assertEqual(f0_row[2], "Error de tipeo")
         self.assertEqual(f0_row[6], "0FOFUAZ")
-        self.assertGreater(f0_row[10], 0)
-        self.assertEqual(sug_ws.cell(2, 11).number_format, "$#,##0")
-        self.assertEqual(f0_row[13], "ALTA")
-        self.assertTrue(str(f0_row[14]).startswith("[Pendiente]"))
+        self.assertGreater(f0_row[8], 0)
+        self.assertEqual(sug_ws.cell(2, 9).number_format, "$#,##0")
+        self.assertEqual(f0_row[10], "ALTA")
+        self.assertTrue(str(f0_row[15]).startswith("[Pendiente]"))
 
         again = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
         self.assertEqual(again.id, process.id)
@@ -374,24 +396,24 @@ class ClpPersistenceTests(TestCase):
         wb = openpyxl.load_workbook(generate_committed_clp_excel_bytes(process.id))
         sug_ws = wb["Sugerencias Asistidas"]
         by_voucher = {
-            sug_ws.cell(r, 2).value: [sug_ws.cell(r, c).value for c in range(1, 19)]
+            sug_ws.cell(r, 2).value: [sug_ws.cell(r, c).value for c in range(1, 17)]
             for r in range(2, sug_ws.max_row + 1)
         }
         self.assertIn("F0FUAZ", by_voucher)
         self.assertEqual(by_voucher["F0FUAZ"][2], "Cuadrado (Sugerencia aplicada)")
-        self.assertTrue(str(by_voucher["F0FUAZ"][14]).startswith("[Aceptada]"))
+        self.assertTrue(str(by_voucher["F0FUAZ"][15]).startswith("[Aceptada]"))
         self.assertIn(discrepancy.authorization_code, by_voucher)
         disc_row = by_voucher[discrepancy.authorization_code]
-        self.assertTrue(str(disc_row[12]).startswith(f"BD Proceso #{process.id}"))
-        self.assertEqual(disc_row[13], "MEDIA")
-        self.assertTrue(str(disc_row[14]).startswith("[Rechazada]"))
+        self.assertEqual(disc_row[10], "MEDIA")
+        self.assertTrue(str(disc_row[14]).startswith(f"BD Proceso #{process.id}"))
+        self.assertTrue(str(disc_row[15]).startswith("[Rechazada]"))
 
         # Without any suggestions saved, sheet 4 shows the explicit empty-state note.
         process.cross_match_results.update(auditor_comment=None)
         wb_empty = openpyxl.load_workbook(generate_committed_clp_excel_bytes(process.id))
         self.assertEqual(
             wb_empty["Sugerencias Asistidas"].cell(2, 1).value,
-            "No se detectaron sugerencias asistidas secundarias para los vouchers con excepción.",
+            "No se detectaron sugerencias asistidas secundarias para los vouchers con diferencia o no ubicados.",
         )
 
 
