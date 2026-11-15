@@ -2617,7 +2617,7 @@ class ErpCoverageAndDbCrossMatchTests(TestCase):
             self.assertContains(resp, 'id="erpPrecheckReadCheckbox"')
             self.assertContains(resp, 'id="btnConfirmErpPrecheck"')
             self.assertContains(resp, 'id="expPhase1Dropzone"')
-            self.assertContains(resp, "usd_upload.js?v=10")
+            self.assertContains(resp, "usd_upload.js?v=11")
 
     def test_incomplete_day_warning_and_resolution(self):
         from datetime import timedelta

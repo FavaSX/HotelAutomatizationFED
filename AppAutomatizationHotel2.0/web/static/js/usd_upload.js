@@ -151,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function handleBulkFilesSelected(fileList) {
   if (!erpPrecheckConfirmed && document.getElementById('erpPrecheckGate')) {
-    alert('Por favor confirme las indicaciones previas del rango y exportación del Borderó antes de cargar archivos.');
+    notify('Confirma primero las indicaciones del rango y exportación del Borderó antes de cargar archivos.', 'warning');
     return;
   }
   if (!fileList || fileList.length === 0) return;
