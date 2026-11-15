@@ -69,12 +69,12 @@ function renderErpUploadWarnings(data) {
   const parts = [];
   if (cov && cov.erp_min_date_str) {
     const badge = cov.erp_last_day_incomplete
-      ? '<span class="badge bg-warning-subtle text-dark border border-warning rounded-pill ms-2">Día final en curso (se marcará incompleto)</span>'
+      ? '<span class="status-chip status-warning"><i class="bi bi-clock-history"></i>Día final en curso (se marcará incompleto)</span>'
       : '';
     parts.push(`
-      <div class="alert alert-secondary bg-white border rounded-4 small py-2 px-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <div class="precheck-box precheck-box-row small mb-2">
         <div>
-          <i class="bi bi-calendar2-week text-primary me-1"></i>
+          <i class="bi bi-calendar2-week me-1" style="color: var(--brand-text);"></i>
           <strong>Borderó detectado:</strong>
           <span class="font-mono">${escapeHtmlStr(cov.erp_min_date_str)} al ${escapeHtmlStr(cov.erp_max_date_str)}</span>
           · ${Number(cov.total_movements) || 0} mov. (${Number(cov.card_movements) || 0} tarjetas / ${Number(cov.non_card_movements) || 0} otros cargos)
@@ -87,7 +87,7 @@ function renderErpUploadWarnings(data) {
     const cls = w.level === 'danger' ? 'alert-danger' : 'alert-warning';
     const icon = w.level === 'danger' ? 'bi-exclamation-octagon-fill' : 'bi-exclamation-triangle-fill';
     parts.push(`
-      <div class="alert ${cls} border-0 rounded-4 small py-2 px-3 mb-2" role="alert">
+      <div class="alert ${cls} small mb-2" role="alert">
         <i class="bi ${icon} me-1"></i>
         <strong>${escapeHtmlStr(w.title || '')}:</strong> ${escapeHtmlStr(w.message || '')}
       </div>
@@ -194,7 +194,7 @@ function getConfidenceBadgeHtml(type) {
     case 'HIGH':
       return '<span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1"><i class="bi bi-check-circle-fill me-1"></i>100% Seguro</span>';
     case 'MEDIUM':
-      return '<span class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
+      return '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1"><i class="bi bi-info-circle-fill me-1"></i>Por Nombre</span>';
     case 'MANUAL':
       return '<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1"><i class="bi bi-hand-index-thumb me-1"></i>Asignado Manual</span>';
     default:
@@ -251,7 +251,7 @@ function renderAlignmentTable(data) {
         <td class="ps-3 py-3 align-top">
           <div class="d-flex align-items-center gap-2">
             <span class="badge ${safeBadgeClass}">${safeBadge}</span>
-            <span class="fw-bold text-dark">${safeLabel}</span>
+            <span class="fw-bold">${safeLabel}</span>
           </div>
         </td>
         <td class="py-3">
@@ -279,7 +279,7 @@ function renderAlignmentTable(data) {
         <td class="ps-3 py-3 align-top">
           <div class="d-flex align-items-center gap-2">
             <span class="badge ${safeBadgeClass}">${safeBadge}</span>
-            <span class="fw-bold text-dark">${safeLabel}</span>
+            <span class="fw-bold">${safeLabel}</span>
           </div>
         </td>
         <td class="py-3">
@@ -306,7 +306,7 @@ function renderAlignmentTable(data) {
         <td class="ps-3 py-3">
           <div class="d-flex align-items-center gap-2">
             <span class="badge ${safeBadgeClass}">${safeBadge}</span>
-            <span class="fw-bold text-dark">${safeLabel}</span>
+            <span class="fw-bold">${safeLabel}</span>
           </div>
         </td>
         <td class="py-3">

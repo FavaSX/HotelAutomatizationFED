@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
-  <div>
+  <div class="page-head-text">
     <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
       <span class="badge rounded-pill px-3 py-1 badge-brand-pill">
         <i class="bi {{ badge_icon }} me-1"></i> {{ badge_label }}
@@ -26,28 +26,40 @@
 <div class="row g-3 mb-3">
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Filas en filtro</div>
-      <div class="stat-value">{{ kpis.total }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Filas en filtro</div>
+        <div class="icon-square icon-square-gold" aria-hidden="true"><i class="bi bi-list-ul"></i></div>
+      </div>
+      <div class="stat-value accent"><span data-countup-to="{{ kpis.total|unlocalize }}">{{ kpis.total }}</span></div>
       {% if kpis.modified %}<div class="text-muted small">{{ kpis.modified }} modificadas</div>{% endif %}
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Conciliados</div>
-      <div class="stat-value text-success">{{ kpis.matched }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Conciliados</div>
+        <div class="icon-square icon-square-success" aria-hidden="true"><i class="bi bi-check2-circle"></i></div>
+      </div>
+      <div class="stat-value text-success"><span data-countup-to="{{ kpis.matched|unlocalize }}">{{ kpis.matched }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Solo en ERP (sin TBK)</div>
-      <div class="stat-value {% if kpis.solo_erp %}text-danger{% endif %}">{{ kpis.solo_erp }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Solo en ERP (sin TBK)</div>
+        <div class="icon-square icon-square-danger" aria-hidden="true"><i class="bi bi-exclamation-circle"></i></div>
+      </div>
+      <div class="stat-value {% if kpis.solo_erp %}text-danger{% endif %}"><span data-countup-to="{{ kpis.solo_erp|unlocalize }}">{{ kpis.solo_erp }}</span></div>
       {% if kpis.diff %}<div class="text-muted small">+ {{ kpis.diff }} con diferencia</div>{% endif %}
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Suma Borderó (CLP)</div>
-      <div class="stat-value">${{ kpis.total_clp|num_clp }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Suma Borderó (CLP)</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-cash-coin"></i></div>
+      </div>
+      <div class="stat-value"><span data-countup-to="{{ kpis.total_clp|unlocalize }}" data-countup-prefix="$">${{ kpis.total_clp|num_clp }}</span></div>
     </div>
   </div>
 </div>
@@ -55,27 +67,39 @@
 <div class="row g-3 mb-3">
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Transacciones</div>
-      <div class="stat-value">{{ kpis.total }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Transacciones</div>
+        <div class="icon-square icon-square-gold" aria-hidden="true"><i class="bi bi-credit-card"></i></div>
+      </div>
+      <div class="stat-value accent"><span data-countup-to="{{ kpis.total|unlocalize }}">{{ kpis.total }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Conciliadas</div>
-      <div class="stat-value text-success">{{ kpis.conciliadas }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Conciliadas</div>
+        <div class="icon-square icon-square-success" aria-hidden="true"><i class="bi bi-check2-circle"></i></div>
+      </div>
+      <div class="stat-value text-success"><span data-countup-to="{{ kpis.conciliadas|unlocalize }}">{{ kpis.conciliadas }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Pendientes</div>
-      <div class="stat-value {% if kpis.pendientes %}text-warning{% endif %}">{{ kpis.pendientes }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Pendientes</div>
+        <div class="icon-square icon-square-warning" aria-hidden="true"><i class="bi bi-hourglass-split"></i></div>
+      </div>
+      <div class="stat-value {% if kpis.pendientes %}text-warning{% endif %}"><span data-countup-to="{{ kpis.pendientes|unlocalize }}">{{ kpis.pendientes }}</span></div>
       {% if kpis.resueltas %}<div class="text-muted small">+ {{ kpis.resueltas }} resueltas</div>{% endif %}
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Abono neto acumulado</div>
-      <div class="fw-bold fs-5 text-nowrap">${{ kpis.net_clp|num_clp }} <span class="text-muted small fw-normal">CLP</span></div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Abono neto acumulado</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-bank"></i></div>
+      </div>
+      <div class="fw-bold fs-5 text-nowrap"><span data-countup-to="{{ kpis.net_clp|unlocalize }}" data-countup-prefix="$">${{ kpis.net_clp|num_clp }}</span> <span class="text-muted small fw-normal">CLP</span></div>
       {% if kpis.net_usd %}
       <div class="small fw-semibold text-primary text-nowrap">US$ {{ kpis.net_usd|num_usd }} USD</div>
       {% endif %}
@@ -86,20 +110,29 @@
 <div class="row g-3 mb-3">
   <div class="col-4">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Movimientos</div>
-      <div class="stat-value">{{ kpis.total }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Movimientos</div>
+        <div class="icon-square icon-square-gold" aria-hidden="true"><i class="bi bi-bank2"></i></div>
+      </div>
+      <div class="stat-value accent"><span data-countup-to="{{ kpis.total|unlocalize }}">{{ kpis.total }}</span></div>
     </div>
   </div>
   <div class="col-4">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Abonos cuadrados</div>
-      <div class="stat-value text-success">{{ kpis.matched }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Abonos cuadrados</div>
+        <div class="icon-square icon-square-success" aria-hidden="true"><i class="bi bi-check2-circle"></i></div>
+      </div>
+      <div class="stat-value text-success"><span data-countup-to="{{ kpis.matched|unlocalize }}">{{ kpis.matched }}</span></div>
     </div>
   </div>
   <div class="col-4">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Movimientos TBK</div>
-      <div class="stat-value">{{ kpis.tbk }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Movimientos TBK</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-credit-card"></i></div>
+      </div>
+      <div class="stat-value accent"><span data-countup-to="{{ kpis.tbk|unlocalize }}">{{ kpis.tbk }}</span></div>
     </div>
   </div>
 </div>
@@ -107,26 +140,38 @@
 <div class="row g-3 mb-3">
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Registros</div>
-      <div class="stat-value">{{ kpis.total }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Registros</div>
+        <div class="icon-square icon-square-gold" aria-hidden="true"><i class="bi bi-journal-text"></i></div>
+      </div>
+      <div class="stat-value accent"><span data-countup-to="{{ kpis.total|unlocalize }}">{{ kpis.total }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Usados en cruce</div>
-      <div class="stat-value text-success">{{ kpis.used }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Usados en cruce</div>
+        <div class="icon-square icon-square-success" aria-hidden="true"><i class="bi bi-check2-circle"></i></div>
+      </div>
+      <div class="stat-value text-success"><span data-countup-to="{{ kpis.used|unlocalize }}">{{ kpis.used }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Sin usar en cruce</div>
-      <div class="stat-value">{{ kpis.unused }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Sin usar en cruce</div>
+        <div class="icon-square icon-square-warning" aria-hidden="true"><i class="bi bi-dash-circle"></i></div>
+      </div>
+      <div class="stat-value"><span data-countup-to="{{ kpis.unused|unlocalize }}">{{ kpis.unused }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Total USD</div>
-      <div class="stat-value">US$ {{ kpis.total_usd|num_usd }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Total USD</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-currency-dollar"></i></div>
+      </div>
+      <div class="stat-value"><span class="stat-unit">US$</span> <span data-countup-to="{{ kpis.total_usd|unlocalize }}" data-countup-decimals="2">{{ kpis.total_usd|num_usd }}</span></div>
     </div>
   </div>
 </div>
@@ -134,26 +179,38 @@
 <div class="row g-3 mb-3">
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Vouchers en filtro</div>
-      <div class="stat-value">{{ kpis.total }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Vouchers en filtro</div>
+        <div class="icon-square icon-square-gold" aria-hidden="true"><i class="bi bi-receipt"></i></div>
+      </div>
+      <div class="stat-value accent"><span data-countup-to="{{ kpis.total|unlocalize }}">{{ kpis.total }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Conciliados</div>
-      <div class="stat-value text-success">{{ kpis.matched }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Conciliados</div>
+        <div class="icon-square icon-square-success" aria-hidden="true"><i class="bi bi-check2-circle"></i></div>
+      </div>
+      <div class="stat-value text-success"><span data-countup-to="{{ kpis.matched|unlocalize }}">{{ kpis.matched }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Con discrepancia</div>
-      <div class="stat-value {% if kpis.discrepancies %}text-warning{% endif %}">{{ kpis.discrepancies }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Con discrepancia</div>
+        <div class="icon-square icon-square-warning" aria-hidden="true"><i class="bi bi-exclamation-triangle"></i></div>
+      </div>
+      <div class="stat-value {% if kpis.discrepancies %}text-warning{% endif %}"><span data-countup-to="{{ kpis.discrepancies|unlocalize }}">{{ kpis.discrepancies }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Tasa conciliación</div>
-      <div class="stat-value">{{ kpis.match_rate }}%</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Tasa conciliación</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-graph-up-arrow"></i></div>
+      </div>
+      <div class="stat-value"><span data-countup-to="{{ kpis.match_rate|unlocalize }}" data-countup-decimals="1" data-countup-suffix="%">{{ kpis.match_rate }}%</span></div>
     </div>
   </div>
 </div>

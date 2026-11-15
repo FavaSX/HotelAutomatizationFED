@@ -54,7 +54,7 @@
           Se eliminarán todos los cierres de conciliación de prueba y sus transacciones asociadas (conservando intactos los catálogos de tarjetas y monedas).
         </p>
       </div>
-      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
+      <div class="modal-footer border-0 upload-modal-foot px-4 py-3 d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
         <form method="post" action="{% url 'clear_test_db' %}" class="m-0">
           {% csrf_token %}
@@ -85,7 +85,7 @@
     <!-- FASE 1: Zona de Carga Masiva -->
     <div id="expPhase1Dropzone" class="d-none">
       <div class="mb-2">
-        <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-1 rounded-pill">
+        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-1 rounded-pill">
           <i class="bi bi-1-circle-fill me-1 text-warning"></i> Carga Masiva de Archivos
         </span>
       </div>
@@ -133,13 +133,13 @@
 
       <!-- Card 1: Archivos Principales de Conciliación -->
       <div class="card card-executive p-0 mb-4 overflow-hidden border">
-        <div class="card-header bg-white py-3 px-4 border-bottom d-flex align-items-center justify-content-between">
+        <div class="card-header upload-card-head py-3 px-4 d-flex align-items-center justify-content-between">
           <div class="d-flex align-items-center gap-2">
             <span class="rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
               <i class="bi bi-file-earmark-spreadsheet-fill"></i>
             </span>
             <div>
-              <h6 class="fw-bold mb-0 text-dark">Archivos Principales de Conciliación (3)</h6>
+              <h6 class="fw-bold mb-0">Archivos Principales de Conciliación (3)</h6>
               <small class="text-muted">Borderó ERP Hotel, Liquidación de Abonos Transbank y Cartola Bancaria</small>
             </div>
           </div>
@@ -163,13 +163,13 @@
 
       <!-- Card 2: Archivos de Posición por Clientes -->
       <div class="card card-executive p-0 mb-4 overflow-hidden border">
-        <div class="card-header bg-white py-3 px-4 border-bottom d-flex align-items-center justify-content-between">
+        <div class="card-header upload-card-head py-3 px-4 d-flex align-items-center justify-content-between">
           <div class="d-flex align-items-center gap-2">
             <span class="rounded-circle bg-success-subtle text-success d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
               <i class="bi bi-credit-card-2-front-fill"></i>
             </span>
             <div>
-              <h6 class="fw-bold mb-0 text-dark">Archivos de Posición por Clientes (4)</h6>
+              <h6 class="fw-bold mb-0">Archivos de Posición por Clientes (4)</h6>
               <small class="text-muted">Reportes auxiliares por tarjeta para cuadrar moneda extranjera (US$) y saldo en pesos (CLP)</small>
             </div>
           </div>
@@ -192,7 +192,7 @@
       </div>
 
       <!-- Barra de Confirmación de Fase 2 -->
-      <div class="d-flex flex-wrap justify-content-between align-items-center bg-light border rounded-4 p-3 gap-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center upload-confirm-bar p-3 gap-3">
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-patch-question-fill fs-4 text-warning"></i>
           <div>
@@ -216,5 +216,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=11"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=12"></script>
 {% endblock %}

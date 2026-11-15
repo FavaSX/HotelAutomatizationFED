@@ -93,3 +93,10 @@ def to_json(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False)
     except Exception:
         return "{}"
+
+
+@register.filter(name="file_name")
+def file_name(value: Any) -> str:
+    """Last part of a stored file path (Windows or POSIX), to show "cartola.xlsx" instead of the full folder."""
+    text = str(value or "")
+    return text.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] or text

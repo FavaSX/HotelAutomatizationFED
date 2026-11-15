@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
-  <div>
+  <div class="page-head-text">
     <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
       <span class="badge rounded-pill px-3 py-1 badge-brand-pill">
         <i class="bi bi-journal-text me-1"></i> Bitácora de Auditoría
@@ -60,11 +60,11 @@
       <label class="form-label small fw-semibold mb-1" for="a-hasta">Hasta</label>
       <input id="a-hasta" type="date" name="hasta" value="{{ filters.hasta }}" class="form-control form-control-sm">
     </div>
-    <div class="col-12 col-md-{% if vista == 'erp' %}2{% else %}4{% endif %}">
+    <div class="col-12 col-md">
       <label class="form-label small fw-semibold mb-1" for="a-q">Buscar</label>
       <input id="a-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Auditor, voucher, cuenta, documento o motivo…">
     </div>
-    <div class="col-12 col-md-2 d-flex gap-2 justify-content-end">
+    <div class="col-12 col-md-auto ms-auto d-flex gap-2 justify-content-end">
       <a href="{% url 'audit_trail' %}?vista={{ vista }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
       <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
     </div>

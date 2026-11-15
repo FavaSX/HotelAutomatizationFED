@@ -1,75 +1,62 @@
 {% load currency_filters %}
-<div id="erpPrecheckGate" class="border rounded-4 p-4 mb-3 bg-light-subtle">
-  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
-    <div>
-      <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1 rounded-pill mb-2">
-        <i class="bi bi-database-check me-1"></i> Paso Previo · Cobertura ERP en Base de Datos
-      </span>
-      <h5 class="fw-bold mb-1 text-dark">Verifique el rango ideal del Borderó antes de subir los archivos</h5>
-      <p class="text-muted small mb-0">
-        El sistema cruza tanto contra el Excel subido como contra las filas pendientes guardadas en la base de datos.
-      </p>
+{% comment %}
+  Paso previo de la carga: cobertura del ERP guardada y rango sugerido del Borderó.
+  Styled with the app tokens (precheck-* in theme.css) so it follows light and dark mode.
+  The ids are used by usd_upload.js to unlock the dropzone.
+{% endcomment %}
+<section id="erpPrecheckGate" class="precheck mb-1" aria-labelledby="erpPrecheckTitle">
+  <header class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+    <div class="min-w-0">
+      <div class="eyebrow mb-1"><i class="bi bi-database-check me-1"></i>Paso previo · Cobertura ERP en base de datos</div>
+      <h2 id="erpPrecheckTitle" class="h5 fw-bold mb-0">Verifique el rango ideal del Borderó antes de subir los archivos</h2>
     </div>
-    {% if erp_coverage.has_data %}
-    <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 rounded-pill">
-      <i class="bi bi-calendar-check me-1"></i> BD: {{ erp_coverage.min_date_str }} al {{ erp_coverage.max_date_str }} · {{ erp_coverage.total_rows|num_clp }} mov.
-    </span>
-    {% else %}
-    <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-2 rounded-pill">
-      <i class="bi bi-database-exclamation me-1"></i> BD ERP vacía (primera carga)
+    {% if not erp_coverage.has_data %}
+    <span class="status-chip status-warning">
+      <i class="bi bi-database-exclamation"></i>BD ERP vacía (primera carga)
     </span>
     {% endif %}
-  </div>
+  </header>
 
   <div class="row g-3 mb-3">
     <div class="col-lg-6">
-      <div class="bg-white border rounded-4 p-3 h-100">
-        <div class="text-uppercase text-muted fw-semibold mb-1" style="font-size: 0.72rem; letter-spacing: .04em;">
-          1. Estado actual en base de datos
-        </div>
+      <div class="precheck-box h-100">
+        <div class="kpi-label mb-2">1. Estado actual en base de datos</div>
         {% if erp_coverage.has_data %}
-        <div class="fw-bold text-dark fs-6 mb-1">
-          {{ erp_coverage.min_date_str }} al {{ erp_coverage.max_date_str }}
-        </div>
         <p class="small text-muted mb-0">
-          Última fecha de movimiento registrada: <strong>{{ erp_coverage.max_date_str }}</strong>
+          Última fecha de movimiento registrada: <strong class="text-body">{{ erp_coverage.max_date_str }}</strong>
           ({{ erp_coverage.total_rows|num_clp }} filas activas compartidas entre USD y CLP).
         </p>
         {% if erp_coverage.largest_gap %}
-        <div class="small text-warning-emphasis mt-2">
-          <i class="bi bi-info-circle me-1"></i>Se detecta un intervalo sin registros entre
+        <p class="precheck-note mt-2 mb-0">
+          <i class="bi bi-info-circle"></i>
+          <span>Se detecta un intervalo sin registros entre
           <strong>{{ erp_coverage.largest_gap.from_str }}</strong> y <strong>{{ erp_coverage.largest_gap.to_str }}</strong>
-          ({{ erp_coverage.largest_gap.days }} días).
-        </div>
+          ({{ erp_coverage.largest_gap.days }} días).</span>
+        </p>
         {% endif %}
         {% else %}
-        <div class="fw-bold text-dark fs-6 mb-1">Sin movimientos ERP cargados todavía</div>
+        <div class="precheck-range">Sin movimientos ERP cargados todavía</div>
         <p class="small text-muted mb-0">
           Para evitar períodos faltantes y contar con un rango mínimo/máximo sólido, cargue el
-          <strong>año completo {{ erp_coverage.today.year }}</strong> o incluya <strong>1 a 2 años anteriores</strong>.
+          <strong class="text-body">año completo {{ erp_coverage.today.year }}</strong> o incluya <strong class="text-body">1 a 2 años anteriores</strong>.
         </p>
         {% endif %}
       </div>
     </div>
 
     <div class="col-lg-6">
-      <div class="bg-white border border-warning rounded-4 p-3 h-100">
-        <div class="text-uppercase text-warning-emphasis fw-semibold mb-1" style="font-size: 0.72rem; letter-spacing: .04em;">
-          2. Rango ideal sugerido para exportar el Borderó
-        </div>
-        <div class="fw-bold text-dark fs-6 mb-1">
-          <i class="bi bi-calendar-range text-warning me-1"></i>{{ erp_coverage.ideal_range_label }}
-        </div>
+      <div class="precheck-box precheck-box-accent h-100">
+        <div class="kpi-label precheck-accent-label mb-2">2. Rango ideal sugerido para exportar el Borderó</div>
+        <div class="precheck-range"><i class="bi bi-calendar-range me-1"></i>{{ erp_coverage.ideal_range_label }}</div>
         {% if erp_coverage.has_data %}
         <p class="small text-muted mb-0">
-          Incluya desde el mismo día <strong>{{ erp_coverage.recommended_from_str }}</strong> hasta
-          <strong>ayer ({{ erp_coverage.yesterday_str }})</strong>, ya que durante hoy ({{ erp_coverage.today_str }})
-          se siguen generando registros nuevos en recepción.
+          Incluya desde el mismo día <strong class="text-body">{{ erp_coverage.recommended_from_str }}</strong> hasta
+          <strong class="text-body">ayer ({{ erp_coverage.yesterday_str }})</strong>.
         </p>
         {% else %}
         <p class="small text-muted mb-0">
-          Recomendado en primera carga: desde <strong>{{ erp_coverage.recommended_from_str }}</strong>
-          (o desde <strong>1 a 2 años atrás</strong>) hasta <strong>ayer ({{ erp_coverage.yesterday_str }})</strong>.
+          Recomendado en primera carga: desde <strong class="text-body">{{ erp_coverage.recommended_from_str }}</strong>
+          (o desde <strong class="text-body">1 a 2 años atrás</strong>) hasta <strong class="text-body">ayer ({{ erp_coverage.yesterday_str }})</strong>.
         </p>
         {% endif %}
       </div>
@@ -77,7 +64,7 @@
   </div>
 
   {% if erp_coverage.has_incomplete_day %}
-  <div class="alert alert-danger border-0 rounded-4 py-2 px-3 small mb-3" role="alert">
+  <div class="alert alert-danger small mb-3" role="alert">
     <i class="bi bi-exclamation-octagon-fill me-1"></i>
     <strong>Día anterior incompleto ({{ erp_coverage.incomplete_date_str }}):</strong>
     En una carga previa se importaron movimientos del mismo día en curso, por lo que pudieron quedar registros posteriores sin bajar.
@@ -85,33 +72,38 @@
   </div>
   {% endif %}
 
-  <div class="alert alert-info border-0 rounded-4 py-2 px-3 small mb-3" role="note">
-    <i class="bi bi-funnel-fill me-1"></i>
-    <strong>Regla de exportación del Borderó (USD + CLP):</strong>
-    Exporte el listado <strong>completo con todos los movimientos del hotel</strong> (tarjetas USD, tarjetas CLP, Redcompra, efectivo, HOA, IVA, BAR, PROP, etc.),
-    filtrado <strong>únicamente por el período de fechas</strong> y sin filtros por medio de pago o moneda.
+  <div class="precheck-rule small mb-3" role="note">
+    <i class="bi bi-funnel-fill"></i>
+    <span>
+      <strong>Regla de exportación del Borderó (USD + CLP):</strong>
+      Exporte el listado <strong>completo con todos los movimientos del hotel</strong> (tarjetas USD, tarjetas CLP, Redcompra, efectivo, HOA, IVA, BAR, PROP, etc.),
+      filtrado <strong>únicamente por el período de fechas</strong> y sin filtros por medio de pago o moneda.
+    </span>
   </div>
 
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-3 border-top-soft">
     <div class="form-check m-0">
       <input class="form-check-input" type="checkbox" id="erpPrecheckReadCheckbox">
-      <label class="form-check-label small fw-semibold text-dark" for="erpPrecheckReadCheckbox">
+      <label class="form-check-label small fw-semibold" for="erpPrecheckReadCheckbox">
         He leído las indicaciones, verifiqué el rango sugerido y mi Borderó viene completo filtrado solo por fecha.
       </label>
     </div>
-    <button type="button" id="btnConfirmErpPrecheck" class="btn btn-brand rounded-pill px-4 shadow-sm" disabled>
+    <button type="button" id="btnConfirmErpPrecheck" class="btn btn-primary rounded-pill px-4 fw-semibold" disabled>
       <i class="bi bi-unlock-fill me-1"></i> Confirmar y habilitar carga de archivos
     </button>
   </div>
-</div>
+</section>
 
-<div id="erpPrecheckVerifiedBanner" class="alert alert-success border-0 rounded-4 py-2 px-3 small mb-3 d-none d-flex flex-wrap align-items-center justify-content-between gap-2">
-  <div>
-    <i class="bi bi-patch-check-fill me-1"></i>
-    <strong>Indicaciones confirmadas.</strong>
-    Rango sugerido: <span class="font-mono fw-semibold">{{ erp_coverage.ideal_range_label }}</span> (Borderó completo sin filtro de tarjetas).
+{# The outer div carries d-none alone: on the same element, Bootstrap's d-flex would override it #}
+<div id="erpPrecheckVerifiedBanner" class="d-none mb-3">
+  <div class="precheck-verified d-flex flex-wrap align-items-center justify-content-between gap-2 small" role="status">
+    <div>
+      <i class="bi bi-patch-check-fill me-1"></i>
+      <strong>Indicaciones confirmadas.</strong>
+      Rango sugerido: <span class="font-mono fw-semibold">{{ erp_coverage.ideal_range_label }}</span> (Borderó completo sin filtro de tarjetas).
+    </div>
+    <button type="button" id="btnReopenErpPrecheck" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+      <i class="bi bi-eye me-1"></i> Ver indicaciones
+    </button>
   </div>
-  <button type="button" id="btnReopenErpPrecheck" class="btn btn-sm btn-outline-success rounded-pill px-3">
-    <i class="bi bi-eye me-1"></i> Ver indicaciones
-  </button>
 </div>
