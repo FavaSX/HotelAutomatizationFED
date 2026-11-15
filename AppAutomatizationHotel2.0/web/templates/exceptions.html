@@ -49,24 +49,33 @@
 <div class="row g-3 mb-3">
   <div class="col-sm-4">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Casos</div>
-      <div class="stat-value">{{ totals.count }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Casos</div>
+        <div class="icon-square icon-square-warning" aria-hidden="true"><i class="bi bi-exclamation-triangle"></i></div>
+      </div>
+      <div class="stat-value accent"><span data-countup-to="{{ totals.count|unlocalize }}">{{ totals.count }}</span></div>
     </div>
   </div>
   <div class="col-sm-4">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Monto Transbank {% if currency == "clp" %}en pesos{% else %}en dólares{% endif %}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Monto Transbank {% if currency == "clp" %}en pesos{% else %}en dólares{% endif %}</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-hourglass-split"></i></div>
+      </div>
       {% if currency == "clp" %}
-      <div class="stat-value"><span class="stat-unit">$</span> {{ totals.amount|default:0|num_clp }}</div>
+      <div class="stat-value"><span class="stat-unit">$</span> <span data-countup-to="{{ totals.amount|default:0|unlocalize }}">{{ totals.amount|default:0|num_clp }}</span></div>
       {% else %}
-      <div class="stat-value"><span class="stat-unit">US$</span> {{ totals.amount|default:0|num_usd }}</div>
+      <div class="stat-value"><span class="stat-unit">US$</span> <span data-countup-to="{{ totals.amount|default:0|unlocalize }}" data-countup-decimals="2">{{ totals.amount|default:0|num_usd }}</span></div>
       {% endif %}
     </div>
   </div>
   <div class="col-sm-4">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Caso más antiguo</div>
-      <div class="stat-value">{% if totals.oldest_days is not None %}{{ totals.oldest_days }} <span class="stat-unit">día{{ totals.oldest_days|pluralize }}</span>{% else %}—{% endif %}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Caso más antiguo</div>
+        <div class="icon-square icon-square-gold" aria-hidden="true"><i class="bi bi-calendar-event"></i></div>
+      </div>
+      <div class="stat-value">{% if totals.oldest_days is not None %}<span data-countup-to="{{ totals.oldest_days|unlocalize }}">{{ totals.oldest_days }}</span> <span class="stat-unit">día{{ totals.oldest_days|pluralize }}</span>{% else %}—{% endif %}</div>
     </div>
   </div>
 </div>
@@ -102,7 +111,7 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-6 col-md-3 col-xl-1">
+    <div class="col-6 col-md-3 col-xl-2">
       <label class="form-label small fw-semibold mb-1" for="f-tarjeta">Tarjeta</label>
       <select id="f-tarjeta" name="tarjeta" class="form-select form-select-sm">
         <option value="">Todas</option>
@@ -111,19 +120,19 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-6 col-md-3 col-xl-1">
+    <div class="col-6 col-md-3 col-xl-2">
       <label class="form-label small fw-semibold mb-1" for="f-desde">Venta desde</label>
       <input id="f-desde" type="date" name="desde" value="{{ filters.desde }}" class="form-control form-control-sm">
     </div>
-    <div class="col-6 col-md-3 col-xl-1">
+    <div class="col-6 col-md-3 col-xl-2">
       <label class="form-label small fw-semibold mb-1" for="f-hasta">Hasta</label>
       <input id="f-hasta" type="date" name="hasta" value="{{ filters.hasta }}" class="form-control form-control-sm">
     </div>
-    <div class="col-12 col-md-6 col-xl-3">
+    <div class="col-12 col-md">
       <label class="form-label small fw-semibold mb-1" for="f-q">Buscar</label>
       <input id="f-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Voucher, cuenta, documento">
     </div>
-    <div class="col-12 col-md-3 col-xl-12 d-flex gap-2 justify-content-end">
+    <div class="col-12 col-md-auto ms-auto d-flex gap-2 justify-content-end">
       <a href="{% url 'exceptions' %}?moneda={{ currency }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
       <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold"><i class="bi bi-funnel me-1"></i>Filtrar</button>
     </div>

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% load l10n %}
+{% load l10n currency_filters %}
 
 {% block page_title %}Hotel Plaza San Francisco | Tablas y Cierres{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
-  <div>
+  <div class="page-head-text">
     <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
       <span class="badge rounded-pill px-3 py-1 badge-brand-pill">
         <i class="bi bi-table me-1"></i> Tablas y Cierres
@@ -25,26 +25,38 @@
 <div class="row g-3 mb-3">
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Cierres guardados</div>
-      <div class="stat-value">{{ kpis.total }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Cierres guardados</div>
+        <div class="icon-square icon-square-gold" aria-hidden="true"><i class="bi bi-archive"></i></div>
+      </div>
+      <div class="stat-value accent"><span data-countup-to="{{ kpis.total|unlocalize }}">{{ kpis.total }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Cierres Dólares (USD)</div>
-      <div class="stat-value">{{ kpis.usd }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Cierres Dólares (USD)</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-currency-dollar"></i></div>
+      </div>
+      <div class="stat-value"><span data-countup-to="{{ kpis.usd|unlocalize }}">{{ kpis.usd }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Cierres Pesos (CLP)</div>
-      <div class="stat-value">{{ kpis.clp }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Cierres Pesos (CLP)</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-cash-stack"></i></div>
+      </div>
+      <div class="stat-value"><span data-countup-to="{{ kpis.clp|unlocalize }}">{{ kpis.clp }}</span></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="card card-executive p-3 h-100">
-      <div class="kpi-label">Vouchers en historial</div>
-      <div class="stat-value">{{ kpis.vouchers }}</div>
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="kpi-label">Vouchers en historial</div>
+        <div class="icon-square icon-square-navy" aria-hidden="true"><i class="bi bi-receipt"></i></div>
+      </div>
+      <div class="stat-value"><span data-countup-to="{{ kpis.vouchers|unlocalize }}">{{ kpis.vouchers }}</span></div>
     </div>
   </div>
 </div>
@@ -69,11 +81,11 @@
       <label class="form-label small fw-semibold mb-1" for="t-hasta">Hasta</label>
       <input id="t-hasta" type="date" name="hasta" value="{{ filters.hasta }}" class="form-control form-control-sm">
     </div>
-    <div class="col-12 col-md-4">
+    <div class="col-12 col-md">
       <label class="form-label small fw-semibold mb-1" for="t-q">Buscar</label>
       <input id="t-q" type="search" name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="#ID, período, auditor o nombre de archivo…">
     </div>
-    <div class="col-12 col-md-2 d-flex gap-2 justify-content-end">
+    <div class="col-12 col-md-auto ms-auto d-flex gap-2 justify-content-end">
       <a href="{% url 'closings_list' %}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">Limpiar</a>
       <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold">
         <i class="bi bi-funnel me-1"></i>Filtrar
@@ -87,7 +99,7 @@
   {% if processes %}
   <div class="table-responsive">
     <table class="table table-dash align-middle mb-0">
-      <thead>
+      <thead class="text-nowrap">
         <tr>
           <th class="ps-4">Cierre</th>
           <th>Moneda</th>
@@ -108,8 +120,8 @@
               </a>
             </div>
             {% if p.uploaded_files %}
-            <div class="text-muted small text-truncate" style="max-width: 360px;" title="{{ p.uploaded_files|join:' · ' }}">
-              <i class="bi bi-file-earmark-spreadsheet me-1"></i>{{ p.uploaded_files|join:" · " }}
+            <div class="text-muted small text-truncate" style="max-width: 260px;" title="{{ p.uploaded_files|join:' · ' }}">
+              <i class="bi bi-file-earmark-spreadsheet me-1"></i>{% for f in p.uploaded_files %}{{ f|file_name }}{% if not forloop.last %} · {% endif %}{% endfor %}
             </div>
             {% endif %}
           </td>
@@ -148,8 +160,8 @@
             {% endif %}
           </td>
           <td class="text-end pe-4 text-nowrap">
-            <a href="{% url 'closing_detail' p.id %}" class="btn btn-sm btn-primary rounded-pill px-3 me-1">
-              <i class="bi bi-table me-1"></i>Ver tablas
+            <a href="{% url 'closing_detail' p.id %}" class="btn-icon d-inline-flex" title="Ver tablas del cierre" aria-label="Ver tablas del cierre #{{ p.id }}">
+              <i class="bi bi-table"></i>
             </a>
             {% if p.process_currency == "USD" %}
             <a href="{% url 'usd_export_committed' p.id %}" class="btn-icon d-inline-flex" title="Descargar reporte Excel USD" aria-label="Descargar reporte Excel del cierre #{{ p.id }}">

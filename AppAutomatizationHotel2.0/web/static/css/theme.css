@@ -253,6 +253,16 @@ body::before {
   top: var(--navbar-h);
   z-index: 1030;
   transition: background-color .15s ease, color .15s ease, transform .2s ease, width .2s ease;
+  /* Uses the app scrollbar (section "Barras de desplazamiento"); here the thumb only
+     shows while the pointer is over the menu, and the gutter is kept so nothing shifts. */
+  scrollbar-gutter: stable;
+  --scroll-thumb: transparent;
+  --scroll-thumb-hover: transparent;
+}
+.sidebar-panel:hover,
+.sidebar-panel:focus-within {
+  --scroll-thumb: var(--scroll-thumb-base);
+  --scroll-thumb-hover: var(--scroll-thumb-strong);
 }
 .sidebar-panel::before {
   content: "";
@@ -1302,6 +1312,8 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
 .kpi-label.on-navy { color: rgba(255, 255, 255, .65); }
 .stat-unit { font-size: 1rem; font-weight: 600; color: var(--text-muted); }
 .icon-square-warning { background: var(--bs-warning-bg-subtle); color: var(--warning); }
+.icon-square-success { background: var(--bs-success-bg-subtle); color: var(--success); }
+.icon-square-danger { background: var(--bs-danger-bg-subtle); color: var(--danger); }
 .card-executive .icon-square, .card-hero-gold .icon-square { width: 36px; height: 36px; border-radius: 10px; }
 .border-bottom-soft { border-bottom: 1px solid var(--border); }
 .font-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .9em; }
@@ -1893,3 +1905,93 @@ tr.erp-row-modified > td:first-child { box-shadow: inset 3px 0 0 var(--bs-warnin
 .app-toast-success { --toast-accent: var(--success); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .app-toast { animation: none; } }
+
+/* ===================== Paso previo de carga (cobertura ERP) ===================== */
+/* Same tokens as the rest of the app, so the boxes follow light and dark mode */
+.precheck .status-chip { white-space: normal; }
+.precheck-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: var(--text);
+}
+.precheck-box-accent { background: var(--brand-subtle); border-color: var(--brand-border); }
+.precheck-accent-label { color: var(--brand-text); }
+.precheck-box-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; }
+.precheck-range { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.precheck-box-accent .precheck-range i { color: var(--brand-text); }
+.precheck-note { display: flex; gap: 6px; font-size: .82rem; color: var(--warning); }
+.precheck-rule {
+  display: flex; gap: 8px; align-items: flex-start;
+  background: var(--surface-2); border: 1px solid var(--border); border-left: 3px solid var(--brand);
+  border-radius: 10px; padding: 10px 14px; color: var(--text);
+}
+.precheck-rule > i { color: var(--brand-text); margin-top: 2px; }
+.precheck-verified {
+  background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis);
+  border: 1px solid var(--bs-success-border-subtle); border-radius: 12px; padding: 8px 14px;
+}
+
+/* ===================== Consistencia de pantallas nuevas ===================== */
+/* Filter bars: the buttons keep their label on one line instead of turning into a round blob */
+form.card-executive .btn { white-space: nowrap; }
+form.card-executive .form-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* KPI figures shrink to fit their card instead of breaking a number across two lines */
+.card-executive:has(> .stat-value) { container-type: inline-size; }
+.card-executive > .stat-value { white-space: nowrap; font-size: clamp(1.25rem, 11cqi, 1.9rem); }
+
+/* Long file paths (Archivos de origen) wrap at the separators, not mid-word */
+.path-text { overflow-wrap: anywhere; word-break: normal; }
+form.card-executive .col-md { min-width: 220px; }
+
+/* Abono cards in the closing detail: one row per figure, label left and amount right */
+.abono-dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.abono-dl > div:last-child { border-bottom: 0; }
+.abono-dl dt { font-weight: 500; color: var(--text-muted); }
+.abono-dl dd { margin: 0; font-weight: 700; color: var(--text); white-space: nowrap; }
+.abono-dl dd.text-success { color: var(--success) !important; }
+.abono-dl dd.text-danger { color: var(--danger) !important; }
+.page-head-text { flex: 1 1 360px; min-width: 0; }
+
+/* ===================== Barras de desplazamiento ===================== */
+/* One scrollbar for the whole app (sidebar, tables, modals, page): thin, rounded,
+   no arrow buttons, colored with the theme. Replaces the grey native bar that shows
+   up on small screens. Colors switch with light/dark mode. */
+:root {
+  --scroll-thumb-base: rgba(27, 31, 59, .22);
+  --scroll-thumb-strong: rgba(35, 48, 140, .55);
+  --scroll-thumb: var(--scroll-thumb-base);
+  --scroll-thumb-hover: var(--scroll-thumb-strong);
+}
+[data-bs-theme="dark"] {
+  --scroll-thumb-base: rgba(255, 255, 255, .16);
+  --scroll-thumb-strong: rgba(212, 175, 79, .65);
+}
+/* Chrome, Edge and Safari */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scroll-thumb);
+  border-radius: 999px;
+  /* Transparent border + padding-box clip: the visible pill is thinner than the hit area */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  min-height: 40px;
+  min-width: 40px;
+}
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active { background-color: var(--scroll-thumb-hover); border-width: 2px; }
+/* Firefox (no ::-webkit-scrollbar); kept out of Chrome, where scrollbar-color would switch off the rules above */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+}
+
+/* Carga de archivos: cabeceras de las tablas de alineación, barra de confirmación y pies de ventana.
+   Theme tokens instead of bg-white (which stayed white in dark mode). */
+.upload-card-head { background: var(--surface-2); border-bottom: 1px solid var(--border); color: var(--text); }
+.upload-confirm-bar { background: var(--surface-2); border: 1px solid var(--border); border-radius: 1rem; }
+.upload-modal-foot { background: var(--surface-2); }

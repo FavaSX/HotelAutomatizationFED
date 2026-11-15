@@ -56,7 +56,7 @@
           Se eliminarán todos los cierres de conciliación de prueba (dólares y pesos) y sus transacciones asociadas, conservando intactos los catálogos de tarjetas y estados.
         </p>
       </div>
-      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2">
+      <div class="modal-footer border-0 upload-modal-foot px-4 py-3 d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
         <form method="post" action="{% url 'clear_test_db' %}" class="m-0">
           {% csrf_token %}
@@ -88,7 +88,7 @@
     <!-- FASE 1: Zona de Carga Masiva -->
     <div id="expPhase1Dropzone" class="d-none">
       <div class="mb-2">
-        <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-3 py-1 rounded-pill">
+        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-1 rounded-pill">
           <i class="bi bi-1-circle-fill me-1 text-warning"></i> Carga Masiva de Archivos
         </span>
       </div>
@@ -151,5 +151,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=11"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=12"></script>
 {% endblock %}

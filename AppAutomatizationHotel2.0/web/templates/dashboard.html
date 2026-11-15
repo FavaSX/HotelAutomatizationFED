@@ -59,35 +59,10 @@
 <script>
   (function () {
     const tabs = document.querySelectorAll('#currencyTabs [data-currency]');
-    const animated = new Set();
-
-    // Count-up for the numbers of a panel, the first time it is shown
-    function countUp(panel) {
-      if (!panel || animated.has(panel.id)) return;
-      animated.add(panel.id);
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const duration = 900;
-      panel.querySelectorAll('[data-countup-to]').forEach((el) => {
-        const target = parseFloat(el.getAttribute('data-countup-to')) || 0;
-        const decimals = parseInt(el.getAttribute('data-countup-decimals') || '0', 10);
-        const prefix = el.getAttribute('data-countup-prefix') || '';
-        const suffix = el.getAttribute('data-countup-suffix') || '';
-        const finalText = el.textContent;  // server-formatted value, shown exactly once the count ends
-        const format = (n) => prefix + n.toLocaleString('es-CL', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
-        const start = performance.now();
-        function tick(now) {
-          const progress = Math.min((now - start) / duration, 1);
-          const eased = 1 - Math.pow(1 - progress, 3);
-          el.textContent = progress < 1 ? format(target * eased) : finalText;
-          if (progress < 1) requestAnimationFrame(tick);
-        }
-        requestAnimationFrame(tick);
-      });
-    }
+    // The numbers count up from 0 via app.js (KPI count-up), also when a panel is shown
 
     tabs.forEach((btn) => {
       btn.addEventListener('shown.bs.tab', () => {
-        countUp(document.querySelector(btn.dataset.bsTarget));
         document.querySelectorAll('[data-currency-actions]').forEach((group) => {
           group.classList.toggle('d-none', group.dataset.currencyActions !== btn.dataset.currency);
         });
@@ -106,10 +81,8 @@
       const savedTab = saved && document.querySelector('#currencyTabs [data-currency="' + saved + '"]');
       if (savedTab && !savedTab.classList.contains('active')) {
         bootstrap.Tab.getOrCreateInstance(savedTab).show();
-        return;
       }
       {% endif %}
-      countUp(document.querySelector('#currencyTabs .active') && document.querySelector(document.querySelector('#currencyTabs .active').dataset.bsTarget));
     });
   })();
 </script>

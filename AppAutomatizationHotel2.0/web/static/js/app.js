@@ -272,3 +272,52 @@ document.addEventListener('change', (event) => {
 });
 
 
+/* ------------------------------------------------------------------ */
+/* KPI count-up                                                         */
+/* ------------------------------------------------------------------ */
+/* Any element with data-countup-to counts from 0 to its value the first time it is seen
+   (on page load, or when its tab is shown), then shows the exact server-formatted text.
+   Optional: data-countup-decimals, data-countup-prefix, data-countup-suffix. */
+(function () {
+  const DURATION = 900;
+  const done = new WeakSet();
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function animate(el) {
+    if (done.has(el)) return;
+    done.add(el);
+    if (reduced) return;
+    const target = parseFloat(el.getAttribute('data-countup-to'));
+    if (!isFinite(target)) return;
+    const decimals = parseInt(el.getAttribute('data-countup-decimals') || '0', 10);
+    const prefix = el.getAttribute('data-countup-prefix') || '';
+    const suffix = el.getAttribute('data-countup-suffix') || '';
+    const finalText = el.textContent; // shown exactly once the count ends
+    const format = (n) => prefix + n.toLocaleString('es-CL', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
+    let start = null;
+    function tick(now) {
+      // The first frame's timestamp can predate this call; starting the clock there avoids a negative first value
+      if (start === null) start = now;
+      const progress = Math.min(Math.max((now - start) / DURATION, 0), 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = progress < 1 ? format(target * eased) : finalText;
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function countUpIn(root) {
+    (root || document).querySelectorAll('[data-countup-to]').forEach((el) => {
+      if (el.closest('.tab-pane:not(.active)')) return; // counts when its tab is shown
+      animate(el);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => setTimeout(() => countUpIn(document), 0));
+  document.addEventListener('shown.bs.tab', (event) => {
+    const sel = event.target.getAttribute('data-bs-target') || event.target.getAttribute('href');
+    const pane = sel && sel.charAt(0) === '#' ? document.querySelector(sel) : null;
+    if (pane) countUpIn(pane);
+  });
+  window.countUpIn = countUpIn;
+})();
