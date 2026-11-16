@@ -16,7 +16,7 @@ import pandas as pd
 
 from ..models import CardType, ErpTransactionChange, SystemConfiguration
 from .erp_corrections import active_claimed_sales_by_erp_id, apply_saved_corrections
-from .erp_coverage import db_card_candidates_for_codes, evaluate_bordero_upload_warnings
+from .erp_coverage import db_card_candidates_for_codes, ensure_file_is_a_bordero, evaluate_bordero_upload_warnings
 from .column_detector import (
     normalize_text,
     normalize_auth_code,
@@ -369,6 +369,7 @@ def calculate_clp_preview(
             failed_extra_erp_files.append(extra_name)
             continue
 
+    ensure_file_is_a_bordero(erp_stats_list, erp_file_name)
     erp_coverage_meta, erp_warnings = evaluate_bordero_upload_warnings(erp_stats_list)
 
     # 1. Bank deposits of the 3 settlements

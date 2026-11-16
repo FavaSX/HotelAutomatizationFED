@@ -299,6 +299,24 @@ def merge_bordero_stats(stats_list: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def ensure_file_is_a_bordero(stats_list: Iterable[Dict[str, Any]], file_name: str) -> None:
+    """
+    Stops the upload when the file(s) in the Borderó box have neither Bordero movements nor its
+    "Periodo de" header. Without this, a wrong file in that box (e.g. the cartola) was processed
+    silently and every voucher showed up as missing from the ERP. A real Bordero without card
+    payments (only lodging, cash...) still goes through.
+    """
+    def _is_bordero(stats: Dict[str, Any]) -> bool:
+        return bool(stats.get("total_movements")) or any(stats.get("period_header") or ())
+
+    if not any(_is_bordero(stats or {}) for stats in stats_list):
+        raise ValueError(
+            f"el archivo «{file_name}» de la casilla del Borderó ERP no es un Borderó "
+            "(no tiene movimientos ni el encabezado «Periodo de»). Revise que no sea otro archivo, "
+            "por ejemplo la cartola."
+        )
+
+
 def evaluate_bordero_upload_warnings(
     stats_list: List[Dict[str, Any]],
     coverage: Optional[Dict[str, Any]] = None,

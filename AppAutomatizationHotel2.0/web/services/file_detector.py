@@ -368,3 +368,39 @@ def detect_and_align_clp_files(uploaded_files: List[Any]) -> Dict[str, Any]:
     """Inspects a batch of uploaded Excel files and aligns them against the 5 required CLP roles."""
     inspected_files = [inspect_single_clp_excel_file(f, idx) for idx, f in enumerate(uploaded_files)]
     return align_inspected_files(inspected_files, CLP_REQUIRED_ROLES)
+
+
+# ==============================================================================
+# SERVER-SIDE SLOT CHECK (a file uploaded in the wrong box)
+# ==============================================================================
+
+def _misplaced_file_errors(slot_files: Dict[str, List[Any]], inspect_fn, required_roles: List[Dict[str, str]]) -> List[str]:
+    """
+    Reads every uploaded file by its content and reports the ones whose content clearly belongs to
+    another box of the same flow (e.g. the cartola uploaded in the Borderó box). Only content matches
+    (HIGH confidence) count, never the file name, so an unusual file is never rejected by its name.
+    """
+    labels = {r["role_key"]: r["role_label"].split(". ", 1)[-1] for r in required_roles}
+    errors: List[str] = []
+    for slot_role, files in slot_files.items():
+        for index, uploaded in enumerate(f for f in files if f):
+            found = inspect_fn(uploaded, index)
+            if hasattr(uploaded, "seek"):
+                uploaded.seek(0)
+            detected = found.get("detected_role")
+            if found.get("confidence") == "HIGH" and detected in labels and detected != slot_role:
+                errors.append(
+                    f"El archivo «{found['file_name']}» está en la casilla «{labels[slot_role]}», "
+                    f"pero su contenido es de «{labels[detected]}»."
+                )
+    return errors
+
+
+def misplaced_usd_files(slot_files: Dict[str, List[Any]]) -> List[str]:
+    """Slot keys are the USD role keys: erp, transbank, bank, amex, diners, visa, mastercard."""
+    return _misplaced_file_errors(slot_files, inspect_single_excel_file, USD_REQUIRED_ROLES)
+
+
+def misplaced_clp_files(slot_files: Dict[str, List[Any]]) -> List[str]:
+    """Slot keys are the CLP role keys: erp, bank, tbk."""
+    return _misplaced_file_errors(slot_files, inspect_single_clp_excel_file, CLP_REQUIRED_ROLES)

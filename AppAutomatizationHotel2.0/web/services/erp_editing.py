@@ -10,6 +10,7 @@ Every operation runs as ONE transaction that:
 
 from datetime import date, time
 from decimal import Decimal, InvalidOperation
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from django.db import transaction
@@ -125,16 +126,38 @@ def default_payment_code(match: CrossMatchResult, choices: Optional[List[Tuple[s
 # Parsing the form values
 # ------------------------------------------------------------------------------
 
+_AMOUNT_THOUSANDS_RE = re.compile(r"^-?\d{1,3}(\.\d{3})+$")  # 115.333 / 1.250.000
+_AMOUNT_DECIMAL_DOT_RE = re.compile(r"^-?\d+(\.\d{1,2})?$")  # 115333 / 115333.00 (the form's own value)
+
+
 def _parse_amount(raw: Any) -> Decimal:
-    text = str(raw or "").strip().replace(" ", "")
+    """
+    Bordero amounts are whole pesos in both flows (USD rows carry the CLP charge), written the
+    Chilean way: the dot separates thousands. So "115.333" is 115.333 pesos, never 115,33.
+    A comma is the decimal mark ("115.333,00"). Cents other than zero are rejected instead of
+    being rounded away silently.
+    """
+    text = str(raw or "").strip().replace(" ", "").replace("$", "")
     if not text:
         raise CorrectionError("Indica el monto.")
     if "," in text:  # 115.204,50 -> 115204.50
         text = text.replace(".", "").replace(",", ".")
+    elif _AMOUNT_THOUSANDS_RE.match(text):  # 115.333 -> 115333
+        text = text.replace(".", "")
+    elif not _AMOUNT_DECIMAL_DOT_RE.match(text):
+        raise CorrectionError(f"El monto “{raw}” no es un número válido. Escríbelo en pesos, por ejemplo 115.333 o 115333.")
     try:
-        return Decimal(text).quantize(Decimal("0.01"))
+        amount = Decimal(text)
     except InvalidOperation:
         raise CorrectionError(f"El monto “{raw}” no es un número válido.")
+    if not amount.is_finite():
+        raise CorrectionError(f"El monto “{raw}” no es un número válido.")
+    if amount != amount.to_integral_value():
+        raise CorrectionError(
+            f"El monto “{raw}” tiene decimales. Los montos del Borderó van en pesos enteros: "
+            "usa el punto solo para los miles (115.333)."
+        )
+    return amount.quantize(Decimal("0.01"))
 
 
 def _parse_value(field_name: str, raw: Any, currency: str):

@@ -11,6 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 
 from ..models import ReconciliationProcess, SystemConfiguration
+from ..services.file_detector import misplaced_usd_files
 from ..services import (
     calculate_usd_preview,
     commit_usd_preview_to_database,
@@ -52,6 +53,20 @@ def usd_upload_view(request):
             return redirect("usd_upload")
 
         extra_erp_files = request.FILES.getlist("usd_extra_erp_files")
+        misplaced = misplaced_usd_files({
+            "erp": [files["erp_file"]] + list(extra_erp_files),
+            "transbank": [files["transbank_file"]],
+            "bank": [files["bank_statement_file"]],
+            "amex": [files["amex_file"]],
+            "diners": [files["diners_file"]],
+            "visa": [files["visa_file"]],
+            "mastercard": [files["mastercard_file"]],
+        })
+        if misplaced:
+            for text in misplaced:
+                messages.error(request, f"{text} Cámbielo de casilla y vuelva a procesar.")
+            return redirect("usd_upload")
+
         try:
             preview = calculate_usd_preview(**files, extra_erp_files=extra_erp_files)
             request.session[USD_SESSION_KEY] = preview
