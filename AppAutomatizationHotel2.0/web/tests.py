@@ -6,7 +6,7 @@ from decimal import Decimal
 import openpyxl
 from django.contrib.auth.models import User
 from django.test import TestCase
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 
 from .models import (
@@ -719,7 +719,7 @@ class UsdPreviewViewTests(TestCase):
 
 
 class BruteForceProtectionTests(TestCase):
-    """django-axes locks the username+IP pair after 5 failed logins (both /login/ and the admin)."""
+    """django-axes locks the username+IP pair after 5 failed logins on /login/."""
 
     def setUp(self):
         self.user = User.objects.create_superuser("contadora", password="clave-correcta-123")
@@ -756,12 +756,13 @@ class BruteForceProtectionTests(TestCase):
 
         self.assertRedirects(response, reverse("dashboard"))
 
-    def test_admin_login_is_also_protected(self):
-        admin_login = reverse("admin:login")
-        for _ in range(5):
-            self._login(admin_login, "mala")
-
-        self.assertEqual(self._login(admin_login, "clave-correcta-123").status_code, 429)
+    def test_django_admin_is_disabled_and_unreachable(self):
+        with self.assertRaises(NoReverseMatch):
+            reverse("admin:index")
+        with self.assertRaises(NoReverseMatch):
+            reverse("admin:login")
+        self.assertEqual(self.client.get("/admin/").status_code, 404)
+        self.assertEqual(self.client.get("/admin/login/").status_code, 404)
 
 
 class ExceptionInboxTests(TestCase):
@@ -1753,7 +1754,7 @@ class SuggestionModalAjaxTests(TestCase):
             self.assertContains(page, f'data-suggestion-case="{case_id}" data-suffix="m"')
             self.assertContains(page, f'data-bs-target="#exc-{case_id}"')
             self.assertContains(page, f'id="exc-{case_id}"')
-            self.assertContains(page, "suggestion_card.js?v=7")
+            self.assertContains(page, "suggestion_card.js?v=8")
             self.assertEqual(re.findall(r'[a-zA-Z0-9_-]+="[^"]*\xa0[^"]*"', html), [])
             m = re.search(r'<script id="inboxSuggestionData"[^>]*>(.*?)</script>', html, re.S)
             self.assertIsNotNone(m)
@@ -2239,13 +2240,15 @@ class UserManagementTests(TestCase):
         )
 
         # Standard user has access to general app + Configuración + Vaciar BD Pruebas,
-        # and only Gestión de Usuarios (+ Admin DB) is restricted to superadmin
+        # and only Gestión de Usuarios is restricted to superadmin
         self.client.force_login(self.standard)
         dash = self.client.get(reverse("dashboard"))
         self.assertEqual(dash.status_code, 200)
         self.assertContains(dash, reverse("settings"))
         self.assertNotContains(dash, reverse("users_manage"))
         self.assertNotContains(dash, "Base de Datos (Admin)")
+        self.assertNotContains(dash, "/admin/")
+        self.assertEqual(self.client.get("/admin/").status_code, 404)
         self.assertEqual(self.client.get(reverse("settings")).status_code, 200)
 
         upload_clp = self.client.get(reverse("clp_upload"))
@@ -2286,7 +2289,10 @@ class UserManagementTests(TestCase):
         page = self.client.get(reverse("users_manage"))
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, reverse("users_manage"))
-        self.assertContains(page, "Base de Datos (Admin)")
+        self.assertNotContains(page, "Base de Datos (Admin)")
+        self.assertNotContains(page, "/admin/")
+        self.assertEqual(self.client.get("/admin/").status_code, 404)
+        self.assertEqual(self.client.get("/admin/login/").status_code, 404)
         self.assertContains(page, "auditor_std")
 
         # 1) Create a new standard user and another superadmin
@@ -4381,5 +4387,64 @@ class FinTechAuditQaFixesTests(TestCase):
                 content_type="application/json",
             )
             self.assertEqual(resp.status_code, 400)
+
+
+class DateDisplayFormatTests(TestCase):
+    """Ensures all presented dates across UI templates, services, and JS cards use dd/mm/yyyy."""
+
+    def test_navbar_and_usd_bank_deposit_date_render_dd_mm_yyyy(self):
+        from .models import BankDepositValidation
+
+        user = User.objects.create_user(username="auditor_fechas", password="x")
+        self.client.force_login(user)
+
+        usd_proc = ReconciliationProcess.objects.create(
+            user=user,
+            process_currency="USD",
+            accounting_period="Cierre USD Fechas",
+        )
+        BankDepositValidation.objects.create(
+            process=usd_proc,
+            payment_modality="USD_GENERAL",
+            transbank_calculated_deposit=Decimal("100.00"),
+            bank_statement_deposit=Decimal("100.00"),
+            deposit_date=date(2026, 9, 8),
+            is_matched=True,
+        )
+
+        resp = self.client.get(reverse("dashboard"), {"moneda": "usd"})
+        self.assertEqual(resp.status_code, 200)
+        today_dmy = timezone.localdate().strftime("%d/%m/%Y")
+        self.assertContains(resp, today_dmy)
+        self.assertContains(resp, "En cartola (08/09/2026)")
+        self.assertNotContains(resp, "En cartola (08/09)")
+
+    def test_services_normalize_string_dates_to_dd_mm_yyyy(self):
+        from .services.tables_viewer import (
+            _sanitize_preview_erp_row,
+            _serialize_preview_bank_row,
+            _serialize_preview_tbk_row,
+        )
+        from .services.usd_reconciliation import _fmt_dmy_value, _format_accounting_period
+
+        self.assertEqual(_fmt_dmy_value("2026-09-08"), "08/09/2026")
+        self.assertEqual(_fmt_dmy_value("08-09-2026"), "08/09/2026")
+        period = _format_accounting_period("", "2026-09-08", None, [{"sale_date": "2026-09-05"}])
+        self.assertEqual(period, "Cierre Dólares — Abono 08/09/2026 (Ventas 05/09/2026)")
+
+        erp = _sanitize_preview_erp_row(0, {"transaction_date": "2026-09-05"}, "CLP", {}, set())
+        bank = _serialize_preview_bank_row(0, {"movement_date": "2026-09-08"})
+        tbk = _serialize_preview_tbk_row(0, {"sale_date": "2026-09-05"}, "CLP")
+        self.assertEqual(erp["transaction_date"], "05/09/2026")
+        self.assertEqual(bank["movement_date"], "08/09/2026")
+        self.assertEqual(tbk["sale_date"], "05/09/2026")
+
+    def test_suggestion_card_formats_date_diff_badge_as_dd_mm_yyyy(self):
+        from pathlib import Path
+
+        js = (Path(__file__).resolve().parent / "static" / "js" / "suggestion_card.js").read_text(encoding="utf-8")
+        self.assertIn("scFormatDisplayDate", js)
+        self.assertIn("scProposalNewDisplay(pc)", js)
+
 
 

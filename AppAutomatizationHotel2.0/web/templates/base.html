@@ -51,7 +51,7 @@
 
     <div class="d-flex align-items-center gap-2">
       <span class="badge badge-info-chip date-chip rounded-pill px-3 py-2 d-none d-lg-inline-flex align-items-center">
-        <i class="bi bi-calendar3 me-1"></i> {% now "l j \d\e F, Y" as today_label %}{{ today_label|capfirst }}
+        <i class="bi bi-calendar3 me-1"></i> {% now "d/m/Y" %}
       </span>
       <button type="button" id="themeToggleBtn" class="btn-theme-toggle" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema claro/oscuro">
         <i class="bi bi-moon-stars-fill" id="themeToggleIcon"></i>
@@ -133,9 +133,6 @@
         {% if user.is_superuser %}
         <a href="{% url 'users_manage' %}" class="sidebar-link {% if request.resolver_match.url_name == 'users_manage' or request.resolver_match.url_name == 'user_edit' %}active{% endif %}" title="Gestión de Usuarios">
           <i class="bi bi-people fs-5"></i> <span class="sidebar-collapsible">Usuarios</span>
-        </a>
-        <a href="{% url 'admin:index' %}" target="_blank" class="sidebar-link" title="Base de Datos (Admin)">
-          <i class="bi bi-database-gear fs-5"></i> <span class="sidebar-collapsible">Base de Datos (Admin)</span>
         </a>
         {% endif %}
       </div>

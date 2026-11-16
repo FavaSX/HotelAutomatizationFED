@@ -357,7 +357,7 @@ def _sanitize_preview_erp_row(
         "invoice_number": (raw.get("invoice_number") or "").strip() or "—",
         "payment_code": (raw.get("payment_code") or "").strip() or "—",
         "card_code": (raw.get("card_code") or "").strip() or "—",
-        "transaction_date": raw.get("transaction_date") or "—",
+        "transaction_date": _format_erp_field_value("transaction_date", raw.get("transaction_date")),
         "transaction_time": raw.get("transaction_time") or "",
         "cashier_username": (raw.get("cashier_username") or "").strip() or "—",
         "amount": float(raw.get("amount") or 0),
@@ -384,7 +384,7 @@ def _serialize_preview_bank_row(idx: int, raw: Dict[str, Any]) -> Dict[str, Any]
 
     return {
         "index": idx + 1,
-        "movement_date": raw.get("movement_date") or "—",
+        "movement_date": _format_erp_field_value("transaction_date", raw.get("movement_date")),
         "description": raw.get("description") or "—",
         "branch_or_channel": raw.get("branch_or_channel") or "—",
         "document_number": raw.get("document_number") or "—",
@@ -423,7 +423,7 @@ def _serialize_preview_tbk_row(idx: int, raw: Dict[str, Any], currency: str) -> 
         "payment_modality": modality,
         "modality_label": MODALITY_LABELS.get(modality, modality or "—"),
         "card_code": raw.get("card_code") or "—",
-        "sale_date": raw.get("sale_date") or "—",
+        "sale_date": _format_erp_field_value("transaction_date", raw.get("sale_date")),
         "masked_card_number": raw.get("masked_card_number") or "—",
         "merchant_code": raw.get("merchant_code") or "—",
         "merchant_location_name": raw.get("merchant_location_name") or "—",

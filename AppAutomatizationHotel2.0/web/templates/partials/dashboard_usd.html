@@ -77,7 +77,7 @@
         </div>
         <dl class="bank-dl small mt-3 mb-0">
           <div><dt>Calculado Transbank</dt><dd>US$ {{ usd.bank.transbank_calculated_deposit|num_usd }}</dd></div>
-          <div><dt>En cartola{% if usd.bank.deposit_date %} ({{ usd.bank.deposit_date|date:"d/m" }}){% endif %}</dt><dd>US$ {{ usd.bank.bank_statement_deposit|default:0|num_usd }}</dd></div>
+          <div><dt>En cartola{% if usd.bank.deposit_date %} ({{ usd.bank.deposit_date|date:"d/m/Y" }}){% endif %}</dt><dd>US$ {{ usd.bank.bank_statement_deposit|default:0|num_usd }}</dd></div>
         </dl>
       {% else %}
         <div class="stat-value on-navy mt-2" style="font-size: 1.45rem;">Sin validación</div>

@@ -40,6 +40,11 @@ function scNormCode(value) {
   return String(value ?? '').trim().toUpperCase().replace(/^0+/, '');
 }
 
+function scFormatDisplayDate(value) {
+  const m = String(value ?? '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(value ?? '');
+}
+
 function scProposalInputValue(pc) {
   if (pc.field === 'amount') {
     const num = Number(pc.new);
@@ -48,10 +53,16 @@ function scProposalInputValue(pc) {
   return String(pc.new ?? '');
 }
 
+function scProposalNewDisplay(pc) {
+  if (pc.field === 'transaction_date') return scFormatDisplayDate(pc.new);
+  return scProposalInputValue(pc);
+}
+
 function scProposalOldDisplay(pc) {
   const part = String(pc.label || '').split(': ').slice(1).join(': ');
   const [oldText] = part.split(' → ');
-  return oldText || pc.old || '—';
+  if (oldText) return oldText;
+  return (pc.field === 'transaction_date' ? scFormatDisplayDate(pc.old) : pc.old) || '—';
 }
 
 function scProposalDoc(pc) {
@@ -236,7 +247,7 @@ function scFix(v, opts) {
       : (pc.status === 'rejected' ? 'Rechazada. El ERP no se modificó.' : 'Aceptada y guardada en el ERP.'));
     return (
       `<div class="sc-fix sc-fix-done">${head}` +
-        `<div class="sc-diff"><span class="sc-old">${scEsc(scProposalOldDisplay(pc))}</span><i class="bi bi-arrow-right" aria-hidden="true"></i><span class="sc-new">${scEsc(scProposalInputValue(pc))}</span></div>` +
+        `<div class="sc-diff"><span class="sc-old">${scEsc(scProposalOldDisplay(pc))}</span><i class="bi bi-arrow-right" aria-hidden="true"></i><span class="sc-new">${scEsc(scProposalNewDisplay(pc))}</span></div>` +
         `<p class="sc-done"><i class="bi bi-check2-circle me-1"></i>${scEsc(done)}</p>` +
       `</div>`
     );

@@ -44,7 +44,6 @@ CSRF_TRUSTED_ORIGINS = [
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -125,7 +124,7 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 
-# Brute force protection (django-axes): covers both /login/ and the admin login
+# Brute force protection (django-axes): covers /login/
 # https://django-axes.readthedocs.io/en/latest/4_configuration.html
 
 AXES_FAILURE_LIMIT = 5

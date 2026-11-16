@@ -276,6 +276,16 @@ def _build_summary_tables(
     return usd_table, clp_table, usd_totals, clp_totals
 
 
+def _fmt_dmy_value(value: Any) -> str:
+    """Formats a date/datetime/date-string as DD/MM/YYYY for user display."""
+    if not value:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%d/%m/%Y")
+    parsed = safe_date(value)
+    return parsed.strftime("%d/%m/%Y") if parsed else str(value)
+
+
 def _format_accounting_period(
     accounting_period: str, settlement_date: Any, bank_movement_date: Any, tbk_txs: List[Dict[str, Any]]
 ) -> str:
@@ -289,9 +299,7 @@ def _format_accounting_period(
         min_s, max_s = valid_dates[0].strftime("%d/%m/%Y"), valid_dates[-1].strftime("%d/%m/%Y")
         range_str = min_s if min_s == max_s else f"{min_s} al {max_s}"
 
-    settlement_str = ""
-    if settlement_dt:
-        settlement_str = settlement_dt.strftime("%d/%m/%Y") if hasattr(settlement_dt, "strftime") else str(settlement_dt)
+    settlement_str = _fmt_dmy_value(settlement_dt)
 
     if settlement_str and range_str:
         return f"Cierre Dólares — Abono {settlement_str} (Ventas {range_str})"
@@ -746,11 +754,7 @@ def calculate_usd_preview(
             "bank_account_number": account_num,
             "calculated_deposit": float(calc_deposit),
             "bank_deposit_amount": float(first_bv.get("bank_deposit", 0.0)),
-            "bank_movement_date": (
-                bank_movement_date.strftime("%d/%m/%Y")
-                if hasattr(bank_movement_date, "strftime")
-                else str(bank_movement_date or "") if bank_movement_date else None
-            ),
+            "bank_movement_date": _fmt_dmy_value(bank_movement_date) or None,
             "is_matched": first_bv.get("is_matched", False),
         },
         "bank_movements": first_bv.get("movements_data", []),
