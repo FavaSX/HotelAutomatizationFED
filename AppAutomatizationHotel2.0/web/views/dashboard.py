@@ -178,6 +178,14 @@ def _classify_clp_error(item):
     return error_type or _exception_label(CLP_EXCEPTION_LABELS, item.system_result), action
 
 
+def classify_exception_error(item, currency=None):
+    """Returns `(error_type_label, suggested_action)` for a pending exception item."""
+    resolved_currency = (currency or item.process.process_currency or "").upper()
+    if resolved_currency == "CLP":
+        return _classify_clp_error(item)
+    return _classify_usd_error(item)
+
+
 def _build_pending_error_groups(pending_items, classify_fn):
     """Groups pending exceptions by error type with counts, amounts, and top suggested action."""
     error_groups = {}

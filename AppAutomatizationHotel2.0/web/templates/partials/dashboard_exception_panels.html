@@ -44,7 +44,7 @@
       </header>
       <div class="panel-body">
         {% for g in data.pending_by_error %}
-        <div class="bar-row" title="{{ g.label }}: {{ g.count }} · {% if currency == 'usd' %}US$ {{ g.amount|num_usd }}{% else %}${{ g.amount|num_clp }}{% endif %}">
+        <a href="{% url 'exceptions' %}?moneda={{ currency }}&tipo=err:{{ g.label|urlencode }}" class="bar-row d-block text-reset text-decoration-none" title="Filtrar pendientes por {{ g.label }}: {{ g.count }} · {% if currency == 'usd' %}US$ {{ g.amount|num_usd }}{% else %}${{ g.amount|num_clp }}{% endif %}">
           <div class="bar-row-head">
             <span class="fw-semibold">{{ g.label }}</span>
             <span class="small"><strong>{{ g.count }}</strong> <span class="text-muted">· {% if currency == 'usd' %}US$ {{ g.amount|num_usd }}{% else %}${{ g.amount|num_clp }}{% endif %}</span></span>
@@ -55,7 +55,7 @@
             <i class="bi bi-arrow-return-right me-1"></i>{{ g.action }}{% if g.more_actions %} <span class="fst-italic">(y {{ g.more_actions }} {% if g.more_actions == 1 %}acción{% else %}acciones{% endif %} más)</span>{% endif %}
           </div>
           {% endif %}
-        </div>
+        </a>
         {% empty %}
         <div class="text-center text-muted small py-4">
           <i class="bi bi-check2-circle fs-3 d-block mb-2" style="color: var(--success);"></i>

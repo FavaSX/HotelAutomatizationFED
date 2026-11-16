@@ -854,6 +854,80 @@ class ExceptionInboxTests(TestCase):
         self.assertEqual(ids(estado="resueltas"), {self.orphan.id})
         self.assertEqual(ids(estado="todas"), {self.orphan.id, self.out_of_period.id})
 
+    def test_dashboard_error_type_links_filter_pending_inbox(self):
+        self.orphan.system_status_detail = "Sin ERP · Falta en ERP · Revisar Borderó"
+        self.orphan.save()
+        other_clp = CrossMatchResult.objects.create(
+            process=self.process,
+            card_type=self.orphan.card_type,
+            authorization_code="CLP99999",
+            system_result="AMOUNT_MISMATCH",
+            system_status_detail="Dif · Diferencia de abono · Ajustar diferencia",
+            management_status=self.orphan.management_status,
+        )
+
+        dash_clp = self.client.get(reverse("dashboard"), {"moneda": "clp"})
+        self.assertEqual(dash_clp.status_code, 200)
+        self.assertIn(
+            f"{reverse('exceptions')}?moneda=clp&tipo=err:Falta%20en%20ERP",
+            dash_clp.content.decode(),
+        )
+
+        res_clp = self.client.get(reverse("exceptions"), {"moneda": "clp", "tipo": "err:Falta en ERP"})
+        self.assertEqual(res_clp.status_code, 200)
+        self.assertEqual({r.id for r in res_clp.context["rows"]}, {self.orphan.id})
+        self.assertNotIn(other_clp.id, {r.id for r in res_clp.context["rows"]})
+        self.assertIn(("err:Falta en ERP", "Falta en ERP"), res_clp.context["error_choices"])
+        self.assertContains(res_clp, '<option value="err:Falta en ERP" selected>')
+
+        export_resp = self.client.get(reverse("exceptions_export"), {"moneda": "clp", "tipo": "err:Falta en ERP"})
+        self.assertEqual(export_resp.status_code, 200)
+        wb = openpyxl.load_workbook(io.BytesIO(export_resp.content))
+        ws = wb["Excepciones"]
+        self.assertEqual(ws.max_row, 2)
+        self.assertEqual(ws["C2"].value, self.orphan.authorization_code)
+
+        usd_proc = ReconciliationProcess.objects.create(
+            user=self.user,
+            process_currency="USD",
+            accounting_period="Cierre USD QA",
+        )
+        usd_missing_pos = CrossMatchResult.objects.create(
+            process=usd_proc,
+            card_type=self.orphan.card_type,
+            authorization_code="USD11111",
+            system_result="AMOUNT_MISMATCH",
+            system_observation="No encontrado en posición por clientes",
+            transbank_amount=Decimal("50.00"),
+            management_status=self.orphan.management_status,
+        )
+        CrossMatchResult.objects.create(
+            process=usd_proc,
+            card_type=self.orphan.card_type,
+            authorization_code="USD22222",
+            system_result="AMOUNT_MISMATCH",
+            system_observation="Solo diferencia normal",
+            transbank_amount=Decimal("25.00"),
+            management_status=self.orphan.management_status,
+        )
+
+        dash_usd = self.client.get(reverse("dashboard"), {"moneda": "usd"})
+        self.assertEqual(dash_usd.status_code, 200)
+        self.assertIn(
+            f"{reverse('exceptions')}?moneda=usd&tipo=err:Falta%20en%20Pos.%20Clientes",
+            dash_usd.content.decode(),
+        )
+
+        res_usd = self.client.get(reverse("exceptions"), {"moneda": "usd", "tipo": "err:Falta en Pos. Clientes"})
+        self.assertEqual(res_usd.status_code, 200)
+        self.assertEqual({r.id for r in res_usd.context["rows"]}, {usd_missing_pos.id})
+        self.assertIn(("err:Falta en Pos. Clientes", "Falta en Pos. Clientes"), res_usd.context["error_choices"])
+
+        res_empty = self.client.get(reverse("exceptions"), {"moneda": "usd", "tipo": "err:NoExiste"})
+        self.assertEqual(res_empty.status_code, 200)
+        self.assertEqual(list(res_empty.context["rows"]), [])
+        self.assertIn(("err:NoExiste", "NoExiste"), res_empty.context["error_choices"])
+
     def test_export_contains_the_filtered_rows(self):
         response = self.client.get(reverse("exceptions_export"), {"cajero": "jperez"})
         self.assertEqual(response.status_code, 200)

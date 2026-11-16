@@ -33,7 +33,13 @@ from ..services.suggestion_actions import accept_suggestion, load_suggestion, op
 from ..services.clp_reconciliation import MODALITY_LABELS
 from ..services.voucher_recross import RecrossError
 from ..services.report_exporter import generate_exceptions_excel_bytes
-from .dashboard import CLP_EXCEPTION_LABELS, EXCEPTION_LABELS, _exception_label, _split_status_detail
+from .dashboard import (
+    CLP_EXCEPTION_LABELS,
+    EXCEPTION_LABELS,
+    _exception_label,
+    _split_status_detail,
+    classify_exception_error,
+)
 
 
 INBOX_LABELS = {"usd": EXCEPTION_LABELS, "clp": CLP_EXCEPTION_LABELS}
@@ -92,8 +98,17 @@ def _filtered_exceptions(params):
     currency = (params.get("moneda") or "").upper()
     if currency in ("USD", "CLP"):
         qs = qs.filter(process__process_currency=currency)
-    if params.get("tipo"):
-        qs = qs.filter(system_result=params["tipo"])
+    tipo_val = (params.get("tipo") or "").strip()
+    if tipo_val.startswith("err:"):
+        err_label = tipo_val[4:]
+        matching_ids = [
+            item.id
+            for item in qs.select_related("process")
+            if classify_exception_error(item, currency=currency or None)[0] == err_label
+        ]
+        qs = qs.filter(id__in=matching_ids)
+    elif tipo_val:
+        qs = qs.filter(system_result=tipo_val)
     cashier = params.get("cajero")
     if cashier == "__none__":
         qs = qs.filter(Q(cashier_username__isnull=True) | Q(cashier_username__in=["", "—"]))
@@ -179,6 +194,15 @@ def exceptions_view(request):
     )
     filters = {key: params.get(key, "") for key in EXCEPTION_FILTER_KEYS}
     filters["estado"] = state
+    error_labels = {
+        classify_exception_error(item, currency=currency.upper())[0]
+        for item in currency_exceptions
+    }
+    if filters["tipo"].startswith("err:"):
+        active_err = filters["tipo"][4:]
+        if active_err:
+            error_labels.add(active_err)
+    error_choices = [(f"err:{lbl}", lbl) for lbl in sorted(error_labels)]
     query_string = urlencode({k: v for k, v in filters.items() if v})
     # Switching tabs keeps the state filter only: cashiers and types differ between currencies
     tab_query = urlencode({"estado": state}) if state != "pendientes" else ""
@@ -193,6 +217,7 @@ def exceptions_view(request):
         "filters": filters,
         "query_string": query_string,
         "type_choices": sorted(INBOX_LABELS[currency].items(), key=lambda t: t[1]),
+        "error_choices": error_choices,
         "cashiers": cashiers,
         "card_types": CardType.objects.filter(
             id__in=currency_exceptions.values("card_type_id")

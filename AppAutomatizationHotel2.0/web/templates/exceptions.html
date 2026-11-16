@@ -96,9 +96,18 @@
       <label class="form-label small fw-semibold mb-1" for="f-tipo">Tipo</label>
       <select id="f-tipo" name="tipo" class="form-select form-select-sm">
         <option value="">Todos</option>
-        {% for code, label in type_choices %}
-        <option value="{{ code }}" {% if filters.tipo == code %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
+        <optgroup label="Resumen">
+          {% for code, label in type_choices %}
+          <option value="{{ code }}" {% if filters.tipo == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </optgroup>
+        {% if error_choices %}
+        <optgroup label="Por tipo de error">
+          {% for code, label in error_choices %}
+          <option value="{{ code }}" {% if filters.tipo == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
       </select>
     </div>
     <div class="col-6 col-md-3 col-xl-2">
