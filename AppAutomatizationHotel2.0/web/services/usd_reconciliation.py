@@ -13,7 +13,7 @@ import pandas as pd
 
 from ..models import CardType, ErpTransaction, ErpTransactionChange, SystemConfiguration
 from .erp_corrections import overlay_on_instances
-from .erp_coverage import db_card_candidates_for_codes, evaluate_bordero_upload_warnings
+from .erp_coverage import db_card_candidates_for_codes, ensure_file_is_a_bordero, evaluate_bordero_upload_warnings
 from .column_detector import (
     TRANSBANK_USD_COLUMN_RULES,
     clean_code_string,
@@ -389,6 +389,7 @@ def calculate_usd_preview(
             inst.source_file = source_name
             erp_instances.append(inst)
 
+    ensure_file_is_a_bordero(erp_stats_list, primary_erp_name)
     erp_coverage_meta, erp_warnings = evaluate_bordero_upload_warnings(erp_stats_list)
 
     # Extract Transbank voucher authorization codes & sale dates for overlay + DB card lookup

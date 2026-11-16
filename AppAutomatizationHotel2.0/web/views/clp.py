@@ -16,6 +16,7 @@ from ..services import (
     detect_and_align_clp_files,
 )
 from ..services.erp_coverage import get_erp_coverage_summary
+from ..services.file_detector import misplaced_clp_files
 from ..services.tables_viewer import build_preview_source_tables_context
 from .common import (
     handle_preview_correction,
@@ -62,6 +63,16 @@ def clp_upload_view(request):
                 request,
                 "Por favor asegúrese de cargar los 3 componentes requeridos: Borderó ERP, Cartola Bancaria y Abono(s) Transbank en Pesos."
             )
+            return redirect("clp_upload")
+
+        misplaced = misplaced_clp_files({
+            "erp": [erp_file] + list(extra_erp_files),
+            "bank": [bank_file],
+            "tbk": tbk_files,
+        })
+        if misplaced:
+            for text in misplaced:
+                messages.error(request, f"{text} Cámbielo de casilla y vuelva a procesar.")
             return redirect("clp_upload")
 
         try:

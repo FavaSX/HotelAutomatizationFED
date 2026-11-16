@@ -4383,3 +4383,76 @@ class FinTechAuditQaFixesTests(TestCase):
             self.assertEqual(resp.status_code, 400)
 
 
+
+
+class ChileanAmountInErpCorrectionTests(TestCase):
+    """The dot is the thousands separator: 115.204 must be saved as 115204 pesos, never 115,20."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador", password="x")
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        self.case = self.process.cross_match_results.select_related(
+            "process", "transbank_transaction", "card_type", "management_status"
+        ).get(authorization_code="007626")
+
+    def test_dot_as_thousands_separator_is_saved_in_pesos(self):
+        row = self.case.erp_transaction
+        outcome = edit_row(row, {"amount": "115.204"}, self.user, match=self.case)
+        row.refresh_from_db()
+        self.assertEqual(row.amount, Decimal("115204.00"))
+        self.assertTrue(outcome["matched"])
+
+    def test_other_accepted_formats(self):
+        from .services.erp_editing import _parse_amount
+        for raw, expected in (
+            ("115204", "115204"), ("115204.00", "115204"), ("115.204,00", "115204"),
+            ("-115.204", "-115204"), ("$ 1.250.000", "1250000"), ("1.250.000", "1250000"),
+        ):
+            self.assertEqual(_parse_amount(raw), Decimal(expected), raw)
+
+    def test_cents_are_rejected_instead_of_rounded(self):
+        row = self.case.erp_transaction
+        before = row.amount
+        for raw in ("115.20", "115.2", "115.204,50", "115.2045", "1.25.000", "abc"):
+            with self.assertRaises(CorrectionError, msg=raw):
+                edit_row(row, {"amount": raw}, self.user, match=self.case)
+        row.refresh_from_db()
+        self.assertEqual(row.amount, before)
+
+
+class WrongFileInErpBoxTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("auditor", password="x")
+        self.client.force_login(self.user)
+
+    def test_cartola_in_the_bordero_box_is_rejected_with_a_message(self):
+        files = build_clp_files()
+        response = self.client.post(reverse("clp_upload"), {
+            "clp_erp_file": files["bank_statement_file"],
+            "clp_bank_file": files["erp_file"],
+            "clp_tbk_credit_file": files["transbank_credit_file"],
+            "clp_tbk_debit_file": files["transbank_debit_file"],
+            "clp_tbk_prepaid_file": files["transbank_prepaid_file"],
+        }, follow=True)
+        self.assertRedirects(response, reverse("clp_upload"))
+        self.assertContains(response, "cartola.xlsx")
+        self.assertContains(response, "Borderó ERP Hotel")
+        from .views.common import CLP_SESSION_KEY
+        self.assertNotIn(CLP_SESSION_KEY, self.client.session)
+
+    def test_non_bordero_in_the_erp_box_stops_the_preview(self):
+        files = build_clp_files()
+        files["erp_file"] = build_clp_files()["bank_statement_file"]
+        with self.assertRaisesMessage(ValueError, "no es un Borderó"):
+            calculate_clp_preview(**files)
+
+    def test_right_files_still_go_through(self):
+        files = build_clp_files()
+        response = self.client.post(reverse("clp_upload"), {
+            "clp_erp_file": files["erp_file"],
+            "clp_bank_file": files["bank_statement_file"],
+            "clp_tbk_credit_file": files["transbank_credit_file"],
+            "clp_tbk_debit_file": files["transbank_debit_file"],
+            "clp_tbk_prepaid_file": files["transbank_prepaid_file"],
+        })
+        self.assertRedirects(response, reverse("clp_preview"))
