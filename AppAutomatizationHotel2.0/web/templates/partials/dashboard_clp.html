@@ -6,8 +6,8 @@
   </div>
   <h2 class="h5 fw-bold mb-2">Todavía no hay cierres en pesos</h2>
   <p class="text-muted mx-auto mb-4" style="max-width: 460px;">
-    Cuando guardes tu primer cierre en pesos, aquí verás la conciliación por modalidad (crédito, débito y prepago),
-    los abonos bancarios y las excepciones con su acción sugerida.
+    Cuando guardes tu primer cierre en pesos, aquí verás la tasa de conciliación, los abonos bancarios
+    y las excepciones por cajero y tipo de error con su acción sugerida.
   </p>
   <a href="{% url 'clp_upload' %}" class="btn btn-primary rounded-pill px-4">
     <i class="bi bi-arrow-right-circle me-1"></i> Ir a página de conciliación de pesos
@@ -97,83 +97,8 @@
   </div>
 </div>
 
-<!-- Modalities + exception report -->
-<div class="row g-3 mb-3">
-  <div class="col-lg-7">
-    <section class="card card-executive h-100">
-      <header class="panel-head">
-        <div>
-          <h2 class="panel-title">Modalidades del último cierre</h2>
-          <p class="panel-sub">Monto cobrado en Transbank, vouchers conciliados y comisión</p>
-        </div>
-        {% if clp.commissions_total %}
-        <div class="text-end">
-          <div class="kpi-label">Comisión total</div>
-          <div class="fw-semibold">${{ clp.commissions_total|num_clp }}</div>
-        </div>
-        {% endif %}
-      </header>
-      <div class="panel-body">
-        {% for m in clp.modalities %}
-        {% if not m.vouchers %}
-        <div class="bar-row d-flex justify-content-between align-items-baseline">
-          <span class="fw-semibold text-muted">{{ m.label }}</span>
-          <span class="text-muted small fst-italic">Sin movimientos en este cierre</span>
-        </div>
-        {% else %}
-        <div class="bar-row" title="{{ m.label }}: ${{ m.amount|num_clp }} · {{ m.matched }}/{{ m.vouchers }} conciliados">
-          <div class="bar-row-head">
-            <span class="fw-semibold">{{ m.label }}</span>
-            <span class="text-muted small">{{ m.matched }}/{{ m.vouchers }} conciliados</span>
-          </div>
-          <div class="d-flex align-items-center gap-3">
-            <div class="bar-track flex-grow-1"><span class="bar-fill" style="width: {{ m.pct|unlocalize }}%;"></span></div>
-            <span class="bar-value">${{ m.amount|num_clp }}</span>
-          </div>
-          {% if m.commissions or m.net_deposit %}
-          <div class="small text-muted mt-1">
-            Comisión Transbank ${{ m.commissions|num_clp }} · Abono neto ${{ m.net_deposit|num_clp }}
-          </div>
-          {% endif %}
-        </div>
-        {% endif %}
-        {% endfor %}
-      </div>
-    </section>
-  </div>
-
-  <div class="col-lg-5">
-    <section class="card card-executive h-100">
-      <header class="panel-head">
-        <div>
-          <h2 class="panel-title">Excepciones por tipo de error</h2>
-          <p class="panel-sub">Con la acción sugerida por el sistema</p>
-        </div>
-      </header>
-      <div class="panel-body">
-        {% for g in clp.pending_by_error %}
-        <div class="bar-row" title="{{ g.label }}: {{ g.count }} · ${{ g.amount|num_clp }}">
-          <div class="bar-row-head">
-            <span class="fw-semibold">{{ g.label }}</span>
-            <span class="small"><strong>{{ g.count }}</strong> <span class="text-muted">· ${{ g.amount|num_clp }}</span></span>
-          </div>
-          <div class="bar-track"><span class="bar-fill bar-fill-navy" style="width: {{ g.pct|unlocalize }}%;"></span></div>
-          {% if g.action %}
-          <div class="small text-muted mt-1">
-            <i class="bi bi-arrow-return-right me-1"></i>{{ g.action }}{% if g.more_actions %} <span class="fst-italic">(y {{ g.more_actions }} acción{{ g.more_actions|pluralize:"es" }} más)</span>{% endif %}
-          </div>
-          {% endif %}
-        </div>
-        {% empty %}
-        <div class="text-center text-muted small py-4">
-          <i class="bi bi-check2-circle fs-3 d-block mb-2" style="color: var(--success);"></i>
-          No hay excepciones pendientes.
-        </div>
-        {% endfor %}
-      </div>
-    </section>
-  </div>
-</div>
+<!-- Cashiers + exception report -->
+{% include "partials/dashboard_exception_panels.html" with data=clp currency="clp" %}
 
 <!-- Largest exceptions + recent closings -->
 <div class="row g-3">

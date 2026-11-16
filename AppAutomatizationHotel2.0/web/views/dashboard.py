@@ -7,12 +7,18 @@ from django.db.models import Count, Q, Sum
 from ..services.clp_reconciliation import MODALITY_LABELS as CLP_MODALITY_LABELS
 from ..services.clp_report_exporter import _split_status_detail
 from ..services.erp_editing import OPEN_STATUS_CODES
-from ..models import CrossMatchResult, ReconciliationProcess, ReconciliationSummary
+from ..services.suggestion_actions import load_suggestion
+from ..models import CrossMatchResult, ReconciliationProcess
 
 
 EXCEPTION_LABELS = {
     "AMOUNT_MISMATCH": "Con diferencia de monto",
     "NOT_FOUND_IN_ERP": "No ubicada en ERP",
+}
+
+USD_DEFAULT_ACTIONS = {
+    "AMOUNT_MISMATCH": "Revisar diferencia entre Transbank, ERP y Posición por Clientes",
+    "NOT_FOUND_IN_ERP": "Buscar la venta en el ERP y registrarla o verificar su código",
 }
 
 CLP_EXCEPTION_LABELS = {
@@ -94,25 +100,15 @@ def _rate_delta(recent):
     return round(recent[0].match_rate - recent[1].match_rate, 1) if len(recent) > 1 else None
 
 
-def _usd_dashboard():
-    """Dollar panel: every figure comes from the saved USD closings."""
-    processes = _closings("USD")
-    recent = _recent_closings(processes)
-    if not recent:
-        return {"has_data": False}
-    last_process = recent[0]
-
-    pending = _pending_exceptions("USD")
-    pending_totals = pending.aggregate(count=Count("id"), amount=Sum("transbank_amount"))
-
-    # Cashiers responsible for the open exceptions (vouchers missing in ERP have no cashier)
+def _pending_by_cashier(pending):
+    """Top 6 cashiers responsible for open exceptions; ERP-missing rows stay grouped at the bottom."""
     cashier_counts = {}
     for row in pending.values("cashier_username").annotate(count=Count("id")):
         name = (row["cashier_username"] or "").strip()
         key = name if name and name != "—" else None
         cashier_counts[key] = cashier_counts.get(key, 0) + row["count"]
     max_cashier = max(cashier_counts.values(), default=0)
-    pending_by_cashier = sorted(
+    return sorted(
         (
             {
                 "name": name or "Sin cajero (no está en ERP)",
@@ -125,43 +121,106 @@ def _usd_dashboard():
         key=lambda c: (c["is_unassigned"], -c["count"]),
     )[:6]
 
+
+def _classify_usd_error(item):
+    """Maps a pending USD CrossMatchResult to a granular error type label and suggested action."""
+    suggestion = load_suggestion(item)
+    headline = (suggestion.get("headline") or "") if suggestion else ""
+    action = (suggestion.get("action") or "").strip() if suggestion else ""
+    headline_lower = headline.lower()
+
+    if item.system_result == "NOT_FOUND_IN_ERP":
+        if suggestion:
+            proposed_old = (suggestion.get("proposed_change") or {}).get("old")
+            if suggestion.get("db_match") or "venta pendiente en bd" in headline_lower:
+                label = "Venta previa en BD"
+            elif "dividido" in headline_lower:
+                label = "Factura dividida en ERP"
+            elif "no facturado en erp" in headline_lower:
+                label = "En Pos. Clientes (falta en ERP)"
+            elif "sin código" in headline_lower or proposed_old in ("", "—"):
+                label = "Falta código en ERP"
+            else:
+                label = "Error de tipeo"
+        else:
+            label = _exception_label(EXCEPTION_LABELS, item.system_result)
+            action = USD_DEFAULT_ACTIONS["NOT_FOUND_IN_ERP"]
+    elif item.system_result == "AMOUNT_MISMATCH":
+        obs_lower = (item.system_observation or "").lower()
+        if "col. usd en 0,00" in headline_lower:
+            label = "Sin monto US$ en Pos. Clientes"
+        elif "posición por clientes" in headline_lower and "hallado" in headline_lower:
+            label = "Doc. distinto en Pos. Clientes"
+        elif "cruce parcial" in headline_lower or "cobro parcial" in headline_lower:
+            label = "Cobro parcial / propina"
+        elif "variación cambiaria" in headline_lower or "dif. cambiaria" in headline_lower:
+            label = "Variación cambiaria"
+        elif "no encontrado en posición por clientes" in obs_lower:
+            label = "Falta en Pos. Clientes"
+        else:
+            label = _exception_label(EXCEPTION_LABELS, item.system_result)
+        if not action:
+            action = (
+                "Verificar registro en Posición por Clientes de la franquicia"
+                if label == "Falta en Pos. Clientes"
+                else USD_DEFAULT_ACTIONS["AMOUNT_MISMATCH"]
+            )
+    else:
+        label = _exception_label(EXCEPTION_LABELS, item.system_result)
+        if not action:
+            action = USD_DEFAULT_ACTIONS.get(item.system_result, "")
+
+    return label, action
+
+
+def _classify_clp_error(item):
+    _, error_type, action = _split_status_detail(item.system_status_detail)
+    return error_type or _exception_label(CLP_EXCEPTION_LABELS, item.system_result), action
+
+
+def _build_pending_error_groups(pending_items, classify_fn):
+    """Groups pending exceptions by error type with counts, amounts, and top suggested action."""
+    error_groups = {}
+    for item in pending_items:
+        error_type, action = classify_fn(item)
+        group = error_groups.setdefault(error_type, {"label": error_type, "count": 0, "amount": 0, "actions": {}})
+        group["count"] += 1
+        group["amount"] += item.transbank_amount or 0
+        if action:
+            group["actions"][action] = group["actions"].get(action, 0) + 1
+    max_group = max((g["count"] for g in error_groups.values()), default=0)
+    pending_by_error = []
+    for group in sorted(error_groups.values(), key=lambda g: -g["count"]):
+        actions = sorted(group.pop("actions").items(), key=lambda a: -a[1])
+        group["action"] = actions[0][0] if actions else ""
+        group["more_actions"] = len(actions) - 1
+        group["pct"] = round(group["count"] / max_group * 100) if max_group else 0
+        pending_by_error.append(group)
+    return pending_by_error
+
+
+def _usd_dashboard():
+    """Dollar panel: every figure comes from the saved USD closings."""
+    processes = _closings("USD")
+    recent = _recent_closings(processes)
+    if not recent:
+        return {"has_data": False}
+    last_process = recent[0]
+
+    pending = _pending_exceptions("USD")
+    pending_totals = pending.aggregate(count=Count("id"), amount=Sum("transbank_amount"))
+
+    pending_by_error = _build_pending_error_groups(
+        pending.only("system_result", "system_status_detail", "system_observation", "auditor_comment", "transbank_amount"),
+        _classify_usd_error,
+    )
+
     largest_exceptions = list(
         pending.select_related("card_type", "process", "erp_transaction", "card_operator_transaction")
         .order_by("-transbank_amount")[:6]
     )
     for item in largest_exceptions:
-        item.type_label = _exception_label(EXCEPTION_LABELS, item.system_result)
-
-    # Per-franchise breakdown of the last closing
-    card_rows = {
-        row["card_type__code"]: row
-        for row in last_process.cross_match_results.values("card_type__code", "card_type__name").annotate(
-            total=Count("id"),
-            matched=Count("id", filter=Q(system_result="MATCHED")),
-            amount=Sum("transbank_amount"),
-        )
-    }
-    usd_summaries = {
-        s.card_type.code: s
-        for s in ReconciliationSummary.objects.filter(process=last_process, currency_table="USD").select_related("card_type")
-    }
-    max_card_amount = max((r["amount"] or 0 for r in card_rows.values()), default=0)
-    franchises = []
-    for code in sorted(set(card_rows) | set(usd_summaries)):
-        row = card_rows.get(code, {})
-        summary = usd_summaries.get(code)
-        amount = row.get("amount") or 0
-        total = row.get("total", 0)
-        franchises.append({
-            "code": code,
-            "name": row.get("card_type__name") or (summary.card_type.name if summary else code),
-            "vouchers": total,
-            "matched": row.get("matched", 0),
-            "amount": amount,
-            "pct": round(amount / max_card_amount * 100) if max_card_amount else 0,
-            "difference": summary.difference if summary else 0,
-        })
-    franchises.sort(key=lambda f: -f["amount"])
+        item.type_label, item.action = _classify_usd_error(item)
 
     return {
         "has_data": True,
@@ -172,9 +231,9 @@ def _usd_dashboard():
         "pending_count": pending_totals["count"] or 0,
         "pending_amount": pending_totals["amount"] or 0,
         "pending_by_type": _pending_by_type(pending, EXCEPTION_LABELS),
-        "pending_by_cashier": pending_by_cashier,
+        "pending_by_cashier": _pending_by_cashier(pending),
+        "pending_by_error": pending_by_error,
         "largest_exceptions": largest_exceptions,
-        "franchises": franchises,
         "recent_processes": recent,
         "process_count": processes.count(),
     }
@@ -194,24 +253,10 @@ def _clp_dashboard():
     pending_totals = pending.aggregate(count=Count("id"), amount=Sum("transbank_amount"))
     out_of_period_amount = pending.filter(system_result="OUT_OF_PERIOD").aggregate(amount=Sum("transbank_amount"))["amount"] or 0
 
-    # Exception report: error type + suggested action, as classified by the CLP engine
-    error_groups = {}
-    for item in pending.only("system_result", "system_status_detail", "transbank_amount"):
-        _, error_type, action = _split_status_detail(item.system_status_detail)
-        error_type = error_type or _exception_label(CLP_EXCEPTION_LABELS, item.system_result)
-        group = error_groups.setdefault(error_type, {"label": error_type, "count": 0, "amount": 0, "actions": {}})
-        group["count"] += 1
-        group["amount"] += item.transbank_amount or 0
-        if action:
-            group["actions"][action] = group["actions"].get(action, 0) + 1
-    max_group = max((g["count"] for g in error_groups.values()), default=0)
-    pending_by_error = []
-    for group in sorted(error_groups.values(), key=lambda g: -g["count"]):
-        actions = sorted(group.pop("actions").items(), key=lambda a: -a[1])
-        group["action"] = actions[0][0] if actions else ""
-        group["more_actions"] = len(actions) - 1
-        group["pct"] = round(group["count"] / max_group * 100) if max_group else 0
-        pending_by_error.append(group)
+    pending_by_error = _build_pending_error_groups(
+        pending.only("system_result", "system_status_detail", "transbank_amount"),
+        _classify_clp_error,
+    )
 
     largest_exceptions = list(
         pending.select_related("card_type", "process", "erp_transaction", "card_operator_transaction")
@@ -223,54 +268,26 @@ def _clp_dashboard():
         item.modality_label = modality
         item.action = action
 
-    # Per-modality breakdown of the last closing (Credit / Debit / Prepaid)
-    modality_rows = {
-        row["transbank_transaction__payment_modality"]: row
-        for row in last_process.cross_match_results.values("transbank_transaction__payment_modality").annotate(
-            total=Count("id"),
-            matched=Count("id", filter=Q(system_result="MATCHED")),
-            amount=Sum("transbank_amount"),
-        )
-    }
-    summary_rows = {
-        row["payment_modality"].removeprefix("CLP_"): row
-        for row in ReconciliationSummary.objects.filter(process=last_process, currency_table="CLP")
-        .values("payment_modality")
-        .annotate(commissions=Sum("total_commissions"), net_deposit=Sum("net_deposit_total"))
-    }
-    banks = {b.payment_modality.removeprefix("CLP_"): b for b in last_process.bank_list}
-    max_modality_amount = max((r["amount"] or 0 for r in modality_rows.values()), default=0)
-    modalities = []
-    for code, label in CLP_MODALITY_LABELS.items():
-        row = modality_rows.get(code, {})
-        summary = summary_rows.get(code, {})
-        amount = row.get("amount") or 0
-        modalities.append({
-            "code": code,
-            "label": label,
-            "vouchers": row.get("total", 0),
-            "matched": row.get("matched", 0),
-            "amount": amount,
-            "pct": round(amount / max_modality_amount * 100) if max_modality_amount else 0,
-            "commissions": summary.get("commissions") or 0,
-            "net_deposit": summary.get("net_deposit") or 0,
-            "bank": banks.get(code),
-        })
+    banks_by_code = {b.payment_modality.removeprefix("CLP_"): b for b in last_process.bank_list}
+    banks = [
+        {"label": label, "bank": banks_by_code[code]}
+        for code, label in CLP_MODALITY_LABELS.items()
+        if code in banks_by_code
+    ]
 
     return {
         "has_data": True,
         "last_process": last_process,
         "last_counts": last_counts,
         "rate_delta": _rate_delta(recent),
-        "banks": [m for m in modalities if m["bank"]],
+        "banks": banks,
         "pending_count": pending_totals["count"] or 0,
         "pending_amount": pending_totals["amount"] or 0,
         "out_of_period_amount": out_of_period_amount,
         "pending_by_type": _pending_by_type(pending, CLP_EXCEPTION_LABELS),
+        "pending_by_cashier": _pending_by_cashier(pending),
         "pending_by_error": pending_by_error,
         "largest_exceptions": largest_exceptions,
-        "modalities": modalities,
-        "commissions_total": sum(m["commissions"] for m in modalities),
         "recent_processes": recent,
         "process_count": processes.count(),
     }

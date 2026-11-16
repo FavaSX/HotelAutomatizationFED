@@ -7,7 +7,7 @@
   <h2 class="h5 fw-bold mb-2">Todavía no hay cierres en dólares</h2>
   <p class="text-muted mx-auto mb-4" style="max-width: 460px;">
     Cuando guardes tu primer cierre en dólares, aquí verás la tasa de conciliación, las excepciones
-    pendientes, el estado del abono bancario y el detalle por franquicia y cajero.
+    pendientes, el estado del abono bancario y el detalle por cajero y tipo de error.
   </p>
   <a href="{% url 'usd_upload' %}" class="btn btn-primary rounded-pill px-4">
     <i class="bi bi-arrow-right-circle me-1"></i> Ir a página de conciliación de dólares
@@ -87,76 +87,8 @@
   </div>
 </div>
 
-<!-- Franchises + cashiers -->
-<div class="row g-3 mb-3">
-  <div class="col-lg-7">
-    <section class="card card-executive h-100">
-      <header class="panel-head">
-        <div>
-          <h2 class="panel-title">Franquicias del último cierre</h2>
-          <p class="panel-sub">Monto cobrado en Transbank (US$) y vouchers conciliados</p>
-        </div>
-      </header>
-      <div class="panel-body">
-        {% for f in usd.franchises %}
-        {% if not f.vouchers %}
-        <div class="bar-row d-flex justify-content-between align-items-baseline">
-          <span class="fw-semibold text-muted">{{ f.name }}</span>
-          <span class="text-muted small fst-italic">Sin movimientos en este cierre</span>
-        </div>
-        {% else %}
-        <div class="bar-row" title="{{ f.name }}: US$ {{ f.amount|num_usd }} · {{ f.matched }}/{{ f.vouchers }} conciliados">
-          <div class="bar-row-head">
-            <span class="fw-semibold">{{ f.name }}</span>
-            <span class="text-muted small">{{ f.matched }}/{{ f.vouchers }} conciliados</span>
-          </div>
-          <div class="d-flex align-items-center gap-3">
-            <div class="bar-track flex-grow-1"><span class="bar-fill" style="width: {{ f.pct|unlocalize }}%;"></span></div>
-            <span class="bar-value">US$ {{ f.amount|num_usd }}</span>
-          </div>
-          {% if f.difference %}
-          <div class="small mt-1 {% if f.difference < 0 %}text-danger-soft{% else %}text-muted{% endif %}">
-            <i class="bi bi-arrow-left-right me-1"></i>Diferencia vs. Posición por Clientes: US$ {{ f.difference|num_usd }}
-          </div>
-          {% endif %}
-        </div>
-        {% endif %}
-        {% empty %}
-        <p class="text-muted small mb-0">Sin vouchers registrados en este cierre.</p>
-        {% endfor %}
-      </div>
-    </section>
-  </div>
-
-  <div class="col-lg-5">
-    <section class="card card-executive h-100">
-      <header class="panel-head">
-        <div>
-          <h2 class="panel-title">Excepciones por cajero</h2>
-          <p class="panel-sub">Quién registró los cobros pendientes de revisión</p>
-        </div>
-      </header>
-      <div class="panel-body">
-        {% for c in usd.pending_by_cashier %}
-        <div class="bar-row" title="{{ c.name }}: {{ c.count }} excepción{{ c.count|pluralize:'es' }}">
-          <div class="bar-row-head">
-            <a href="{% url 'exceptions' %}?moneda=usd&cajero={% if c.is_unassigned %}__none__{% else %}{{ c.name|urlencode }}{% endif %}" class="text-reset text-decoration-none {% if c.is_unassigned %}text-muted fst-italic{% else %}fw-semibold{% endif %}">
-              <i class="bi {% if c.is_unassigned %}bi-question-circle{% else %}bi-person{% endif %} me-1"></i>{{ c.name }}
-            </a>
-            <strong>{{ c.count }}</strong>
-          </div>
-          <div class="bar-track"><span class="bar-fill {% if c.is_unassigned %}bar-fill-muted{% else %}bar-fill-navy{% endif %}" style="width: {{ c.pct|unlocalize }}%;"></span></div>
-        </div>
-        {% empty %}
-        <div class="text-center text-muted small py-4">
-          <i class="bi bi-check2-circle fs-3 d-block mb-2" style="color: var(--success);"></i>
-          No hay excepciones pendientes.
-        </div>
-        {% endfor %}
-      </div>
-    </section>
-  </div>
-</div>
+<!-- Cashiers + exception report -->
+{% include "partials/dashboard_exception_panels.html" with data=usd currency="usd" %}
 
 <!-- Largest exceptions + recent closings -->
 <div class="row g-3">
@@ -196,7 +128,7 @@
                 {% endif %}
               </td>
               <td>
-                <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}">
+                <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}" title="{{ e.action }}">
                   <i class="bi {% if e.system_result == 'NOT_FOUND_IN_ERP' %}bi-search{% else %}bi-plus-slash-minus{% endif %}" title="{{ e.type_label }}"></i><span class="d-none d-sm-inline">{{ e.type_label }}</span>
                 </span>
               </td>

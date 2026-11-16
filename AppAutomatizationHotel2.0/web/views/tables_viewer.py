@@ -226,8 +226,10 @@ def closings_list_view(request):
             | Q(erp_file_name__icontains=q)
             | Q(bank_statement_file_name__icontains=q)
         )
-        if q.isdigit():
-            q_filter |= Q(id=int(q))
+        if q.isascii() and q.isdigit():
+            q_id = int(q)
+            if 0 < q_id <= 9_223_372_036_854_775_807:
+                q_filter |= Q(id=q_id)
         processes = processes.filter(q_filter)
 
     closings_per_page = resolve_per_page(request, default=PAGE_SIZE_CLOSINGS)

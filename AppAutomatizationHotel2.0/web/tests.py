@@ -550,13 +550,13 @@ class DashboardViewTests(TestCase):
             user=self.user, process_currency="CLP", accounting_period="Cierre Pesos — Abono 08/09/2026",
         )
         rows = [
-            # (modality, result, amount, status detail)
-            ("CREDIT", "MATCHED", 10000, "Crédito · Cuadrado · Sin acción"),
-            ("DEBIT", "MATCHED", 20000, "Débito · Cuadrado · Sin acción"),
-            ("DEBIT", "NOT_FOUND_IN_ERP", 250000, "Débito · Falta en ERP · Buscar la venta con el cajero y registrarla en el ERP"),
-            ("CREDIT", "OUT_OF_PERIOD", 5000, "Crédito · Fuera de período · Buscar en el Borderó del período de la venta"),
+            # (modality, result, amount, status detail, cashier)
+            ("CREDIT", "MATCHED", 10000, "Crédito · Cuadrado · Sin acción", "CDAZA"),
+            ("DEBIT", "MATCHED", 20000, "Débito · Cuadrado · Sin acción", "CDAZA"),
+            ("DEBIT", "NOT_FOUND_IN_ERP", 250000, "Débito · Falta en ERP · Buscar la venta con el cajero y registrarla en el ERP", "—"),
+            ("CREDIT", "OUT_OF_PERIOD", 5000, "Crédito · Fuera de período · Buscar en el Borderó del período de la venta", "CDAZA"),
         ]
-        for i, (modality, result, amount, detail) in enumerate(rows):
+        for i, (modality, result, amount, detail, cashier) in enumerate(rows):
             tbk = TransbankTransaction.objects.create(
                 process=process, card_type=visa, payment_modality=modality,
                 authorization_code=f"A{i}", original_sale_amount=amount,
@@ -564,6 +564,7 @@ class DashboardViewTests(TestCase):
             CrossMatchResult.objects.create(
                 process=process, card_type=visa, transbank_transaction=tbk, authorization_code=f"A{i}",
                 transbank_amount=amount, system_result=result, system_status_detail=detail,
+                cashier_username=cashier,
                 management_status=accepted if result == "MATCHED" else pending,
             )
         for modality, matched in (("CLP_CREDIT", True), ("CLP_DEBIT", True), ("CLP_PREPAID", False)):
@@ -594,11 +595,66 @@ class DashboardViewTests(TestCase):
         errors = {g["label"]: g for g in clp["pending_by_error"]}
         self.assertEqual(errors["Falta en ERP"]["count"], 1)
         self.assertEqual(errors["Falta en ERP"]["action"], "Buscar la venta con el cajero y registrarla en el ERP")
-        modalities = {m["code"]: m for m in clp["modalities"]}
-        self.assertEqual((modalities["DEBIT"]["vouchers"], modalities["DEBIT"]["matched"]), (2, 1))
-        self.assertEqual(modalities["DEBIT"]["commissions"], 350)
-        self.assertEqual(modalities["PREPAID"]["vouchers"], 0)
+        cashiers = {c["name"]: c for c in clp["pending_by_cashier"]}
+        self.assertEqual(cashiers["CDAZA"]["count"], 1)
+        self.assertEqual(cashiers["Sin cajero (no está en ERP)"]["count"], 1)
+        self.assertContains(response, "Excepciones por cajero")
+        self.assertContains(response, "Excepciones por tipo de error")
+        self.assertContains(response, "?moneda=clp&cajero=CDAZA")
+        self.assertNotContains(response, "Modalidades del último cierre")
         self.assertFalse(response.context["usd"]["has_data"])
+
+    def test_usd_panel_shows_cashiers_and_error_types(self):
+        import json as _json
+        from .models import CardType, ReconciliationStatus
+
+        visa, _ = CardType.objects.get_or_create(code="VI", defaults={"name": "Visa"})
+        pending, _ = ReconciliationStatus.objects.get_or_create(code="PENDING", defaults={"display_name": "Pendiente"})
+        process = ReconciliationProcess.objects.create(
+            user=self.user, process_currency="USD", accounting_period="Cierre Dólares — Test",
+        )
+        CrossMatchResult.objects.create(
+            process=process, card_type=visa, authorization_code="U1",
+            cashier_username="SCORREA", transbank_amount=120,
+            system_result="AMOUNT_MISMATCH",
+            auditor_comment=_json.dumps({
+                "headline": "Cruce confirmado por Cta. ERP 101 (Dif. cambiaria US$ 0,50)",
+                "action": "Ajustar diferencia cambiaria de US$ 0,50",
+            }),
+            management_status=pending,
+        )
+        CrossMatchResult.objects.create(
+            process=process, card_type=visa, authorization_code="U2",
+            cashier_username="—", transbank_amount=200,
+            system_result="NOT_FOUND_IN_ERP",
+            auditor_comment=_json.dumps({
+                "headline": "Coincidencia sugerida en ERP y Posición por Clientes (Doc. U2X)",
+                "action": "Corregir Documento en ERP de 'U2X' a 'U2' (Cta. 102)",
+            }),
+            management_status=pending,
+        )
+        CrossMatchResult.objects.create(
+            process=process, card_type=visa, authorization_code="U3",
+            cashier_username="—", transbank_amount=50,
+            system_result="NOT_FOUND_IN_ERP",
+            management_status=pending,
+        )
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("dashboard"), {"moneda": "usd"})
+        self.assertEqual(response.status_code, 200)
+        usd = response.context["usd"]
+        cashiers = {c["name"]: c for c in usd["pending_by_cashier"]}
+        self.assertEqual(cashiers["SCORREA"]["count"], 1)
+        self.assertEqual(cashiers["Sin cajero (no está en ERP)"]["count"], 2)
+        errors = {g["label"]: g for g in usd["pending_by_error"]}
+        self.assertEqual(errors["Variación cambiaria"]["count"], 1)
+        self.assertEqual(errors["Variación cambiaria"]["action"], "Ajustar diferencia cambiaria de US$ 0,50")
+        self.assertEqual(errors["Error de tipeo"]["count"], 1)
+        self.assertEqual(errors["No ubicada en ERP"]["count"], 1)
+        self.assertContains(response, "Excepciones por cajero")
+        self.assertContains(response, "Excepciones por tipo de error")
+        self.assertContains(response, "?moneda=usd&cajero=SCORREA")
+        self.assertNotContains(response, "Franquicias del último cierre")
 
     def test_defaults_to_clp_panel_when_only_pesos_exist(self):
         self._clp_closing()
@@ -4227,4 +4283,29 @@ class FinTechAuditQaFixesTests(TestCase):
         )
         self.assertEqual(len(preview_void["matched_vouchers"]), 1)
         self.assertEqual(len(preview_void["orphan_vouchers"]), 0)
+
+    def test_closings_search_unicode_digits_and_preview_correction_non_dict_json(self):
+        """Regression tests for 1.1 (/tablas/?q=² or huge int) and 1.2 (non-dict JSON on preview correction)."""
+        self.client.force_login(self.user)
+        ReconciliationProcess.objects.create(
+            user=self.user,
+            accounting_period="Enero 2026",
+            process_currency="CLP",
+        )
+        for q_val in ("\u00b2", "\u00b3", "9" * 30):
+            resp = self.client.get(reverse("closings_list"), {"q": q_val})
+            self.assertEqual(resp.status_code, 200)
+
+        session = self.client.session
+        session["clp_reconciliation_preview"] = {"matched_vouchers": [], "discrepancy_vouchers": [], "orphan_vouchers": []}
+        session.save()
+
+        for payload in (b"[]", b"null", b"123", b'"text"', b"\xff\xfe"):
+            resp = self.client.post(
+                reverse("clp_preview_correction"),
+                data=payload,
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 400)
+
 

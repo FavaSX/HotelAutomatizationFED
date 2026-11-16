@@ -149,8 +149,10 @@ def handle_preview_correction(request, session_key: str, currency: str):
         return JsonResponse({"error": "La vista previa ya no está en memoria. Vuelve a cargar los archivos."}, status=400)
     try:
         payload = _json.loads(request.body or b"{}")
+        if not isinstance(payload, dict):
+            raise TypeError("El cuerpo JSON debe ser un objeto.")
         tbk_index = int(payload.get("tbk_index"))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, UnicodeDecodeError):
         return JsonResponse({"error": "Solicitud inválida."}, status=400)
     try:
         outcome = apply_preview_correction(preview, currency, tbk_index, payload.get("value"))
