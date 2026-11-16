@@ -72,7 +72,7 @@ def _inbox_params(request, pending_counts=None):
 
 def _filtered_exceptions(params):
     """
-    Exceptions narrowed by the inbox filters, oldest closing first. MATCHED vouchers only appear once the
+    Exceptions narrowed by the inbox filters, newest closing first. MATCHED vouchers only appear once the
     accountant fixed the ERP to make them match ("Corregido en ERP"), so the fix stays visible.
     """
     fixed_in_erp = CrossMatchResult.objects.filter(erp_changes__isnull=False).values("id")
@@ -88,7 +88,7 @@ def _filtered_exceptions(params):
             "erp_transaction",
             "card_operator_transaction",
         )
-        .order_by("process__execution_date", "process_id", "-transbank_amount")
+        .order_by("-process__execution_date", "-process_id", "-transbank_amount")
     )
     state = params.get("estado") or "pendientes"
     if state == "pendientes":
@@ -304,7 +304,7 @@ def _suggestion_panel(currency, today):
         )
         .exclude(system_result="MATCHED")
         .select_related("process", "card_type", "management_status", "transbank_transaction")
-        .order_by("process__execution_date", "-transbank_amount")
+        .order_by("-process__execution_date", "-process_id", "-transbank_amount")
     )
     items = []
     for item in qs[:200]:
