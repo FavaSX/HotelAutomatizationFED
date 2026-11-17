@@ -289,8 +289,8 @@ class ClpPersistenceTests(TestCase):
         self.assertEqual(
             matched_headers,
             [
-                "Fecha", "Cruce Voucher (TBK ⇄ Doc. ERP)", "Cuenta", "Cajero", "Tarjeta",
-                "Monto TBK CLP", "Diferencia CLP", "Monto ERP CLP", "Diagnóstico",
+                "Fecha", "Cruce Voucher (TBK ⇄ Doc. Borderó)", "Cuenta", "Cajero", "Tarjeta",
+                "Monto TBK CLP", "Diferencia CLP", "Monto Borderó CLP", "Diagnóstico",
             ],
         )
         self.assertNotIn("Huésped", matched_headers)
@@ -300,7 +300,7 @@ class ClpPersistenceTests(TestCase):
             for r in range(2, workbook["Vouchers Ubicados"].max_row + 1)
         ]
         self.assertTrue(
-            any(r[1] == "TBK: 405544 = Doc. ERP: 405544" and r[2] == "1786484" for r in matched_rows)
+            any(r[1] == "TBK: 405544 = Doc. Borderó: 405544" and r[2] == "1786484" for r in matched_rows)
         )
 
         exc_headers = [c.value for c in workbook["Discrepancias y No Ubicados"][1]]
@@ -308,7 +308,7 @@ class ClpPersistenceTests(TestCase):
             exc_headers,
             [
                 "Autorización TBK", "Cuenta", "Documento Borderó", "Tarjeta",
-                "Monto TBK CLP", "Monto ERP CLP", "Diferencia CLP", "Diagnóstico",
+                "Monto TBK CLP", "Monto Borderó CLP", "Diferencia CLP", "Diagnóstico",
             ],
         )
         self.assertNotIn("Huésped / Hab. / Cajero", exc_headers)
@@ -324,7 +324,7 @@ class ClpPersistenceTests(TestCase):
             sug_headers,
             [
                 "#", "Voucher TBK", "Tipo Discrepancia", "Tarjeta", "Monto TBK (CLP)", "Fecha POS",
-                "Documento ERP", "Cuenta ERP", "Monto ERP (CLP)", "Cajero ERP",
+                "Documento Borderó", "Cuenta Borderó", "Monto Borderó (CLP)", "Cajero Borderó",
                 "Confianza", "Diagnóstico Sugerido", "Motivos Coincidencia", "Nota de Auditoría",
                 "Origen Sugerencia", "Cambio Propuesto / Estado",
             ],
@@ -593,11 +593,11 @@ class DashboardViewTests(TestCase):
         self.assertEqual(clp["out_of_period_amount"], 5000)
         self.assertEqual(clp["last_process"].banks_matched, 2)
         errors = {g["label"]: g for g in clp["pending_by_error"]}
-        self.assertEqual(errors["Falta en ERP"]["count"], 1)
-        self.assertEqual(errors["Falta en ERP"]["action"], "Buscar la venta con el cajero y registrarla en el ERP")
+        self.assertEqual(errors["Falta en Borderó"]["count"], 1)
+        self.assertEqual(errors["Falta en Borderó"]["action"], "Buscar la venta con el cajero y registrarla en el Borderó")
         cashiers = {c["name"]: c for c in clp["pending_by_cashier"]}
         self.assertEqual(cashiers["CDAZA"]["count"], 1)
-        self.assertEqual(cashiers["Sin cajero (no está en ERP)"]["count"], 1)
+        self.assertEqual(cashiers["Sin cajero (no está en Borderó)"]["count"], 1)
         self.assertContains(response, "Excepciones por cajero")
         self.assertContains(response, "Excepciones por tipo de error")
         self.assertContains(response, "?moneda=clp&cajero=CDAZA")
@@ -645,12 +645,12 @@ class DashboardViewTests(TestCase):
         usd = response.context["usd"]
         cashiers = {c["name"]: c for c in usd["pending_by_cashier"]}
         self.assertEqual(cashiers["SCORREA"]["count"], 1)
-        self.assertEqual(cashiers["Sin cajero (no está en ERP)"]["count"], 2)
+        self.assertEqual(cashiers["Sin cajero (no está en Borderó)"]["count"], 2)
         errors = {g["label"]: g for g in usd["pending_by_error"]}
         self.assertEqual(errors["Variación cambiaria"]["count"], 1)
         self.assertEqual(errors["Variación cambiaria"]["action"], "Ajustar diferencia cambiaria de US$ 0,50")
         self.assertEqual(errors["Error de tipeo"]["count"], 1)
-        self.assertEqual(errors["No ubicada en ERP"]["count"], 1)
+        self.assertEqual(errors["No ubicada en Borderó"]["count"], 1)
         self.assertContains(response, "Excepciones por cajero")
         self.assertContains(response, "Excepciones por tipo de error")
         self.assertContains(response, "?moneda=usd&cajero=SCORREA")
@@ -661,6 +661,61 @@ class DashboardViewTests(TestCase):
         self.client.force_login(self.user)
         response = self.client.get(reverse("dashboard"))
         self.assertEqual(response.context["active_currency"], "clp")
+
+    def test_legacy_db_erp_wording_displays_as_bordero(self):
+        import json as _json
+        from .models import CardType, ReconciliationStatus
+        from .services.suggestion_actions import load_suggestion
+
+        resolved = ReconciliationStatus.objects.get(code="RESOLVED_ERP_FIXED")
+        self.assertEqual(resolved.display_name, "Corregido en Borderó")
+
+        visa, _ = CardType.objects.get_or_create(code="VI", defaults={"name": "Visa"})
+        pending, _ = ReconciliationStatus.objects.get_or_create(code="PENDING", defaults={"display_name": "Pendiente"})
+        process = ReconciliationProcess.objects.create(
+            user=self.user, process_currency="USD", accounting_period="Cierre Histórico Test",
+        )
+        legacy_case = CrossMatchResult.objects.create(
+            process=process,
+            card_type=visa,
+            authorization_code="OLD999",
+            cashier_username="—",
+            transbank_amount=Decimal("100.00"),
+            system_result="NOT_FOUND_IN_ERP",
+            system_observation="No encontrado en el ERP Hotel. Se sugiere ingresar en ERP.",
+            system_status_detail="Falta en ERP · Buscar el cobro y registrarlo en el ERP Hotel",
+            auditor_comment=_json.dumps({
+                "headline": "Ubicado en Posición por Clientes — No facturado en ERP",
+                "action": "Ingresar cobro en ERP Hotel",
+                "manual_check_note": "No aparece en el ERP Hotel.",
+                "reasons": [{"label": "Doc. Pos. Clientes 999 ausente en ERP", "tone": "gold"}],
+                "comparison_rows": [{"tbk_value": "— (No incluye Doc ERP)", "erp_value": "— (No figura en ERP)", "op_value": "Doc. 999", "tone": "gold"}],
+            }),
+            management_status=pending,
+        )
+
+        loaded = load_suggestion(legacy_case)
+        self.assertEqual(loaded["headline"], "Ubicado en Posición por Clientes — No facturado en Borderó")
+        self.assertEqual(loaded["action"], "Ingresar cobro en Borderó")
+        self.assertEqual(loaded["manual_check_note"], "No aparece en el Borderó.")
+        self.assertEqual(loaded["reasons"][0]["label"], "Doc. Pos. Clientes 999 ausente en Borderó")
+        self.assertEqual(loaded["comparison_rows"][0]["tbk_value"], "— (No incluye Doc Borderó)")
+        self.assertEqual(loaded["comparison_rows"][0]["erp_value"], "— (No figura en Borderó)")
+
+        self.client.force_login(self.user)
+        exc_page = self.client.get(reverse("exceptions"), {"moneda": "usd"})
+        self.assertContains(exc_page, "No ubicada en Borderó")
+        self.assertContains(exc_page, "En Pos. Clientes (falta en Borderó)")
+        self.assertContains(exc_page, "Corregido en Borderó")
+        self.assertContains(exc_page, "Ingresar cobro en Border\\u00f3")
+        self.assertNotContains(exc_page, "ERP Hotel")
+        self.assertNotContains(exc_page, "No ubicada en ERP")
+
+        cruce_page = self.client.get(reverse("closing_detail", args=[process.id]), {"vista": "cruce"})
+        self.assertContains(cruce_page, "No está en Borderó")
+        self.assertContains(cruce_page, "No encontrado en el Borderó.")
+        self.assertNotContains(cruce_page, "No está en ERP")
+        self.assertNotContains(cruce_page, "ERP Hotel")
 
 
 class UsdPreviewViewTests(TestCase):
@@ -715,6 +770,9 @@ class UsdPreviewViewTests(TestCase):
         self.assertFalse(rows["DI"]["has_activity"])
         self.assertEqual(response.context["match_rate"], 100.0)
         self.assertContains(response, "A10001")
+        self.assertContains(response, "No están en Borderó")
+        self.assertNotContains(response, "No están en ERP")
+        self.assertNotContains(response, "no están en ERP")
 
 
 
@@ -870,18 +928,18 @@ class ExceptionInboxTests(TestCase):
         dash_clp = self.client.get(reverse("dashboard"), {"moneda": "clp"})
         self.assertEqual(dash_clp.status_code, 200)
         self.assertIn(
-            f"{reverse('exceptions')}?moneda=clp&tipo=err:Falta%20en%20ERP",
+            f"{reverse('exceptions')}?moneda=clp&tipo=err:Falta%20en%20Border%C3%B3",
             dash_clp.content.decode(),
         )
 
-        res_clp = self.client.get(reverse("exceptions"), {"moneda": "clp", "tipo": "err:Falta en ERP"})
+        res_clp = self.client.get(reverse("exceptions"), {"moneda": "clp", "tipo": "err:Falta en Borderó"})
         self.assertEqual(res_clp.status_code, 200)
         self.assertEqual({r.id for r in res_clp.context["rows"]}, {self.orphan.id})
         self.assertNotIn(other_clp.id, {r.id for r in res_clp.context["rows"]})
-        self.assertIn(("err:Falta en ERP", "Falta en ERP"), res_clp.context["error_choices"])
-        self.assertContains(res_clp, '<option value="err:Falta en ERP" selected>')
+        self.assertIn(("err:Falta en Borderó", "Falta en Borderó"), res_clp.context["error_choices"])
+        self.assertContains(res_clp, '<option value="err:Falta en Borderó" selected>')
 
-        export_resp = self.client.get(reverse("exceptions_export"), {"moneda": "clp", "tipo": "err:Falta en ERP"})
+        export_resp = self.client.get(reverse("exceptions_export"), {"moneda": "clp", "tipo": "err:Falta en Borderó"})
         self.assertEqual(export_resp.status_code, 200)
         wb = openpyxl.load_workbook(io.BytesIO(export_resp.content))
         ws = wb["Excepciones"]
@@ -1059,7 +1117,7 @@ class UsdAccountDocumentAndReportsTests(TestCase):
         self.assertEqual(discrepancies["556677"]["account_code"], "1715900")
         self.assertEqual(discrepancies["556677"]["erp_authorization_code"], "556677")
         self.assertEqual(discrepancies["556677"]["operator_document_number"], "1715900")
-        self.assertIn("Cta. ERP 1715900", discrepancies["556677"]["suggestion"]["headline"])
+        self.assertIn("Cta. Borderó 1715900", discrepancies["556677"]["suggestion"]["headline"])
 
         self.assertEqual(orphans["888999"]["account_code"], "")
         self.assertEqual(orphans["888999"]["erp_authorization_code"], "")
@@ -1080,14 +1138,14 @@ class UsdAccountDocumentAndReportsTests(TestCase):
         session.save()
         html_resp = self.client.get(reverse("usd_preview"))
         self.assertEqual(html_resp.status_code, 200)
-        self.assertContains(html_resp, "Cruce Vouchers (TBK ⇄ Doc. ERP)")
-        self.assertContains(html_resp, "Cruce Cuenta ERP ⇄ Doc. Pos. Clientes")
-        self.assertContains(html_resp, "Cta ERP:")
-        self.assertContains(html_resp, "Doc ERP:")
+        self.assertContains(html_resp, "Cruce Vouchers (TBK ⇄ Doc. Borderó)")
+        self.assertContains(html_resp, "Cruce Cuenta Borderó ⇄ Doc. Pos. Clientes")
+        self.assertContains(html_resp, "Cta Borderó:")
+        self.assertContains(html_resp, "Doc Borderó:")
         self.assertContains(html_resp, "Doc PC:")
         self.assertContains(html_resp, "1715625")
         self.assertContains(html_resp, "1715900")
-        self.assertContains(html_resp, "Cta ERP: 1715800")
+        self.assertContains(html_resp, "Cta Borderó: 1715800")
         self.assertContains(html_resp, "Sin Pos. Cliente")
         self.assertNotContains(html_resp, "JOHN DOE")
         self.assertNotContains(html_resp, "JANE SMITH")
@@ -1112,8 +1170,8 @@ class UsdAccountDocumentAndReportsTests(TestCase):
         )
 
         matched_row2 = [c.value for c in wb["Vouchers Ubicados"][2]]
-        self.assertIn("TBK: 112194 = Doc. ERP: 112194", matched_row2)
-        self.assertIn("Cta. ERP: 1715625 = Doc. PC: 1715625", matched_row2)
+        self.assertIn("TBK: 112194 = Doc. Borderó: 112194", matched_row2)
+        self.assertIn("Cta. Borderó: 1715625 = Doc. PC: 1715625", matched_row2)
 
         disc_ws = wb["Discrepancias y No Ubicados"]
         disc_headers = [c.value for c in disc_ws[1]]
@@ -1125,8 +1183,8 @@ class UsdAccountDocumentAndReportsTests(TestCase):
 
         sug_headers = [c.value for c in wb["Sugerencias Asistidas"][1]]
         self.assertEqual(len(sug_headers), 17)
-        self.assertIn("Documento ERP", sug_headers)
-        self.assertIn("Cuenta ERP", sug_headers)
+        self.assertIn("Documento Borderó", sug_headers)
+        self.assertIn("Cuenta Borderó", sug_headers)
         self.assertIn("Doc. Pos. Clientes", sug_headers)
         self.assertNotIn("Huésped / Habitación", sug_headers)
 
@@ -1188,7 +1246,7 @@ class DashboardExceptionsAndLegacyCompatTests(TestCase):
         self.assertNotIn("Habitación", headers)
         exported_by_auth = {sheet.cell(r, 3).value: (sheet.cell(r, 4).value, sheet.cell(r, 5).value) for r in range(2, sheet.max_row + 1)}
         self.assertEqual(exported_by_auth["334455"], ("1715800", "334455"))
-        self.assertEqual(exported_by_auth["556677"], ("1715900", "ERP: 556677 / PC: 1715900"))
+        self.assertEqual(exported_by_auth["556677"], ("1715900", "Borderó: 556677 / PC: 1715900"))
 
     def test_legacy_cross_match_without_account_code_uses_fallbacks(self):
         legacy_usd = self.usd_process.cross_match_results.get(authorization_code="334455")
@@ -1440,7 +1498,7 @@ class ErpCorrectionInboxViewTests(TestCase):
 
     def test_inbox_shows_the_correction_panel(self):
         response = self.client.get(reverse("exceptions") + "?moneda=clp")
-        self.assertContains(response, "Corregir fila del ERP")
+        self.assertContains(response, "Corregir fila del Borderó")
         self.assertContains(response, reverse("exception_erp_edit", args=[self.case.id, self.case.erp_transaction_id]))
 
     def test_posting_a_fix_matches_and_the_case_moves_to_resolved(self):
@@ -1450,12 +1508,12 @@ class ErpCorrectionInboxViewTests(TestCase):
              "payment_code": "RCO", "document_number": "1786853", "return_query": "moneda=clp"},
             follow=True,
         )
-        self.assertContains(response, "Corregido en ERP")
+        self.assertContains(response, "Corregido en Borderó")
         self.case.refresh_from_db()
         self.assertEqual(self.case.management_status.code, "RESOLVED_ERP_FIXED")
         resolved = self.client.get(reverse("exceptions") + "?moneda=clp&estado=resueltas")
         self.assertContains(resolved, "007626")
-        self.assertContains(resolved, "Corrección en ERP: Monto")
+        self.assertContains(resolved, "Corrección en Borderó: Monto")
 
     def test_a_bad_value_shows_an_error_and_changes_nothing(self):
         response = self.client.post(
@@ -1530,7 +1588,7 @@ class SuggestionAcceptRejectTests(TestCase):
         before_cruce = self.client.get(reverse("consolidated_matches"), {"resultado": "NOT_FOUND_IN_ERP"})
         self.assertContains(before_cruce, "F0FUAZ")
         self.assertNotContains(before_cruce, "voucher-dual-pill")
-        self.assertNotContains(before_cruce, "Doc ERP:")
+        self.assertNotContains(before_cruce, "Doc Borderó:")
         CrossMatchResult.objects.filter(pk=case.pk).update(account_code="", document_number="")
         case.refresh_from_db()
 
@@ -1543,9 +1601,9 @@ class SuggestionAcceptRejectTests(TestCase):
         self.assertEqual((case.system_result, case.management_status.code), ("MATCHED", "RESOLVED_ERP_FIXED"))
         after_cruce = self.client.get(reverse("consolidated_matches"), {"q": "F0FUAZ"})
         self.assertContains(after_cruce, "voucher-dual-pill")
-        self.assertContains(after_cruce, "Doc ERP:")
-        self.assertContains(after_cruce, "Corregido en ERP")
-        self.assertContains(after_cruce, "ERP modificado")
+        self.assertContains(after_cruce, "Doc Borderó:")
+        self.assertContains(after_cruce, "Corregido en Borderó")
+        self.assertContains(after_cruce, "Borderó modificado")
 
         change = ErpTransactionChange.objects.get(cross_match_result=case)
         self.assertEqual(change.source, ErpTransactionChange.SOURCE_SUGGESTION)
@@ -1586,7 +1644,7 @@ class SuggestionAcceptRejectTests(TestCase):
         self.client.force_login(self.user)
         case = self._case("F0FUAZ")
         page = self.client.get(reverse("exceptions") + "?moneda=clp")
-        self.assertContains(page, "Correcciones sugeridas en el ERP")
+        self.assertContains(page, "Correcciones sugeridas en el Borderó")
         self.assertContains(page, f'data-suggestion-case="{case.id}"')
         self.assertContains(page, reverse("exception_suggestion_accept", args=[case.id]))
 
@@ -1596,7 +1654,7 @@ class SuggestionAcceptRejectTests(TestCase):
         self.assertContains(response, "Rechazada")  # still listed with the open cases
 
         response = self.client.post(reverse("exception_suggestion_accept", args=[case.id]), {"return_query": "moneda=clp"}, follow=True)
-        self.assertContains(response, "Corregido en ERP")
+        self.assertContains(response, "Corregido en Borderó")
 
 
 
@@ -1635,7 +1693,7 @@ class PreviewCorrectionTests(TestCase):
             "CLP", row.document_number, row.invoice_number, "0FOFUAZ", row.amount, row.transaction_date, row.transaction_time))
         change = ErpTransactionChange.objects.get(erp_transaction=row)
         self.assertEqual((change.source, change.old_value, change.new_value), ("SUGGESTION", "0FOFUAZ", "F0FUAZ"))
-        self.assertIn("No está en el ERP → Cuadrado", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
+        self.assertIn("No está en el Borderó → Cuadrado", AuditResolutionLog.objects.filter(cross_match_result=case).first().comment)
         erp_count = ErpTransaction.all_objects.count()
 
         commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
@@ -1678,7 +1736,7 @@ class SuggestionPanelTests(TestCase):
 
     def test_panel_lists_open_suggestions_and_accepts_an_edited_value(self):
         page = self.client.get(reverse("exceptions") + "?moneda=clp")
-        self.assertContains(page, "Correcciones sugeridas en el ERP")
+        self.assertContains(page, "Correcciones sugeridas en el Borderó")
         case = self.process.cross_match_results.get(authorization_code="007626")
         self.assertContains(page, f'data-suggestion-case="{case.id}" data-suffix="p"')
         cards = page.context["suggestion_cards"]["cases"]
@@ -1754,7 +1812,7 @@ class SuggestionModalAjaxTests(TestCase):
             self.assertContains(page, f'data-suggestion-case="{case_id}" data-suffix="m"')
             self.assertContains(page, f'data-bs-target="#exc-{case_id}"')
             self.assertContains(page, f'id="exc-{case_id}"')
-            self.assertContains(page, "suggestion_card.js?v=8")
+            self.assertContains(page, "suggestion_card.js?v=9")
             self.assertEqual(re.findall(r'[a-zA-Z0-9_-]+="[^"]*\xa0[^"]*"', html), [])
             m = re.search(r'<script id="inboxSuggestionData"[^>]*>(.*?)</script>', html, re.S)
             self.assertIsNotNone(m)
@@ -1918,13 +1976,13 @@ class ReadOnlyTableVisualizationPanelsTests(TestCase):
         self.assertContains(cruce, "334455")
         self.assertNotContains(cruce, "JANE SMITH")
 
-        # Panel 2: Borderó ERP including rows absent from Transbank ("Solo en ERP (sin TBK)")
+        # Panel 2: Borderó including rows absent from Transbank ("Solo en Borderó (sin TBK)")
         erp_solo = self.client.get(
             reverse("closing_detail", args=[self.clp_process.id]),
             {"vista": "erp", "cruce": "solo_erp"},
         )
         self.assertContains(erp_solo, "1799999")
-        self.assertContains(erp_solo, "Solo en ERP (sin TBK)")
+        self.assertContains(erp_solo, "Solo en Borderó (sin TBK)")
 
         # Panel 3: Cartola Bancaria
         cartola = self.client.get(
@@ -2002,7 +2060,7 @@ class ReadOnlyTableVisualizationPanelsTests(TestCase):
 
         clp_resp = self.client.get(reverse("clp_preview"))
         self.assertContains(clp_resp, 'id="sourceTablesCard"')
-        self.assertContains(clp_resp, "Borderó ERP")
+        self.assertContains(clp_resp, "Borderó")
         self.assertContains(clp_resp, "Cartola Bancaria")
         self.assertContains(clp_resp, "Transbank Detallado")
         self.assertNotContains(clp_resp, "Huésped")
@@ -2183,12 +2241,12 @@ class ReadOnlyTableVisualizationPanelsTests(TestCase):
         self.assertContains(closing_erp, "Modificada (3)")
         self.assertContains(closing_erp, 'id="erpHistoryModal"')
 
-        # Resultados del Cruce (consolidated & per-closing) also surface the modified ERP indicator
+        # Resultados del Cruce (consolidated & per-closing) also surface the modified Borderó indicator
         cruce_cons = self.client.get(reverse("consolidated_matches"))
-        self.assertContains(cruce_cons, "ERP modificado (3)")
+        self.assertContains(cruce_cons, "Borderó modificado (3)")
         self.assertContains(cruce_cons, 'id="jsonErpHistoryData"')
         closing_cruce = self.client.get(reverse("closing_detail", args=[self.clp_process.id]), {"vista": "cruce"})
-        self.assertContains(closing_cruce, "ERP modificado (3)")
+        self.assertContains(closing_cruce, "Borderó modificado (3)")
 
         # Step 2 preview: in-memory accepted suggestion shows is_modified + before value immediately
         clp_preview = calculate_clp_preview(**build_clp_files())
@@ -2706,7 +2764,7 @@ class UnifiedPaginationTests(TestCase):
             self.assertContains(resp, 'id="srcPageSizeSelect"')
             self.assertContains(resp, '<option value="25" selected>Página 25</option>', html=True)
             self.assertContains(resp, '<option value="ALL">Todas</option>', html=True)
-            self.assertContains(resp, "source_tables_viewer.js?v=5")
+            self.assertContains(resp, "source_tables_viewer.js?v=6")
 
     def test_db_pagination_bar_unlocalizes_page_numbers_over_1000(self):
         from django.template.loader import render_to_string
@@ -2753,7 +2811,7 @@ class ErpCoverageAndDbCrossMatchTests(TestCase):
             self.assertContains(resp, 'id="erpPrecheckReadCheckbox"')
             self.assertContains(resp, 'id="btnConfirmErpPrecheck"')
             self.assertContains(resp, 'id="expPhase1Dropzone"')
-            self.assertContains(resp, "usd_upload.js?v=12")
+            self.assertContains(resp, "usd_upload.js?v=13")
 
     def test_incomplete_day_warning_and_resolution(self):
         from datetime import timedelta
@@ -4072,7 +4130,7 @@ class FinTechAuditQaFixesTests(TestCase):
         for code, name in [("AX", "American Express"), ("DI", "Diners Club"), ("VI", "Visa"), ("MC", "MasterCard")]:
             CardType.objects.get_or_create(code=code, defaults={"name": name})
         ReconciliationStatus.objects.get_or_create(code="PENDING", defaults={"display_name": "Pendiente"})
-        ReconciliationStatus.objects.get_or_create(code="RESOLVED_ERP_FIXED", defaults={"display_name": "Corregido en ERP"})
+        ReconciliationStatus.objects.get_or_create(code="RESOLVED_ERP_FIXED", defaults={"display_name": "Corregido en Borderó"})
         ReconciliationStatus.objects.get_or_create(code="RESOLVED_ADJUSTMENT", defaults={"display_name": "Resuelto con Ajuste"})
 
     def test_h01_safe_decimal_and_safe_date_handle_international_and_iso_formats(self):

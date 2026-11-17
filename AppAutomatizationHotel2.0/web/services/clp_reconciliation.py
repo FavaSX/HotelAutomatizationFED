@@ -260,7 +260,7 @@ def _cross_match_sale(
         "linked": [],
         "erp_amount": Decimal("0"),
         "difference": gross,
-        "observation": f"Voucher {sale['authorization_code']} no encontrado en ERP Hotel",
+        "observation": f"Voucher {sale['authorization_code']} no encontrado en Borderó",
     }
 
 

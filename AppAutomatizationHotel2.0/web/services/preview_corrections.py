@@ -229,7 +229,7 @@ def _recross_usd_in_preview(preview: Dict[str, Any], voucher: Dict[str, Any]) ->
             "difference_usd": float(gross_usd),
             "difference_clp": 0.0,
             "system_result": "NOT_FOUND_IN_ERP",
-            "observation": f"Voucher {tbk['authorization_code']} no encontrado en ERP Hotel",
+            "observation": f"Voucher {tbk['authorization_code']} no encontrado en Borderó",
         })
         tbk["reconciled"] = False
         return

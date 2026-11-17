@@ -65,7 +65,7 @@
     const bodyEl = document.getElementById('erpHistoryModalBody');
     if (!modalEl || !bodyEl || !entry) return;
 
-    if (titleEl) titleEl.textContent = entry.title || 'Modificación en Borderó ERP';
+    if (titleEl) titleEl.textContent = entry.title || 'Modificación en Borderó';
     if (subEl) subEl.textContent = entry.subtitle || '';
 
     const diffRowsHtml = (entry.diff_fields || []).map((df) => (

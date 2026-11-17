@@ -33,10 +33,10 @@
           <div class="stat-value mt-1" data-countup-to="{{ counts.total|unlocalize }}">{{ counts.total }}</div>
         </div>
       </div>
-      <div class="meter meter-lg mt-3" role="img" aria-label="{{ counts.matched }} ubicadas, {{ counts.discrepancies }} con diferencia, {{ counts.orphans }} no están en ERP">
+      <div class="meter meter-lg mt-3" role="img" aria-label="{{ counts.matched }} ubicadas, {{ counts.discrepancies }} con diferencia, {{ counts.orphans }} no están en el Borderó">
         <span class="meter-seg meter-success" style="flex: {{ counts.matched|unlocalize }};" title="{{ counts.matched }} ubicadas"></span>
         <span class="meter-seg meter-warning" style="flex: {{ counts.discrepancies|unlocalize }};" title="{{ counts.discrepancies }} con diferencia"></span>
-        <span class="meter-seg meter-danger" style="flex: {{ counts.orphans|unlocalize }};" title="{{ counts.orphans }} no están en ERP"></span>
+        <span class="meter-seg meter-danger" style="flex: {{ counts.orphans|unlocalize }};" title="{{ counts.orphans }} no están en el Borderó"></span>
       </div>
       <div class="meter-legend mt-3">
         <button type="button" class="legend-item" data-tab-target="#tabMatched">
@@ -46,7 +46,7 @@
           <span class="legend-dot meter-warning"></span>Con diferencia <strong>{{ counts.discrepancies }}</strong>
         </button>
         <button type="button" class="legend-item" data-tab-target="#tabOrphans">
-          <span class="legend-dot meter-danger"></span>No están en ERP <strong>{{ counts.orphans }}</strong>
+          <span class="legend-dot meter-danger"></span>No están en Borderó <strong>{{ counts.orphans }}</strong>
         </button>
       </div>
     </div>
@@ -63,7 +63,7 @@
       </div>
       <div class="small text-muted mt-1">Posición por Clientes vs. Transbank</div>
       <div class="small mt-2 pt-2 border-top-soft d-flex justify-content-between">
-        <span class="text-muted">En pesos (ERP vs. Posición por Clientes)</span>
+        <span class="text-muted">En pesos (Borderó vs. Posición por Clientes)</span>
         <strong class="{% if clp_totals.diff %}text-danger-soft{% endif %} text-nowrap">{% if clp_totals.diff < 0 %}-{% endif %}${{ clp_totals.diff|num_clp|cut:"-" }}</strong>
       </div>
     </div>
@@ -158,7 +158,7 @@
           <thead class="table-light small text-uppercase text-muted">
             <tr>
               <th class="ps-3">TARJETA</th>
-              <th class="text-end">TOTAL ERP (CLP)</th>
+              <th class="text-end">TOTAL BORDERÓ (CLP)</th>
               <th class="text-end">TOTAL POS. CLIENTES (CLP)</th>
               <th class="text-end pe-3">DIFERENCIA (CLP)</th>
             </tr>
@@ -209,7 +209,7 @@
           <span class="legend-dot meter-warning"></span>Con diferencia <span class="segmented-count" id="countBadgeDiscrepancies">{{ counts.discrepancies }}</span>
         </button>
         <button class="segmented-item" data-bs-toggle="tab" data-bs-target="#tabOrphans" type="button" role="tab">
-          <span class="legend-dot meter-danger"></span>No están en ERP <span class="segmented-count" id="countBadgeOrphans">{{ counts.orphans }}</span>
+          <span class="legend-dot meter-danger"></span>No están en Borderó <span class="segmented-count" id="countBadgeOrphans">{{ counts.orphans }}</span>
         </button>
       </div>
       <button type="button" id="btnToggleFullscreen" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-semibold shadow-xs" onclick="toggleFullscreenTable()" title="Modo Pantalla Completa (Maximizar espacio de trabajo)">
@@ -280,8 +280,8 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4" style="min-width: 340px;">Cruce Vouchers (TBK ⇄ Doc. ERP)</th>
-              <th style="min-width: 330px;">Cruce Cuenta ERP ⇄ Doc. Pos. Clientes</th>
+              <th class="ps-4" style="min-width: 340px;">Cruce Vouchers (TBK ⇄ Doc. Borderó)</th>
+              <th style="min-width: 330px;">Cruce Cuenta Borderó ⇄ Doc. Pos. Clientes</th>
               <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
@@ -311,14 +311,14 @@
                 data-diff="{{ item.difference_usd|unlocalize }}"
                 data-clp="{{ item.erp_amount_clp|unlocalize }}">
               <td class="ps-4">
-                <div class="voucher-dual-pill" title="Código autorización Transbank coincide con Documento (Col. J) en ERP Hotel">
+                <div class="voucher-dual-pill" title="Código autorización Transbank coincide con Documento (Col. J) en Borderó">
                   <span class="voucher-dual-tbk">
                     <small class="text-muted fw-bold">TBK:</small>
                     <span class="font-monospace fw-bold">{{ item.authorization_code }}</span>
                   </span>
                   <span class="voucher-dual-equal">=</span>
                   <span class="voucher-dual-erp">
-                    <small class="fw-bold">Doc ERP:</small>
+                    <small class="fw-bold">Doc Borderó:</small>
                     <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
                     <i class="bi bi-check2 voucher-check"></i>
                   </span>
@@ -327,9 +327,9 @@
               <td>
                 {% with erp_account=item.account_code|default:item.document_number %}
                 {% if erp_account %}
-                <div class="doc-dual-pill" title="Cuenta ERP (Col. D) coincide con Documento (Col. C) en Posición por Clientes">
+                <div class="doc-dual-pill" title="Cuenta Borderó (Col. D) coincide con Documento (Col. C) en Posición por Clientes">
                   <span class="doc-dual-erp">
-                    <small class="text-muted fw-bold">Cta ERP:</small>
+                    <small class="text-muted fw-bold">Cta Borderó:</small>
                     <span class="font-monospace fw-bold">{{ erp_account }}</span>
                   </span>
                   <span class="doc-dual-equal">=</span>
@@ -430,8 +430,8 @@
         <table class="table table-hover align-middle mb-0">
           <thead class="table-light small text-uppercase text-muted sticky-top">
             <tr>
-              <th class="ps-4" style="min-width: 340px;">Cruce Vouchers (TBK ⇄ Doc. ERP)</th>
-              <th style="min-width: 330px;">Cruce Cuenta ERP ⇄ Doc. Pos. Clientes</th>
+              <th class="ps-4" style="min-width: 340px;">Cruce Vouchers (TBK ⇄ Doc. Borderó)</th>
+              <th style="min-width: 330px;">Cruce Cuenta Borderó ⇄ Doc. Pos. Clientes</th>
               <th style="min-width: 105px;">Fecha</th>
               <th>Cajero</th>
               <th>Tarjeta</th>
@@ -461,14 +461,14 @@
                 data-diff="{{ item.difference_usd|unlocalize }}"
                 data-clp="{{ item.erp_amount_clp|unlocalize }}">
               <td class="ps-4">
-                <div class="voucher-dual-pill" title="Código autorización Transbank coincide con Documento (Col. J) en ERP Hotel">
+                <div class="voucher-dual-pill" title="Código autorización Transbank coincide con Documento (Col. J) en Borderó">
                   <span class="voucher-dual-tbk">
                     <small class="text-muted fw-bold">TBK:</small>
                     <span class="font-monospace fw-bold">{{ item.authorization_code }}</span>
                   </span>
                   <span class="voucher-dual-equal">=</span>
                   <span class="voucher-dual-erp">
-                    <small class="fw-bold">Doc ERP:</small>
+                    <small class="fw-bold">Doc Borderó:</small>
                     <span class="font-monospace fw-bold">{{ item.erp_authorization_code|default:item.authorization_code }}</span>
                     <i class="bi bi-check2 voucher-check"></i>
                   </span>
@@ -478,9 +478,9 @@
                 {% with erp_account=item.account_code|default:item.document_number %}
                 {% if item.operator_document_number and erp_account %}
                   {% if erp_account == item.operator_document_number %}
-                  <div class="doc-dual-pill" title="Cuenta ERP (Col. D) coincide con Documento (Col. C) en Posición por Clientes">
+                  <div class="doc-dual-pill" title="Cuenta Borderó (Col. D) coincide con Documento (Col. C) en Posición por Clientes">
                     <span class="doc-dual-erp">
-                      <small class="text-muted fw-bold">Cta ERP:</small>
+                      <small class="text-muted fw-bold">Cta Borderó:</small>
                       <span class="font-monospace fw-bold">{{ erp_account }}</span>
                     </span>
                     <span class="doc-dual-equal">=</span>
@@ -491,9 +491,9 @@
                     </span>
                   </div>
                   {% else %}
-                  <div class="doc-dual-pill" title="Cuenta ERP (Col. D) difiere del Documento en Posición por Clientes">
+                  <div class="doc-dual-pill" title="Cuenta Borderó (Col. D) difiere del Documento en Posición por Clientes">
                     <span class="doc-dual-erp">
-                      <small class="text-muted fw-bold">Cta ERP:</small>
+                      <small class="text-muted fw-bold">Cta Borderó:</small>
                       <span class="font-monospace fw-bold">{{ erp_account }}</span>
                     </span>
                     <span class="doc-dual-equal doc-dual-diff">≠</span>
@@ -504,8 +504,8 @@
                   </div>
                   {% endif %}
                 {% elif erp_account %}
-                <div class="d-inline-flex align-items-center gap-2 flex-wrap" title="Cuenta ERP no hallada en archivo Posición por Clientes">
-                  <span class="badge bg-light text-dark border font-monospace px-2 py-1">Cta ERP: {{ erp_account }}</span>
+                <div class="d-inline-flex align-items-center gap-2 flex-wrap" title="Cuenta Borderó no hallada en archivo Posición por Clientes">
+                  <span class="badge bg-light text-dark border font-monospace px-2 py-1">Cta Borderó: {{ erp_account }}</span>
                   <span class="badge bg-danger-subtle text-danger border border-danger-subtle small px-2 py-1">
                     <i class="bi bi-x-circle me-1"></i>Sin Pos. Cliente
                   </span>
@@ -552,13 +552,13 @@
       {% include "partials/voucher_pagination_bar.html" with suffix="Discrepancies" total=counts.discrepancies label="Con Diferencia" %}
     </div>
 
-    <!-- TAB 3: EN TRANSBANK PERO NO EN ERP -->
+    <!-- TAB 3: EN TRANSBANK PERO NO EN BORDERÓ -->
     <div class="tab-pane fade" id="tabOrphans" role="tabpanel">
       {% if orphan_vouchers %}
       <div class="px-4 py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3 suggestion-manual-box rounded-0">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <span class="suggestion-badge-tag"><i class="bi bi-stars"></i> Nivel 2</span>
-          <span class="fw-bold small">Asistente de Cruce para Vouchers en TBK pero NO en ERP:</span>
+          <span class="fw-bold small">Asistente de Cruce para Vouchers en TBK pero NO en Borderó:</span>
           <span class="reason-chip reason-gold">
             <i class="bi bi-slash-circle"></i> {{ suggestion_counts.orphans_without }} sin coincidencia en archivos
           </span>
@@ -606,7 +606,7 @@
                 </div>
                 {% else %}
                 <div class="suggestion-empty mt-1">
-                  <i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en ERP ni Posición por Clientes.
+                  <i class="bi bi-slash-circle me-1"></i>Sin coincidencias secundarias en Borderó ni Posición por Clientes.
                 </div>
                 {% endif %}
               </td>
@@ -622,7 +622,7 @@
           </tbody>
         </table>
       </div>
-      {% include "partials/voucher_pagination_bar.html" with suffix="Orphans" total=counts.orphans label="En TBK pero NO en ERP" %}
+      {% include "partials/voucher_pagination_bar.html" with suffix="Orphans" total=counts.orphans label="En TBK pero NO en Borderó" %}
     </div>
   </div>
 </section>
@@ -655,10 +655,10 @@
 {% block extra_js %}
 <script>document.body.dataset.previewCorrectionUrl = "{% url 'usd_preview_correction' %}"; document.body.dataset.previewCurrency = "USD";</script>
 <script src="{% static 'js/usd_preview.js' %}?v=33"></script>
-<script src="{% static 'js/suggestion_apply.js' %}?v=3"></script>
-<script src="{% static 'js/suggestion_card.js' %}?v=8"></script>
-<script src="{% static 'js/usd_suggestions.js' %}?v=9"></script>
-<script src="{% static 'js/source_tables_viewer.js' %}?v=5"></script>
+<script src="{% static 'js/suggestion_apply.js' %}?v=4"></script>
+<script src="{% static 'js/suggestion_card.js' %}?v=9"></script>
+<script src="{% static 'js/usd_suggestions.js' %}?v=10"></script>
+<script src="{% static 'js/source_tables_viewer.js' %}?v=6"></script>
 <script>
   // Clicking a legend item under the KPI meter opens that voucher tab
   document.querySelectorAll('.legend-item[data-tab-target]').forEach(item => {

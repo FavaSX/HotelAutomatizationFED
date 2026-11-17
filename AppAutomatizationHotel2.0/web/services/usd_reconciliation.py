@@ -652,7 +652,7 @@ def calculate_usd_preview(
             operator_usd = erp_amount_clp = operator_clp = difference_clp = Decimal("0.00")
             difference_usd, is_within_tolerance = gross_amount_usd, False
             sys_result = "NOT_FOUND_IN_ERP"
-            observation_text = f"Voucher {auth_code} no encontrado en ERP Hotel"
+            observation_text = f"Voucher {auth_code} no encontrado en Borderó"
 
         acc = summary_accumulators[raw_card_type]
         acc["usd_erp_total"] += gross_amount_usd

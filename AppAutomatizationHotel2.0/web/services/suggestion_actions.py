@@ -195,6 +195,31 @@ def attach_preview_proposals(preview: Dict[str, Any], currency: str, doc_field: 
 # Accept / reject from the inbox
 # ------------------------------------------------------------------------------
 
+def _normalize_suggestion_bordero(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Rewrites legacy 'ERP' wording inside stored suggestion payloads to 'Borderó'."""
+    from ..templatetags.currency_filters import _normalize_bordero_text
+
+    for key in ("headline", "action", "cause", "manual_check_note"):
+        val = data.get(key)
+        if isinstance(val, str):
+            data[key] = _normalize_bordero_text(val)
+
+    reasons = data.get("reasons")
+    if isinstance(reasons, list):
+        for chip in reasons:
+            if isinstance(chip, dict) and isinstance(chip.get("label"), str):
+                chip["label"] = _normalize_bordero_text(chip["label"])
+
+    rows = data.get("comparison_rows")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                for col in ("tbk_value", "erp_value", "op_value"):
+                    if isinstance(row.get(col), str):
+                        row[col] = _normalize_bordero_text(row[col])
+    return data
+
+
 def load_suggestion(match: CrossMatchResult) -> Optional[Dict[str, Any]]:
     if not match.auditor_comment:
         return None
@@ -202,7 +227,7 @@ def load_suggestion(match: CrossMatchResult) -> Optional[Dict[str, Any]]:
         data = json.loads(match.auditor_comment)
     except ValueError:
         return None
-    return data if isinstance(data, dict) else None
+    return _normalize_suggestion_bordero(data) if isinstance(data, dict) else None
 
 
 def open_proposal(match: CrossMatchResult) -> Optional[Dict[str, Any]]:
@@ -241,14 +266,14 @@ def accept_suggestion(match: CrossMatchResult, user, value: Any = None) -> Dict[
     new_value = value if value not in (None, "") else proposal["new"]
     row = ErpTransaction.objects.select_for_update().filter(pk=proposal["erp_id"]).first()
     if row is None:
-        raise CorrectionError("La fila de la sugerencia ya no está en el ERP (fue eliminada). Corrígelo a mano.")
+        raise CorrectionError("La fila de la sugerencia ya no está en el Borderó (fue eliminada). Corrígelo a mano.")
     claimed_elsewhere = (
         CrossMatchResult.objects.filter(erp_transaction_id=row.pk, system_result="MATCHED")
         .exclude(pk=locked_match.pk)
         .exists()
     )
     if claimed_elsewhere or (row.reconciled and locked_match.erp_transaction_id != row.pk):
-        raise CorrectionError("La fila del ERP ya fue conciliada con otro voucher. Revísala y corrígela a mano.")
+        raise CorrectionError("La fila del Borderó ya fue conciliada con otro voucher. Revísala y corrígela a mano.")
     if _as_text(getattr(row, proposal["field"])) != proposal["old"]:
         raise CorrectionError("La fila cambió desde que se hizo la sugerencia. Revísala y corrígela a mano.")
     outcome = edit_row(
@@ -274,7 +299,7 @@ def reject_suggestion(match: CrossMatchResult, user, comment: str = "") -> None:
     locked_match.management_status = rejected
     locked_match.save(update_fields=["management_status"])
     _mark(locked_match, suggestion, REJECTED)
-    note = f"Sugerencia rechazada ({suggestion['proposed_change']['label']}). El ERP no se modificó"
+    note = f"Sugerencia rechazada ({suggestion['proposed_change']['label']}). El Borderó no se modificó"
     comment = (comment or "").strip()
     AuditResolutionLog.objects.create(
         cross_match_result=locked_match, user=user, previous_status=previous_status, new_status=rejected,

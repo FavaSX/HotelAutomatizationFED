@@ -33,6 +33,7 @@ from ..services.suggestion_actions import accept_suggestion, load_suggestion, op
 from ..services.clp_reconciliation import MODALITY_LABELS
 from ..services.voucher_recross import RecrossError
 from ..services.report_exporter import generate_exceptions_excel_bytes
+from ..templatetags.currency_filters import _normalize_bordero_text
 from .dashboard import (
     CLP_EXCEPTION_LABELS,
     EXCEPTION_LABELS,
@@ -144,8 +145,9 @@ def _decorate_exception(item, today):
     item.suggestion = None
     item.action = ""
     if item.is_clp:
-        _, error_type, item.action = _split_status_detail(item.system_status_detail)
-        item.type_label = error_type or item.type_label
+        _, error_type, action = _split_status_detail(item.system_status_detail)
+        item.action = _normalize_bordero_text(action)
+        item.type_label = _normalize_bordero_text(error_type) if error_type else item.type_label
     item.suggestion = load_suggestion(item)
     # Opción A: one-click Aceptar / Rechazar while the case is open and nobody decided on the change yet
     item.proposal = open_proposal(item) if item.is_pending and not item.is_rejected else None
@@ -391,9 +393,9 @@ def exception_reopen_view(request, match_id: int):
 def _correction_text(outcome, done_text):
     """(message level, text) of a finished correction."""
     if outcome.get("matched"):
-        return "success", f"{done_text[:1].upper()}{done_text[1:]}. Ahora cuadra y quedó como “Corregido en ERP”."
+        return "success", f"{done_text[:1].upper()}{done_text[1:]}. Ahora cuadra y quedó como “Corregido en Borderó”."
     if outcome.get("system_result") == "NOT_FOUND_IN_ERP":
-        return "warning", f"{done_text[:1].upper()}{done_text[1:]}. Sigue pendiente: no se encuentra en el ERP."
+        return "warning", f"{done_text[:1].upper()}{done_text[1:]}. Sigue pendiente: no se encuentra en el Borderó."
     return "warning", f"{done_text[:1].upper()}{done_text[1:]}. Sigue pendiente: aún hay diferencia de {outcome.get('remaining')}."
 
 
@@ -433,7 +435,7 @@ def exception_erp_edit_view(request, match_id: int, row_id: int):
     return _correction_view(
         request, match_id,
         lambda match: edit_row(_erp_row(match, row_id), values, request.user, match=match, reason=request.POST.get("reason", "")),
-        "fila del ERP corregida",
+        "fila del Borderó corregida",
     )
 
 
@@ -444,7 +446,7 @@ def exception_erp_add_view(request, match_id: int):
     return _correction_view(
         request, match_id,
         lambda match: add_row(match, values, request.user, reason=request.POST.get("reason", "")),
-        "fila agregada al ERP",
+        "fila agregada al Borderó",
     )
 
 
@@ -454,7 +456,7 @@ def exception_erp_delete_view(request, match_id: int, row_id: int):
     return _correction_view(
         request, match_id,
         lambda match: soft_delete_row(_erp_row(match, row_id), request.user, request.POST.get("reason", ""), match=match),
-        "fila eliminada del ERP",
+        "fila eliminada del Borderó",
     )
 
 
@@ -469,7 +471,7 @@ def exception_suggestion_accept_view(request, match_id: int):
 @require_POST
 def exception_suggestion_reject_view(request, match_id: int):
     match = get_object_or_404(CrossMatchResult.objects.select_related("management_status"), pk=match_id)
-    text = "Sugerencia rechazada. El ERP no se tocó; el caso sigue abierto para corregirlo a mano."
+    text = "Sugerencia rechazada. El Borderó no se tocó; el caso sigue abierto para corregirlo a mano."
     try:
         reject_suggestion(match, request.user, request.POST.get("comment", ""))
     except CorrectionError as exc:

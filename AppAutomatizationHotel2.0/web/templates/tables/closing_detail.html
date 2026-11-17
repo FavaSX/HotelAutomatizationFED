@@ -58,10 +58,10 @@
     </a>
     <a href="{% url 'closing_detail' process.id %}?vista=erp"
        class="segmented-item {% if active_tab == 'erp' %}active{% endif %}">
-      <i class="bi bi-building"></i>Borderó ERP
+      <i class="bi bi-building"></i>Borderó
       <span class="segmented-count">{{ tab_counts.erp }}</span>
       {% if tab_counts.erp_unlinked %}
-      <span class="status-chip status-danger ms-1 py-0" title="Filas en ERP sin voucher Transbank vinculado">{{ tab_counts.erp_unlinked }} sin TBK</span>
+      <span class="status-chip status-danger ms-1 py-0" title="Filas en Borderó sin voucher Transbank vinculado">{{ tab_counts.erp_unlinked }} sin TBK</span>
       {% endif %}
     </a>
     <a href="{% url 'closing_detail' process.id %}?vista=cartola"
@@ -145,7 +145,7 @@
               <th class="text-end">Transbank (US$)</th>
               <th class="text-end">Operadora (US$)</th>
               <th class="text-end">Dif. USD</th>
-              <th class="text-end">ERP (CLP)</th>
+              <th class="text-end">Borderó (CLP)</th>
               <th class="text-end">Operadora (CLP)</th>
               <th class="text-end pe-4">Dif. CLP</th>
             </tr>
@@ -279,7 +279,7 @@
       <label class="form-label small fw-semibold mb-1" for="e-cruce">Estado de cruce</label>
       <select id="e-cruce" name="cruce" class="form-select form-select-sm">
         <option value="">Todos</option>
-        <option value="solo_erp" {% if filters.cruce == "solo_erp" %}selected{% endif %}>Solo en ERP (sin TBK)</option>
+        <option value="solo_erp" {% if filters.cruce == "solo_erp" %}selected{% endif %}>Solo en Borderó (sin TBK)</option>
         <option value="conciliados" {% if filters.cruce == "conciliados" %}selected{% endif %}>Conciliados</option>
         <option value="con_diferencia" {% if filters.cruce == "con_diferencia" %}selected{% endif %}>Con diferencia</option>
       </select>

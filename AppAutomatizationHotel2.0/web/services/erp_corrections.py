@@ -572,7 +572,7 @@ def overlay_on_instances(
         "manual": 0,
         "possible_duplicates": _possible_duplicates(source_currency, [
             (i.source_key, i.authorization_code, i.amount, i.transaction_date,
-             f"{getattr(i, 'source_file', '') or 'ERP'} · Doc {i.document_number}")
+             f"{getattr(i, 'source_file', '') or 'Borderó'} · Doc {i.document_number}")
             for i in instances
         ]),
     }

@@ -229,7 +229,7 @@ def _recross_usd(match: CrossMatchResult, restrict_to_date_window: bool = False)
                 "operator_amount_usd": Decimal("0"), "erp_amount_clp": Decimal("0"),
                 "difference_usd": gross_usd, "difference_clp": Decimal("0"),
                 "account_code": "", "document_number": "",
-                "system_observation": f"Voucher {tbk.authorization_code} no encontrado en ERP Hotel",
+                "system_observation": f"Voucher {tbk.authorization_code} no encontrado en Borderó",
             },
             "remaining": fmt_usd(gross_usd),
         }

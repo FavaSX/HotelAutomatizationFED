@@ -23,13 +23,13 @@ HIGH_CONFIDENCE_SCORE = 120
 EXCEPTION_ERROR_TYPES = {
     "AMOUNT_MISMATCH": "No cuadra monto",
     "CARD_TYPE_MISMATCH": "Medio de pago distinto",
-    "NOT_FOUND_IN_ERP": "Falta en ERP",
+    "NOT_FOUND_IN_ERP": "Falta en Borderó",
     "OUT_OF_PERIOD": "Fuera de período",
 }
 EXCEPTION_ACTIONS = {
     "AMOUNT_MISMATCH": "Revisar el monto con recepción",
-    "CARD_TYPE_MISMATCH": "Corregir el medio de pago en el ERP",
-    "NOT_FOUND_IN_ERP": "Buscar la venta con el cajero y registrarla en el ERP",
+    "CARD_TYPE_MISMATCH": "Corregir el medio de pago en el Borderó",
+    "NOT_FOUND_IN_ERP": "Buscar la venta con el cajero y registrarla en el Borderó",
     "OUT_OF_PERIOD": "Buscar en el Borderó del período de la venta",
 }
 
@@ -132,11 +132,11 @@ def _build_candidate_suggestion(
     erp_file = erp_row.get("source_file") or default_erp_file
     missing_code = not erp_row.get("authorization_code")
     if missing_code:
-        action = "Anotar el código de autorización en el ERP"
+        action = "Anotar el código de autorización en el Borderó"
     elif detail.get("exact_code"):
         action = f"Validado en {erp_file} (fila {erp_row.get('excel_row')})"
     else:
-        action = "Corregir el código de autorización en el ERP"
+        action = "Corregir el código de autorización en el Borderó"
 
     erp_code = str(erp_row.get("authorization_code") or "").strip()
     match_ref = f"Cód. {erp_code}" if erp_code else "Sin código"
@@ -145,7 +145,7 @@ def _build_candidate_suggestion(
         "confidence": "ALTA" if score >= HIGH_CONFIDENCE_SCORE else "MEDIA",
         "score": score,
         "erp_index": erp_idx,
-        "headline": f"Coincidencia sugerida en Borderó ERP ({match_ref})",
+        "headline": f"Coincidencia sugerida en Borderó ({match_ref})",
         "cause": detail["cause"],
         "missing_code": missing_code,
         "action": action,
@@ -269,12 +269,12 @@ def _find_db_suggestion_for_clp_voucher(
             "bi-cash-stack",
             "emerald",
         ),
-        _chip(f"Fecha Venta ERP: {db_date}", "bi-calendar-check", "cyan"),
+        _chip(f"Fecha Venta Borderó: {db_date}", "bi-calendar-check", "cyan"),
     ]
     if missing_code:
         cause = f"Venta pendiente en BD (Proceso #{db_proc_id}) sin código de autorización"
         reasons.append(_chip("Fila en BD sin código de autorización", "bi-exclamation-triangle", "gold"))
-        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Cta. {db_acc}) y anotar Documento en ERP"
+        action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Cta. {db_acc}) y anotar Documento en Borderó"
     elif exact_code:
         cause = f"Documento exacto ({db_auth}) hallado en BD Proceso #{db_proc_id}"
         reasons.append(_chip(cause, "bi-check2-circle", "emerald"))
@@ -351,7 +351,7 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
             voucher.pop("suggestion", None)
             obs = voucher.get("observation", "")
             if "no encontrado en el Borderó" in obs:
-                voucher["observation"] = f"Voucher {voucher['authorization_code']} no encontrado en ERP Hotel"
+                voucher["observation"] = f"Voucher {voucher['authorization_code']} no encontrado en Borderó"
 
     # Pre-cancel self-cancelling reversal pairs in the Bordero (+X and -X on same account & code)
     for rev_idx, rev_row in enumerate(erp_rows):
@@ -429,7 +429,7 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                     "headline": f"La diferencia ({fmt_clp(gap)}) aparece como otro cargo en la fila {erp_row.get('excel_row')}",
                     "cause": "Pago dividido en dos cargos del Borderó",
                     "missing_code": False,
-                    "action": "Unir ambos cargos bajo el mismo código en el ERP",
+                    "action": "Unir ambos cargos bajo el mismo código en el Borderó",
                     "candidate_summary": f"{fmt_clp(voucher['erp_amount'])} + {fmt_clp(erp_row.get('amount'))} = {fmt_clp(float(voucher['erp_amount']) + float(erp_row.get('amount') or 0))}",
                     "manual_check_note": (
                         f"El voucher '{voucher['authorization_code']}' es de {fmt_clp(voucher['tbk_amount'])}, pero el Borderó lo registra por "
@@ -454,7 +454,7 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                         f"Cruce en fila {base_row.get('excel_row')} (Cta. {base_row.get('account_code') or '—'} · "
                         f"Fact. {base_row.get('invoice_number') or '—'}) con dif. de {fmt_clp(abs(gap))}"
                     ),
-                    "cause": f"Diferencia de {fmt_clp(gap)} entre POS Transbank y monto digitado en ERP",
+                    "cause": f"Diferencia de {fmt_clp(gap)} entre POS Transbank y monto digitado en Borderó",
                     "missing_code": False,
                     "action": f"Revisar propina/cargo de {fmt_clp(abs(gap))} en Cta. {base_row.get('account_code') or '—'} con cajero {base_row.get('cashier_username') or '—'}",
                     "candidate_summary": (
@@ -466,13 +466,13 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                         f"pero en el Borderó (fila {base_row.get('excel_row')}, Cta. {base_row.get('account_code') or '—'}, "
                         f"Factura {base_row.get('invoice_number') or '—'}) el cajero '{base_row.get('cashier_username') or '—'}' "
                         f"registró {fmt_clp(base_row.get('amount'))} con Documento '{base_row.get('authorization_code')}'. "
-                        f"La diferencia de {fmt_clp(abs(gap))} suele corresponder a propina o recargo digitado en el POS y omitido en la cuenta ERP."
+                        f"La diferencia de {fmt_clp(abs(gap))} suele corresponder a propina o recargo digitado en el POS y omitido en la cuenta Borderó."
                     ),
                     "reasons": [
                         _chip(f"Mismo Código ({voucher['authorization_code']} ⇄ {base_row.get('authorization_code')})", "bi-upc-scan", "emerald"),
                         _chip(f"Misma Fecha ({base_row.get('transaction_date')})", "bi-calendar-check", "cyan"),
                         _chip(f"Mismo Medio ({base_row.get('payment_code')})", "bi-credit-card-2-front", "purple"),
-                        _chip(f"Diferencia POS vs ERP: {fmt_clp(gap)}", "bi-exclamation-triangle", "gold"),
+                        _chip(f"Diferencia POS vs Borderó: {fmt_clp(gap)}", "bi-exclamation-triangle", "gold"),
                     ],
                     "files_involved": {"tbk": _tbk_file(voucher), "erp": erp_file},
                     "erp_row": _erp_row_view(base_row),
@@ -486,7 +486,7 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                 "headline": f"Monto y código exactos en fila {base_row.get('excel_row')}, digitado como {base_row.get('payment_code')}",
                 "cause": f"Medio de pago registrado como {base_row.get('payment_code')} en lugar de {voucher.get('modality_label')}",
                 "missing_code": False,
-                "action": f"Cambiar medio de pago de {base_row.get('payment_code')} a {voucher.get('modality_label')} en el ERP",
+                "action": f"Cambiar medio de pago de {base_row.get('payment_code')} a {voucher.get('modality_label')} en el Borderó",
                 "candidate_summary": (
                     f"Cta. {base_row.get('account_code') or '—'} · Doc. {base_row.get('authorization_code') or '—'} · "
                     f"Fact. {base_row.get('invoice_number') or '—'} · {fmt_clp(base_row.get('amount'))} ({base_row.get('cashier_username') or '—'})"
@@ -577,7 +577,7 @@ def enrich_clp_preview_with_suggestions(preview_data: Dict[str, Any]) -> Dict[st
                 if suggestion.get("db_match"):
                     voucher["error_type"] = "Venta previa en BD"
                 elif suggestion.get("missing_code"):
-                    voucher["error_type"] = "Falta código en ERP"
+                    voucher["error_type"] = "Falta código en Borderó"
                 else:
                     voucher["error_type"] = "Error de tipeo"
             elif suggestion and result == "OUT_OF_PERIOD":

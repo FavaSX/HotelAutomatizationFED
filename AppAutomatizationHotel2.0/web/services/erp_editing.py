@@ -54,7 +54,7 @@ RESULT_LABELS = {
     "MATCHED": "Cuadrado",
     "AMOUNT_MISMATCH": "Diferencia de monto",
     "CARD_TYPE_MISMATCH": "Medio de pago distinto",
-    "NOT_FOUND_IN_ERP": "No está en el ERP",
+    "NOT_FOUND_IN_ERP": "No está en el Borderó",
     "OUT_OF_PERIOD": "Fuera de período",
 }
 # Fallback payment codes when the database has no rows of a currency yet: code -> card type code
@@ -257,7 +257,7 @@ def _lock_and_validate_case(match: Optional[CrossMatchResult]) -> Optional[Cross
     )
     status_code = locked.management_status.code if locked.management_status_id else "PENDING"
     if status_code in MANUALLY_CLOSED_STATUS_CODES:
-        raise CorrectionError("Este caso ya está resuelto manualmente. Reábrelo antes de modificar el ERP.")
+        raise CorrectionError("Este caso ya está resuelto manualmente. Reábrelo antes de modificar el Borderó.")
     return locked
 
 
@@ -278,7 +278,7 @@ def _lock_and_validate_row_for_case(
         curr = locked_match.process.process_currency if locked_match.process_id else "CLP"
         if locked_row.source_currency and locked_row.source_currency != curr:
             raise CorrectionError(
-                "La fila del ERP seleccionada pertenece a otra moneda y no puede modificarse desde este caso."
+                "La fila del Borderó seleccionada pertenece a otra moneda y no puede modificarse desde este caso."
             )
         row_norm = normalize_auth_code(locked_row.authorization_code or "")
         match_norm = normalize_auth_code(locked_match.authorization_code or "")
@@ -291,7 +291,7 @@ def _lock_and_validate_row_for_case(
         ) or (locked_row.reconciled and not is_direct and not is_same_code)
         if claimed_elsewhere:
             raise CorrectionError(
-                "Esta fila del ERP ya está conciliada con otro voucher; no se puede modificar ni eliminar desde este caso."
+                "Esta fila del Borderó ya está conciliada con otro voucher; no se puede modificar ni eliminar desde este caso."
             )
         if not is_direct and not is_same_code:
             cand_ids = {r.pk for r in candidate_rows(locked_match, limit=25)}
@@ -307,7 +307,7 @@ def _lock_and_validate_row_for_case(
             )
             if locked_row.pk not in cand_ids and (linked_to_other_case or cross_process_unproposed):
                 raise CorrectionError(
-                    "La fila del ERP seleccionada no pertenece a los candidatos de este voucher."
+                    "La fila del Borderó seleccionada no pertenece a los candidatos de este voucher."
                 )
     return locked_row, locked_match
 
@@ -398,7 +398,7 @@ def edit_row(
     """Opción B "la fila existe" (and Opción A "Aceptar"): changes the given fields of a Bordero row."""
     row, match = _lock_and_validate_row_for_case(row, match, source=source)
     if row.is_deleted:
-        raise CorrectionError("Esta fila del ERP está eliminada; no se puede corregir.")
+        raise CorrectionError("Esta fila del Borderó está eliminada; no se puede corregir.")
     prior_auth_code = row.authorization_code
     currency = row.source_currency or (match.process.process_currency if match else "CLP")
     changes = []
@@ -431,7 +431,7 @@ def edit_row(
     row.save()
     ErpTransactionChange.objects.bulk_create(history)
 
-    summary = "Corrección en ERP" if source == ErpTransactionChange.SOURCE_MANUAL else "Sugerencia aceptada"
+    summary = "Corrección en Borderó" if source == ErpTransactionChange.SOURCE_MANUAL else "Sugerencia aceptada"
     summary += ": " + "; ".join(
         f"{FIELD_LABELS[f]} {display_value(f, o, currency)} → {display_value(f, n, currency)}" for f, o, n in changes
     )
@@ -498,7 +498,7 @@ def add_row(match: CrossMatchResult, values: Dict[str, Any], user, reason: str =
         new_value=f"Cta {account_label} · Doc {code} · {display_value('amount', amount, currency)} · {tx_date:%d/%m/%Y} · {payment_code}",
         user=user, source=ErpTransactionChange.SOURCE_MANUAL, cross_match_result=match, reason=(reason or "").strip() or None,
     )
-    summary = f"Fila agregada a mano en ERP: Cuenta {account_label}, Documento {code}, {display_value('amount', amount, currency)}"
+    summary = f"Fila agregada a mano en Borderó: Cuenta {account_label}, Documento {code}, {display_value('amount', amount, currency)}"
     return _settle_all(row, match, user, summary)
 
 
@@ -522,7 +522,7 @@ def soft_delete_row(row: ErpTransaction, user, reason: str, match: Optional[Cros
         user=user, source=ErpTransactionChange.SOURCE_MANUAL, cross_match_result=match, reason=reason,
     )
     currency = row.source_currency or "CLP"
-    summary = f"Fila eliminada del ERP (Doc {row.document_number}, {display_value('amount', row.amount, currency)}): {reason}"
+    summary = f"Fila eliminada del Borderó (Doc {row.document_number}, {display_value('amount', row.amount, currency)}): {reason}"
     return _settle_all(row, match, user, summary, prior_auth_code=prior_auth_code)
 
 

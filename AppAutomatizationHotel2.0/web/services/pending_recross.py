@@ -37,7 +37,7 @@ _RESULT_LABELS = {
     "MATCHED": "Cuadrado",
     "AMOUNT_MISMATCH": "Diferencia de monto",
     "CARD_TYPE_MISMATCH": "Medio de pago distinto",
-    "NOT_FOUND_IN_ERP": "No está en ERP",
+    "NOT_FOUND_IN_ERP": "No está en Borderó",
     "OUT_OF_PERIOD": "Fuera de período",
     "UNMATCHED_BANK_DEPOSIT": "Depósito sin cruce",
 }
@@ -208,7 +208,7 @@ def _build_clp_discrepancy_suggestion(
             "score": 90,
             "erp_index": None,
             "headline": f"Cruce en BD Proceso #{db_proc_id} (Cta. {db_acc} · Fact. {db_inv}) con dif. de {fmt_clp(abs(gap))}",
-            "cause": f"Diferencia de {fmt_clp(gap)} entre POS Transbank y monto digitado en ERP",
+            "cause": f"Diferencia de {fmt_clp(gap)} entre POS Transbank y monto digitado en Borderó",
             "missing_code": False,
             "action": f"Revisar propina/cargo de {fmt_clp(abs(gap))} en Cta. {db_acc} con cajero {db_cashier}",
             "candidate_summary": f"Cta. {db_acc} · Doc. {db_auth} · Fact. {db_inv} · {fmt_clp(row.amount)} ({db_cashier})",
@@ -219,9 +219,9 @@ def _build_clp_discrepancy_suggestion(
             ),
             "reasons": [
                 _chip_dict(f"Mismo Código ({voucher['authorization_code']} ⇄ {db_auth})", "bi-upc-scan", "emerald"),
-                _chip_dict(f"Fecha Venta ERP: {db_date}", "bi-calendar-check", "cyan"),
+                _chip_dict(f"Fecha Venta Borderó: {db_date}", "bi-calendar-check", "cyan"),
                 _chip_dict(f"Mismo Medio ({db_pay})", "bi-credit-card-2-front", "purple"),
-                _chip_dict(f"Diferencia POS vs ERP: {fmt_clp(gap)}", "bi-exclamation-triangle", "gold"),
+                _chip_dict(f"Diferencia POS vs Borderó: {fmt_clp(gap)}", "bi-exclamation-triangle", "gold"),
             ],
             "files_involved": {"tbk": tbk_file, "erp": erp_file},
             "erp_row": erp_row_view,
@@ -235,7 +235,7 @@ def _build_clp_discrepancy_suggestion(
             "headline": f"Monto y código exactos en BD Proceso #{db_proc_id}, digitado como {db_pay}",
             "cause": f"Medio de pago registrado como {db_pay} en lugar de {voucher['modality_label']}",
             "missing_code": False,
-            "action": f"Cambiar medio de pago de {db_pay} a {voucher['modality_label']} en el ERP",
+            "action": f"Cambiar medio de pago de {db_pay} a {voucher['modality_label']} en el Borderó",
             "candidate_summary": f"Cta. {db_acc} · Doc. {db_auth} · Fact. {db_inv} · {fmt_clp(row.amount)} ({db_cashier})",
             "manual_check_note": (
                 f"El voucher '{voucher['authorization_code']}' ({fmt_clp(voucher['tbk_amount'])}) coincide en Documento y monto "
@@ -338,7 +338,7 @@ def _refresh_unlinked_suggestions(
         for case in clp_to_refresh:
             voucher = _voucher_payload_for_actions(case)
             tbk_file = _process_tbk_file_name(case)
-            default_erp_file = case.process.erp_file_name or "Borderó ERP"
+            default_erp_file = case.process.erp_file_name or "Borderó"
             new_sug = _find_db_suggestion_for_clp_voucher(
                 voucher,
                 clp_tolerance,
@@ -406,7 +406,7 @@ def _refresh_unlinked_suggestions(
 
         for case in usd_to_refresh:
             orph = _voucher_payload_for_actions(case)
-            proc_erp = case.process.erp_file_name or "TARJETAS ERP"
+            proc_erp = case.process.erp_file_name or "Borderó"
             proc_tbk = _process_tbk_file_name(case, "ABONO TBK")
             proc_ops = [o for o in all_ops if o["_process_id"] == case.process_id] + [
                 o for o in all_ops if o["_process_id"] != case.process_id
@@ -445,7 +445,7 @@ def recross_pending_cases(
     exclude_process_id: Optional[int] = None,
     exclude_match_ids: Optional[Set[int]] = None,
     resolved_status_code: str = "ACCEPTED_ROUNDING",
-    audit_prefix: str = "Actualización automática con nuevos datos del ERP",
+    audit_prefix: str = "Actualización automática con nuevos datos del Borderó",
     clear_suggestion_on_match: bool = True,
 ) -> Dict[str, int]:
     """

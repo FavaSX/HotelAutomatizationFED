@@ -60,7 +60,7 @@ def clp_upload_view(request):
         if not erp_file or not bank_file or not tbk_files:
             messages.error(
                 request,
-                "Por favor asegúrese de cargar los 3 componentes requeridos: Borderó ERP, Cartola Bancaria y Abono(s) Transbank en Pesos."
+                "Por favor asegúrese de cargar los 3 componentes requeridos: Borderó, Cartola Bancaria y Abono(s) Transbank en Pesos."
             )
             return redirect("clp_upload")
 
@@ -76,7 +76,7 @@ def clp_upload_view(request):
             if failed_extras:
                 messages.warning(
                     request,
-                    f"No se pudieron leer algunos archivos ERP adicionales: {', '.join(failed_extras)}.",
+                    f"No se pudieron leer algunos archivos adicionales del Borderó: {', '.join(failed_extras)}.",
                 )
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("clp_preview")

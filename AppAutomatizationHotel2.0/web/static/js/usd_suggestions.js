@@ -144,7 +144,7 @@ function renderModalSuggestionsPage() {
               `<td class="text-end fw-bold">${escapeHtmlStr(formatUsdClient(v.gross_amount_usd))}</td>` +
               `<td class="pe-3 small text-muted">` +
                 `<i class="bi bi-slash-circle text-warning me-1"></i>` +
-                `Sin coincidencias en ERP ni Posición por Clientes (no existe ningún cobro libre con ese monto en dólares, saldo equivalente en pesos ni código similar en los archivos cargados).` +
+                `Sin coincidencias en Borderó ni Posición por Clientes (no existe ningún cobro libre con ese monto en dólares, saldo equivalente en pesos ni código similar en los archivos cargados).` +
               `</td>` +
             `</tr>`
           );
@@ -220,7 +220,7 @@ function openSectionSuggestionsModal(sectionKey) {
   if (headlineEl) {
     headlineEl.textContent = isDisc
       ? 'Diagnóstico Asistido Nivel 2 — Vouchers con Diferencia de Monto'
-      : 'Búsqueda Secundaria Asistida — Vouchers No Encontrados en ERP';
+      : 'Búsqueda Secundaria Asistida — Vouchers No Encontrados en Borderó';
   }
 
   // Sincronizar selector de elementos por página con currentSugPageSize

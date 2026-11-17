@@ -12,6 +12,7 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ..models import CrossMatchResult, ReconciliationProcess
+from ..templatetags.currency_filters import _normalize_bordero_text, format_observation
 from .clp_reconciliation import MODALITY_LABELS as BASE_MODALITY_LABELS
 from .clp_suggestion_engine import EXCEPTION_ERROR_TYPES
 from .excel_styles import (
@@ -96,7 +97,7 @@ def _suggestion_case_label(match: CrossMatchResult) -> str:
     if match.system_result == "MATCHED":
         return "Cuadrado (Sugerencia aplicada)"
     _, error_type, _ = _split_status_detail(match.system_status_detail)
-    return error_type or EXCEPTION_ERROR_TYPES.get(match.system_result, match.system_result)
+    return _normalize_bordero_text(error_type or EXCEPTION_ERROR_TYPES.get(match.system_result, match.system_result))
 
 
 def _populate_clp_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
@@ -108,10 +109,10 @@ def _populate_clp_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatc
         "Tarjeta",
         "Monto TBK (CLP)",
         "Fecha POS",
-        "Documento ERP",
-        "Cuenta ERP",
-        "Monto ERP (CLP)",
-        "Cajero ERP",
+        "Documento Borderó",
+        "Cuenta Borderó",
+        "Monto Borderó (CLP)",
+        "Cajero Borderó",
         "Confianza",
         "Diagnóstico Sugerido",
         "Motivos Coincidencia",
@@ -266,8 +267,8 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
     # Sheet 2: Vouchers Ubicados
     ws_matched = wb.create_sheet(title="Vouchers Ubicados")
     write_header_row(ws_matched, 1, [
-        "Fecha", "Cruce Voucher (TBK ⇄ Doc. ERP)", "Cuenta", "Cajero", "Tarjeta",
-        "Monto TBK CLP", "Diferencia CLP", "Monto ERP CLP", "Diagnóstico",
+        "Fecha", "Cruce Voucher (TBK ⇄ Doc. Borderó)", "Cuenta", "Cajero", "Tarjeta",
+        "Monto TBK CLP", "Diferencia CLP", "Monto Borderó CLP", "Diagnóstico",
     ], fill=NAVY_FILL, center=True, wrap_text=True)
     row = 2
     for match in (m for m in cross_matches if m.system_result == "MATCHED"):
@@ -278,14 +279,14 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
             row,
             [
                 match.sale_date.strftime("%d/%m/%Y") if match.sale_date else "—",
-                f"TBK: {tbk_code} = Doc. ERP: {erp_doc}" if tbk_code else "",
+                f"TBK: {tbk_code} = Doc. Borderó: {erp_doc}" if tbk_code else "",
                 match.display_account_code or "",
                 match.cashier_username or "",
                 _format_card_display(match),
                 float(match.transbank_amount),
                 float(match.difference_clp),
                 float(match.erp_amount_clp),
-                match.system_observation or "",
+                format_observation(match.system_observation or ""),
             ],
             money_columns=(6, 7, 8),
         )
@@ -299,7 +300,7 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
         "Documento Borderó",
         "Tarjeta",
         "Monto TBK CLP",
-        "Monto ERP CLP",
+        "Monto Borderó CLP",
         "Diferencia CLP",
         "Diagnóstico",
     ], fill=GOLD_FILL, center=True, wrap_text=True)
@@ -321,7 +322,7 @@ def generate_committed_clp_excel_bytes(process_id: int) -> io.BytesIO:
                 float(match.transbank_amount),
                 float(match.erp_amount_clp),
                 float(match.difference_clp),
-                match.system_observation or "",
+                format_observation(match.system_observation or ""),
             ],
             money_columns=(5, 6, 7),
             red_columns=(7,),

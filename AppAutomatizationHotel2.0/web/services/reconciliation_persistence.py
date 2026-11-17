@@ -313,7 +313,7 @@ def _sync_cross_match_results(
             for v in preview.get("discrepancy_vouchers", [])
         ),
         *(
-            _build_entry(v, "NOT_FOUND_IN_ERP", f"Voucher {v['authorization_code']} no registrado en ERP", pending_status)
+            _build_entry(v, "NOT_FOUND_IN_ERP", f"Voucher {v['authorization_code']} no registrado en Borderó", pending_status)
             for v in preview.get("orphan_vouchers", [])
         ),
     ]
@@ -370,6 +370,6 @@ def commit_usd_preview_to_database(user: User, preview: Dict[str, Any]) -> Recon
             user,
             exclude_process_id=None if getattr(process, "_updated_existing", False) else process.id,
             resolved_status_code="ACCEPTED_ROUNDING",
-            audit_prefix=f"Actualización automática con nuevos datos ERP/Operadora (Cierre #{process.id})",
+            audit_prefix=f"Actualización automática con nuevos datos Borderó/Operadora (Cierre #{process.id})",
         )
         return process

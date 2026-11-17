@@ -42,7 +42,7 @@ RESULT_META: Dict[str, Tuple[str, str]] = {
     "MATCHED": ("Conciliado", "status-success"),
     "AMOUNT_MISMATCH": ("Dif. de monto", "status-warning"),
     "CARD_TYPE_MISMATCH": ("Medio distinto", "status-warning"),
-    "NOT_FOUND_IN_ERP": ("No está en ERP", "status-danger"),
+    "NOT_FOUND_IN_ERP": ("No está en Borderó", "status-danger"),
     "OUT_OF_PERIOD": ("Fuera de período", "status-neutral"),
 }
 _AUTO_CLOSING_RE = re.compile(r"\(Cierre #(\d+)\)")
@@ -201,7 +201,7 @@ def _build_erp_history_entry(
     ident = auth_code if auth_code and auth_code != "—" else (document if document and document != "—" else key)
     return {
         "key": key,
-        "title": f"Fila Borderó ERP · {ident}",
+        "title": f"Fila Borderó · {ident}",
         "subtitle": f"Cierre #{process_id} · {currency}" if process_id else f"Vista previa en memoria · {currency}",
         "currency": currency,
         "process_id": process_id,
@@ -335,7 +335,7 @@ def _sanitize_preview_erp_row(
     elif raw.get("reconciled") or raw.get("db_reconciled"):
         match_status, match_label = ("diff", "Vinculado")
     else:
-        match_status, match_label = ("unlinked", "Solo en ERP (sin TBK)")
+        match_status, match_label = ("unlinked", "Solo en Borderó (sin TBK)")
 
     if raw.get("manual_id"):
         origin_label = "Agregada a mano"
@@ -859,7 +859,7 @@ def build_cruce_view_data(
             ("MATCHED", "Conciliado"),
             ("AMOUNT_MISMATCH", "Dif. de monto"),
             ("CARD_TYPE_MISMATCH", "Medio distinto"),
-            ("NOT_FOUND_IN_ERP", "No está en ERP"),
+            ("NOT_FOUND_IN_ERP", "No está en Borderó"),
             ("OUT_OF_PERIOD", "Fuera de período"),
         ],
         "card_types": CardType.objects.order_by("name"),
@@ -975,7 +975,7 @@ def build_erp_view_data(
         elif row.reconciled:
             row.link_label, row.link_tone = ("Conciliado", "status-success")
         else:
-            row.link_label, row.link_tone = ("Solo en ERP (sin TBK)", "status-danger")
+            row.link_label, row.link_tone = ("Solo en Borderó (sin TBK)", "status-danger")
 
     return {
         "page": page,

@@ -71,14 +71,22 @@ def fmt_clp(value: Any) -> str:
     return f"${num_clp(value)}"
 
 
+def _normalize_bordero_text(text: str) -> str:
+    """Rewrites legacy 'ERP' references inside stored observations to 'Borderó'."""
+    text = re.sub(r"\bBorderó\s+ERP\b", "Borderó", text)
+    text = re.sub(r"\bERP\s+Hotel\b", "Borderó", text)
+    return re.sub(r"\bERP\b", "Borderó", text)
+
+
 @register.filter(name="format_observation")
 def format_observation(value: str) -> str:
     """
-    Formats SALDO numbers inside diagnostic observations using dots for thousands.
+    Formats SALDO numbers inside diagnostic observations using dots for thousands
+    and unifies legacy ERP references to Borderó.
     """
     if not value:
         return ""
-    text = str(value)
+    text = _normalize_bordero_text(str(value))
 
     def _replace_saldo(match):
         return f"{match.group(1)}${num_clp(match.group(2))}"

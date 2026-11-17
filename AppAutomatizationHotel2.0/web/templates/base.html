@@ -111,8 +111,8 @@
 
         <hr class="my-3 sidebar-divider">
         <small class="sidebar-section-label">Consultas</small>
-        <a href="{% url 'consolidated_erp' %}" class="sidebar-link {% if current_url == 'consolidated_erp' %}active{% endif %}" title="Borderó ERP">
-          <i class="bi bi-building fs-5"></i> <span class="sidebar-collapsible">Borderó ERP</span>
+        <a href="{% url 'consolidated_erp' %}" class="sidebar-link {% if current_url == 'consolidated_erp' %}active{% endif %}" title="Borderó">
+          <i class="bi bi-building fs-5"></i> <span class="sidebar-collapsible">Borderó</span>
         </a>
         <a href="{% url 'consolidated_transbank' %}" class="sidebar-link {% if current_url == 'consolidated_transbank' %}active{% endif %}" title="Transbank">
           <i class="bi bi-receipt fs-5"></i> <span class="sidebar-collapsible">Transbank</span>
@@ -159,7 +159,7 @@
 
       {% block footer %}
       <footer class="app-footer py-3 px-4 text-center text-muted small mt-auto">
-        <strong>Hotel Plaza San Francisco</strong> — Sistema de Conciliación Financiera ERP v2.0
+        <strong>Hotel Plaza San Francisco</strong> — Sistema de Conciliación Financiera v2.0
       </footer>
       {% endblock %}
     </div>

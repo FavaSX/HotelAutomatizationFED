@@ -5,8 +5,8 @@
 {% with pending=preview.pending_corrections %}
 {% if pending %}
 <div class="alert alert-info small border-0 mb-3" role="status">
-  <i class="bi bi-pencil-square me-1"></i><strong>{{ pending|length }} corrección{{ pending|length|pluralize:"es" }} del ERP aceptada{{ pending|length|pluralize }} en este paso.</strong>
-  Se escriben en el ERP, con historial, cuando confirmes el cierre.
+  <i class="bi bi-pencil-square me-1"></i><strong>{{ pending|length }} corrección{{ pending|length|pluralize:"es" }} del Borderó aceptada{{ pending|length|pluralize }} en este paso.</strong>
+  Se escriben en el Borderó, con historial, cuando confirmes el cierre.
   <ul class="mb-0 mt-1">{% for p in pending %}<li class="font-mono">{{ p.proposal.label }}</li>{% endfor %}</ul>
 </div>
 {% endif %}
@@ -14,7 +14,7 @@
 {% with c=preview.erp_corrections_applied %}
 {% if c.corrected or c.deleted or c.manual %}
 <div class="alert alert-info small border-0 mb-3" role="status">
-  <i class="bi bi-shield-check me-1"></i><strong>Se aplicaron las correcciones guardadas del ERP.</strong>
+  <i class="bi bi-shield-check me-1"></i><strong>Se aplicaron las correcciones guardadas del Borderó.</strong>
   {% if c.corrected %}{{ c.corrected }} fila{{ c.corrected|pluralize }} corregida{{ c.corrected|pluralize }}{% endif %}{% if c.corrected and c.deleted %} · {% endif %}{% if c.deleted %}{{ c.deleted }} fila{{ c.deleted|pluralize }} eliminada{{ c.deleted|pluralize }} quedan fuera del cruce{% endif %}{% if c.manual %}{% if c.corrected or c.deleted %} · {% endif %}{{ c.manual }} fila{{ c.manual|pluralize }} agregada{{ c.manual|pluralize }} a mano{% endif %}.
   El cruce usa los valores corregidos, no los del Excel.
 </div>

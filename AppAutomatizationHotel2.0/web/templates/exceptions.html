@@ -114,7 +114,7 @@
       <label class="form-label small fw-semibold mb-1" for="f-cajero">Cajero</label>
       <select id="f-cajero" name="cajero" class="form-select form-select-sm">
         <option value="">Todos</option>
-        <option value="__none__" {% if filters.cajero == "__none__" %}selected{% endif %}>Sin cajero (no está en ERP)</option>
+        <option value="__none__" {% if filters.cajero == "__none__" %}selected{% endif %}>Sin cajero (no está en Borderó)</option>
         {% for c in cashiers %}
         <option value="{{ c }}" {% if filters.cajero == c %}selected{% endif %}>{{ c }}</option>
         {% endfor %}
@@ -158,7 +158,7 @@
   <div class="px-4 py-3 d-flex flex-wrap justify-content-between align-items-center gap-3 suggestion-manual-box rounded-0">
     <div class="d-flex flex-wrap align-items-center gap-2 small">
       <span class="suggestion-badge-tag"><i class="bi bi-stars"></i> Nivel 2</span>
-      <span class="fw-semibold" id="sug-bar-title">Correcciones sugeridas en el ERP:</span>
+      <span class="fw-semibold" id="sug-bar-title">Correcciones sugeridas en el Borderó:</span>
       <span class="reason-chip reason-emerald"><i class="bi bi-check2-circle"></i> {{ suggestion_total }} caso{{ suggestion_total|pluralize }} listo{{ suggestion_total|pluralize }} para aceptar</span>
     </div>
     <button type="button" class="btn-suggestion-trigger px-3 py-2" data-bs-toggle="modal" data-bs-target="#inboxSuggestionModal">
@@ -176,7 +176,7 @@
             <i class="bi bi-stars fs-4"></i>
           </div>
           <div>
-            <h5 class="modal-title fw-bold mb-0" id="inboxSuggestionTitle">Sugerencias Asistidas — Correcciones en el ERP</h5>
+            <h5 class="modal-title fw-bold mb-0" id="inboxSuggestionTitle">Sugerencias Asistidas — Correcciones en el Borderó</h5>
             <div class="small opacity-75">{% if currency == "clp" %}Pesos{% else %}Dólares{% endif %} · {{ suggestion_total }} caso{{ suggestion_total|pluralize }}{% if suggestion_total > suggestion_items|length %} (mostrando {{ suggestion_items|length }}){% endif %}</div>
           </div>
         </div>
@@ -328,7 +328,7 @@
           <div class="exc-amounts">
             {% if e.is_clp %}
             <div class="exc-amount"><div class="kpi-label">Transbank</div><div class="exc-amount-value">$ {{ e.transbank_amount|num_clp }}</div></div>
-            <div class="exc-amount"><div class="kpi-label">ERP</div><div class="exc-amount-value">{% if not e.erp_transaction_id %}<span class="text-muted">No está</span>{% else %}$ {{ e.erp_amount_clp|num_clp }}{% endif %}</div></div>
+            <div class="exc-amount"><div class="kpi-label">Borderó</div><div class="exc-amount-value">{% if not e.erp_transaction_id %}<span class="text-muted">No está</span>{% else %}$ {{ e.erp_amount_clp|num_clp }}{% endif %}</div></div>
             <div class="exc-amount exc-amount-diff"><div class="kpi-label">Diferencia</div><div class="exc-amount-value">$ {{ e.difference_clp|num_clp }}</div></div>
             {% else %}
             <div class="exc-amount"><div class="kpi-label">Transbank</div><div class="exc-amount-value">US$ {{ e.transbank_amount|num_usd }}</div></div>
@@ -342,7 +342,7 @@
             <div><dt>Documento</dt><dd class="font-mono">{{ e.display_document_number|default:"—" }}</dd></div>
             <div><dt>Fecha venta</dt><dd>{{ e.sale_date|date:"d/m/Y"|default:"—" }}</dd></div>
             <div><dt>Cajero</dt><dd>{% if e.cashier_username and e.cashier_username != "—" %}{{ e.cashier_username }}{% else %}<span class="text-muted fw-normal">Sin cajero</span>{% endif %}</dd></div>
-            {% if not e.is_clp %}<div><dt>ERP (CLP)</dt><dd>$ {{ e.erp_amount_clp|num_clp }}</dd></div>{% endif %}
+            {% if not e.is_clp %}<div><dt>Borderó (CLP)</dt><dd>$ {{ e.erp_amount_clp|num_clp }}</dd></div>{% endif %}
           </dl>
 
           {% if e.system_observation and not e.suggestion %}
@@ -360,7 +360,7 @@
           <div class="exc-callout"><i class="bi bi-lightbulb me-2"></i>{{ e.action }}</div>
           {% endif %}
           {% if e.is_rejected %}
-          <p class="small text-muted mt-2 mb-0"><i class="bi bi-x-circle me-1"></i>Se rechazó la sugerencia y el ERP no se tocó. Puedes corregirlo a mano o cerrar el caso abajo.</p>
+          <p class="small text-muted mt-2 mb-0"><i class="bi bi-x-circle me-1"></i>Se rechazó la sugerencia y el Borderó no se tocó. Puedes corregirlo a mano o cerrar el caso abajo.</p>
           {% endif %}
         </section>
         {% endif %}
@@ -371,19 +371,19 @@
           <h6 class="exc-section-title">{% if e.proposal %}¿O lo resuelves a mano?{% else %}¿Cómo lo resuelves?{% endif %}</h6>
           <div class="segmented exc-tabs" role="tablist">
             {% if e.can_correct and e.erp_rows %}
-            <button type="button" class="segmented-item active" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-fix" role="tab" aria-selected="true"><i class="bi bi-pencil-square"></i>Corregir fila del ERP</button>
+            <button type="button" class="segmented-item active" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-fix" role="tab" aria-selected="true"><i class="bi bi-pencil-square"></i>Corregir fila del Borderó</button>
             {% endif %}
             {% if e.can_correct %}
-            <button type="button" class="segmented-item {% if not e.erp_rows %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-add" role="tab" aria-selected="{% if e.erp_rows %}false{% else %}true{% endif %}"><i class="bi bi-plus-circle"></i>Agregar fila al ERP</button>
+            <button type="button" class="segmented-item {% if not e.erp_rows %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-add" role="tab" aria-selected="{% if e.erp_rows %}false{% else %}true{% endif %}"><i class="bi bi-plus-circle"></i>Agregar fila al Borderó</button>
             {% endif %}
-            <button type="button" class="segmented-item {% if not e.can_correct %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-close" role="tab" aria-selected="{% if e.can_correct %}false{% else %}true{% endif %}"><i class="bi bi-check2-circle"></i>Cerrar sin cambiar el ERP</button>
+            <button type="button" class="segmented-item {% if not e.can_correct %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-close" role="tab" aria-selected="{% if e.can_correct %}false{% else %}true{% endif %}"><i class="bi bi-check2-circle"></i>Cerrar sin cambiar el Borderó</button>
           </div>
 
           <div class="tab-content pt-3">
             {% if e.can_correct and e.erp_rows %}
             <!-- 3a. Fix an existing Bordero row -->
             <div class="tab-pane fade show active" id="exc-{{ e.id|unlocalize }}-fix" role="tabpanel">
-              <p class="exc-hint">Elige la fila del Borderó que está mal. Al guardar, el voucher se vuelve a cruzar y, si cuadra, queda como “Corregido en ERP”.</p>
+              <p class="exc-hint">Elige la fila del Borderó que está mal. Al guardar, el voucher se vuelve a cruzar y, si cuadra, queda como “Corregido en Borderó”.</p>
               {% for row in e.erp_rows %}
               <div class="erp-row-card">
                 <div class="erp-row-head">
@@ -402,7 +402,7 @@
                   </div>
                   <div class="erp-row-actions">
                     <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" data-bs-toggle="collapse" data-bs-target="#edit-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" aria-expanded="false" aria-controls="edit-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}"><i class="bi bi-pencil me-1"></i>Editar</button>
-                    <button type="button" class="btn btn-link btn-sm text-danger text-decoration-none px-2" data-bs-toggle="collapse" data-bs-target="#del-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" aria-expanded="false" aria-controls="del-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" title="La fila sobra en el ERP"><i class="bi bi-trash"></i><span class="visually-hidden">Eliminar fila</span></button>
+                    <button type="button" class="btn btn-link btn-sm text-danger text-decoration-none px-2" data-bs-toggle="collapse" data-bs-target="#del-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" aria-expanded="false" aria-controls="del-{{ e.id|unlocalize }}-{{ row.id|unlocalize }}" title="La fila sobra en el Borderó"><i class="bi bi-trash"></i><span class="visually-hidden">Eliminar fila</span></button>
                   </div>
                 </div>
 
@@ -621,7 +621,7 @@
 
 {% block extra_js %}
 {{ suggestion_cards|json_script:"inboxSuggestionData" }}
-<script src="{% static 'js/suggestion_card.js' %}?v=8"></script>
+<script src="{% static 'js/suggestion_card.js' %}?v=9"></script>
  <script>
   // "Agregar a mano": the Descripción column follows the chosen Cod. Deb.
   document.querySelectorAll(".js-erp-paycode").forEach((select) => {

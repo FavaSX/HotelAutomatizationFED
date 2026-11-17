@@ -59,7 +59,7 @@ def usd_upload_view(request):
             if failed_extras:
                 messages.warning(
                     request,
-                    f"No se pudieron leer algunos archivos ERP adicionales: {', '.join(failed_extras)}.",
+                    f"No se pudieron leer algunos archivos adicionales del Borderó: {', '.join(failed_extras)}.",
                 )
             messages.success(request, "Archivos analizados con éxito en memoria. Revise los resultados antes de guardar.")
             return redirect("usd_preview")

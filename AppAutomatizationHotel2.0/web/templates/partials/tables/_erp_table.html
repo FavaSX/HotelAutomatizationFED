@@ -69,11 +69,11 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="{% if consolidated %}18{% else %}17{% endif %}" class="text-center py-4 text-muted">No hay filas del Borderó ERP para esos filtros.</td></tr>
+        <tr><td colspan="{% if consolidated %}18{% else %}17{% endif %}" class="text-center py-4 text-muted">No hay filas del Borderó para esos filtros.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% include "partials/db_pagination_bar.html" with page=page query_string=query_string aria_label="Paginación de movimientos ERP" %}
+  {% include "partials/db_pagination_bar.html" with page=page query_string=query_string aria_label="Paginación de movimientos del Borderó" %}
 </section>
 {% include "partials/tables/_erp_history_modal.html" %}

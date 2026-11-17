@@ -30,7 +30,7 @@
           <div class="collapse show" id="sugCautionBody">
             <div class="caution-body small">
               Este listado agrupa los vouchers no conciliados entre aquellos que <strong>encontraron una sugerencia asistida</strong> (cruzando montos en dólares, fechas, archivos de Posición por Clientes y similitud de códigos) y aquellos que <strong>no tienen coincidencia en los archivos cargados</strong>.
-              <strong>Ningún cambio se aplica sin su confirmación:</strong> verifique los respaldos originales antes de pulsar <em>Aplicar corrección</em> (que actualiza el registro en el ERP y vuelve a cruzar el voucher con historial de auditoría).
+              <strong>Ningún cambio se aplica sin su confirmación:</strong> verifique los respaldos originales antes de pulsar <em>Aplicar corrección</em> (que actualiza el registro en el Borderó y vuelve a cruzar el voucher con historial de auditoría).
             </div>
           </div>
         </div>
@@ -82,7 +82,7 @@
         <div id="sugModalWithoutSection" class="mb-3">
           <h6 class="fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
             <span class="reason-chip reason-gold"><i class="bi bi-slash-circle"></i> Sin Sugerencia en Archivos</span>
-            <span class="text-muted">Vouchers sin coincidencias secundarias en ERP ni Posición por Clientes</span>
+            <span class="text-muted">Vouchers sin coincidencias secundarias en Borderó ni Posición por Clientes</span>
           </h6>
           <div id="sugModalWithoutList"></div>
           <div id="sugWithoutPaginationBar" class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-3 border-top mt-3">
@@ -157,7 +157,7 @@
               <dd class="d-flex flex-wrap justify-content-end gap-1">
                 <span class="status-chip status-success"><i class="bi bi-check2"></i>{{ counts.matched }} ubicadas</span>
                 <span class="status-chip status-warning"><i class="bi bi-plus-slash-minus"></i>{{ counts.discrepancies }} con diferencia</span>
-                <span class="status-chip status-danger"><i class="bi bi-search"></i>{{ counts.orphans }} no en ERP</span>
+                <span class="status-chip status-danger"><i class="bi bi-search"></i>{{ counts.orphans }} no en Borderó</span>
               </dd>
             </div>
             <div>

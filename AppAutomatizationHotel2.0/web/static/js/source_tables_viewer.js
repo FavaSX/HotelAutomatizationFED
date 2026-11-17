@@ -52,7 +52,7 @@
   const TAB_STATUS_OPTIONS = {
     erp: [
       ['ALL', 'Todos los estados'],
-      ['unlinked', 'Solo en ERP (sin TBK)'],
+      ['unlinked', 'Solo en Borderó (sin TBK)'],
       ['matched', 'Conciliado'],
       ['diff', 'Con diferencia / otro'],
       ['modified', 'Modificadas (ver antes)'],

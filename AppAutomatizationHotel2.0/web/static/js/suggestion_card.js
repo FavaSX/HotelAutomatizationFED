@@ -19,7 +19,7 @@ const SC_FIELD_LABELS = {
   document_number: 'Documento'
 };
 const SC_RESULT_LABELS = {
-  NOT_FOUND_IN_ERP: 'No está en el ERP',
+  NOT_FOUND_IN_ERP: 'No está en el Borderó',
   AMOUNT_MISMATCH: 'Diferencia de monto',
   CARD_TYPE_MISMATCH: 'Medio de pago distinto',
   OUT_OF_PERIOD: 'Fuera de período',
@@ -134,7 +134,7 @@ function scModelClp(v) {
     cashier: erp.cashier_username || '',
     columns: [
       { title: 'Transbank', file: files.tbk || 'Abono TBK' },
-      { title: 'Borderó ERP', file: erp.excel_row ? `${erpFile} · fila ${erp.excel_row}` : erpFile }
+      { title: 'Borderó', file: erp.excel_row ? `${erpFile} · fila ${erp.excel_row}` : erpFile }
     ],
     rows: [
       { label: 'Código', values: [v.authorization_code, erp.authorization_code || '— sin código'], state: sameCode ? 'ok' : 'diff', why: why.code },
@@ -162,12 +162,12 @@ function scModelUsd(v) {
     cashier: sug.erp_cashier && sug.erp_cashier !== '—' ? sug.erp_cashier : (v.cashier_username && v.cashier_username !== '—' ? v.cashier_username : ''),
     columns: [
       { title: 'Transbank', file: files.tbk || 'Abono TBK' },
-      { title: 'ERP Hotel', file: files.erp || 'ERP' },
+      { title: 'Borderó Hotel', file: files.erp || 'Borderó' },
       { title: 'Operadora', file: files.op || 'Operadora' }
     ],
     rows: [
       { label: 'Código', values: [rAuth.tbk_value || v.authorization_code, rAuth.erp_value || '—', rAuth.op_value || '—'], state: tone(rAuth), why: why(rAuth, 'Mismo código', scCodeReason(sug) || 'Código distinto') },
-      { label: 'Cuenta / Doc.', values: ['—', shortDoc(rDoc.erp_value), shortDoc(rDoc.op_value)], state: tone(rDoc), why: why(rDoc, 'Misma cuenta ERP y Doc. Pos. Clientes', 'Cuenta ERP y Doc. Pos. Clientes distintos', scDbReason(sug)) },
+      { label: 'Cuenta / Doc.', values: ['—', shortDoc(rDoc.erp_value), shortDoc(rDoc.op_value)], state: tone(rDoc), why: why(rDoc, 'Misma cuenta Borderó y Doc. Pos. Clientes', 'Cuenta Borderó y Doc. Pos. Clientes distintos', scDbReason(sug)) },
       { label: 'Monto US$', values: [rUsd.tbk_value || scUsd(v.gross_amount_usd), '—', rUsd.op_value || '—'], state: tone(rUsd), why: why(rUsd, 'Monto exacto en dólares', `Diferencia de ${scUsd(usdGap)}`) },
       { label: 'Saldo CLP', values: ['—', rClp.erp_value || '—', rClp.op_value || '—'], state: tone(rClp), why: why(rClp, 'Mismo saldo en pesos', 'Saldo en pesos distinto') },
       { label: 'Detalle', values: [rCtx.tbk_value || v.sale_date || '—', rCtx.erp_value || '—', rCtx.op_value || '—'], state: tone(rCtx), why: why(rCtx, 'Misma fecha', 'Fecha distinta', 'Para identificar la venta') }
@@ -239,12 +239,12 @@ function scFix(v, opts) {
 
   const fieldLabel = SC_FIELD_LABELS[pc.field] || pc.field;
   const doc = scProposalDoc(pc);
-  const head = `<div class="sc-section-label">Corrección en el ERP</div><div class="sc-fix-target">${scEsc(doc)} · ${scEsc(fieldLabel)}</div>`;
+  const head = `<div class="sc-section-label">Corrección en el Borderó</div><div class="sc-fix-target">${scEsc(doc)} · ${scEsc(fieldLabel)}</div>`;
 
   if (pc.status) {
     const done = v._applyNote || (opts.mode === 'preview'
-      ? 'Aplicada. Se guarda en el ERP, con historial, al confirmar el cierre.'
-      : (pc.status === 'rejected' ? 'Rechazada. El ERP no se modificó.' : 'Aceptada y guardada en el ERP.'));
+      ? 'Aplicada. Se guarda en el Borderó, con historial, al confirmar el cierre.'
+      : (pc.status === 'rejected' ? 'Rechazada. El Borderó no se modificó.' : 'Aceptada y guardada en el Borderó.'));
     return (
       `<div class="sc-fix sc-fix-done">${head}` +
         `<div class="sc-diff"><span class="sc-old">${scEsc(scProposalOldDisplay(pc))}</span><i class="bi bi-arrow-right" aria-hidden="true"></i><span class="sc-new">${scEsc(scProposalNewDisplay(pc))}</span></div>` +
@@ -255,7 +255,7 @@ function scFix(v, opts) {
 
   const key = opts.mode === 'preview' ? `p${v.tbk_index}` : `c${v.case_id}${opts.suffix || ''}`;
   const id = `sc-input-${key}`;
-  const diffLine = `<div class="sc-diff"><span class="sc-old" title="Valor actual en el ERP">${scEsc(scProposalOldDisplay(pc))}</span><i class="bi bi-arrow-right" aria-hidden="true"></i>`;
+  const diffLine = `<div class="sc-diff"><span class="sc-old" title="Valor actual en el Borderó">${scEsc(scProposalOldDisplay(pc))}</span><i class="bi bi-arrow-right" aria-hidden="true"></i>`;
 
   if (opts.mode === 'preview') {
     return (
@@ -285,7 +285,7 @@ function scFix(v, opts) {
           `<button type="submit" formaction="${scEsc(v.reject_url)}" formnovalidate class="btn btn-outline-secondary btn-sm rounded-pill px-3 fw-semibold">Rechazar</button>` +
         `</div>` +
       `</div>` +
-      `<p class="sc-hint">Aceptar corrige el ERP con historial y vuelve a cruzar el voucher. Rechazar no toca el ERP. Puedes editar el valor nuevo.</p>` +
+      `<p class="sc-hint">Aceptar corrige el Borderó con historial y vuelve a cruzar el voucher. Rechazar no toca el Borderó. Puedes editar el valor nuevo.</p>` +
       `<div class="sc-error" role="alert" hidden></div>` +
     `</form>`
   );

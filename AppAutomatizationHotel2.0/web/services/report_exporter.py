@@ -77,8 +77,8 @@ def _write_summary_table(
 
 def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
     headers = [
-        "Fecha", "Cruce Voucher (TBK ⇄ Doc. ERP)", "Cruce Cuenta ERP ⇄ Doc. Pos. Clientes", "Cajero", "Tarjeta",
-        "Monto TBK USD", "Monto Pos. Clientes USD", "Diferencia USD", "Monto ERP CLP", "Diagnóstico",
+        "Fecha", "Cruce Voucher (TBK ⇄ Doc. Borderó)", "Cruce Cuenta Borderó ⇄ Doc. Pos. Clientes", "Cajero", "Tarjeta",
+        "Monto TBK USD", "Monto Pos. Clientes USD", "Diferencia USD", "Monto Borderó CLP", "Diagnóstico",
     ]
     write_header_row(ws, 1, headers, fill=NAVY_FILL)
 
@@ -92,8 +92,8 @@ def _populate_matched_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]
             r_idx,
             [
                 v.sale_date.strftime("%d/%m/%Y") if v.sale_date else "—",
-                f"TBK: {tbk_code} = Doc. ERP: {erp_doc}" if tbk_code else "",
-                f"Cta. ERP: {erp_acc} = Doc. PC: {op_doc}" if erp_acc else "",
+                f"TBK: {tbk_code} = Doc. Borderó: {erp_doc}" if tbk_code else "",
+                f"Cta. Borderó: {erp_acc} = Doc. PC: {op_doc}" if erp_acc else "",
                 v.cashier_username or "",
                 v.card_type.name if v.card_type else "",
                 float(v.transbank_amount),
@@ -138,7 +138,7 @@ def _populate_discrepancies_sheet(ws: Worksheet, cross_matches: List[CrossMatchR
 def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchResult]) -> None:
     headers = [
         "#", "Voucher TBK", "Tipo Discrepancia", "Tarjeta", "Monto TBK (US$)", "Fecha POS",
-        "Documento ERP", "Cuenta ERP", "Monto ERP (CLP)", "Cajero ERP",
+        "Documento Borderó", "Cuenta Borderó", "Monto Borderó (CLP)", "Cajero Borderó",
         "Doc. Pos. Clientes", "Monto Pos. Clientes (US$)", "Saldo Pos. Clientes (CLP)", "Confianza",
         "Diagnóstico Sugerido", "Motivos Coincidencia", "Nota de Auditoría",
     ]
@@ -158,7 +158,7 @@ def _populate_suggestions_sheet(ws: Worksheet, cross_matches: List[CrossMatchRes
             continue
 
         sug_count += 1
-        case_type = "Con Diferencia de Monto" if v.system_result == "AMOUNT_MISMATCH" else "En TBK pero NO en ERP"
+        case_type = "Con Diferencia de Monto" if v.system_result == "AMOUNT_MISMATCH" else "En TBK pero NO en Borderó"
         reasons_str = ", ".join(r.get("label", "") for r in sug.get("reasons", []) if isinstance(r, dict))
         confidence = sug.get("confidence", "MEDIA")
 
@@ -259,7 +259,7 @@ def generate_committed_usd_excel_bytes(process_id: int) -> io.BytesIO:
         ws_summary,
         last_usd_row + 3,
         "2. CUADRATURA EN MONEDA NACIONAL (PESOS CLP)",
-        ["Tarjeta", "Total ERP (CLP)", "Total Pos. Clientes (CLP)", "Diferencia (CLP)"],
+        ["Tarjeta", "Total Borderó (CLP)", "Total Pos. Clientes (CLP)", "Diferencia (CLP)"],
         clp_summaries,
         "TOTAL GENERAL CLP",
         CLP_FORMAT,

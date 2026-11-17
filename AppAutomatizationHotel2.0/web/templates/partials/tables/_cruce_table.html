@@ -4,13 +4,13 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light small text-uppercase text-muted">
         <tr>
-          <th class="ps-4">Cruce Vouchers (TBK &#8644; Doc. ERP)</th>
+          <th class="ps-4">Cruce Vouchers (TBK &#8644; Doc. Borderó)</th>
           {% if consolidated and filters.moneda == "ALL" %}
           <th>Cuenta / Doc. Pos. Clientes</th>
           {% elif filters.moneda == "USD" or is_usd %}
-          <th>Cruce Cuenta ERP &#8644; Doc. Pos. Clientes</th>
+          <th>Cruce Cuenta Borderó &#8644; Doc. Pos. Clientes</th>
           {% else %}
-          <th>Cuenta / Documento ERP</th>
+          <th>Cuenta / Documento Borderó</th>
           {% endif %}
           <th>Fecha</th>
           <th>Cajero</th>
@@ -35,13 +35,13 @@
       </thead>
       <tbody>
         {% for item in cruce_rows %}
-        <tr{% if item.has_erp_modifications %} class="erp-row-modified js-erp-history-row" data-history-key="{{ item.erp_history_key }}" title="Fila ERP modificada: clic para ver cómo era antes"{% endif %}>
+        <tr{% if item.has_erp_modifications %} class="erp-row-modified js-erp-history-row" data-history-key="{{ item.erp_history_key }}" title="Fila Borderó modificada: clic para ver cómo era antes"{% endif %}>
           <td class="ps-4">
             {% if item.display_erp_document and item.system_result != "NOT_FOUND_IN_ERP" and item.system_result != "OUT_OF_PERIOD" %}
             <div class="voucher-dual-pill">
               <span class="voucher-dual-tbk"><small>TBK:</small> {{ item.authorization_code|default:"—" }}</span>
               <span class="voucher-dual-equal">=</span>
-              <span class="voucher-dual-erp"><small>Doc ERP:</small> {{ item.display_erp_document }}{% if item.system_result == "MATCHED" %}<span class="voucher-check">&#10003;</span>{% else %}<i class="bi bi-exclamation-triangle-fill text-warning ms-auto flex-shrink-0" title="{{ item.result_label }}"></i>{% endif %}</span>
+              <span class="voucher-dual-erp"><small>Doc Borderó:</small> {{ item.display_erp_document }}{% if item.system_result == "MATCHED" %}<span class="voucher-check">&#10003;</span>{% else %}<i class="bi bi-exclamation-triangle-fill text-warning ms-auto flex-shrink-0" title="{{ item.result_label }}"></i>{% endif %}</span>
             </div>
             {% else %}
             <span class="font-mono fw-semibold">{{ item.authorization_code|default:"—" }}</span>
@@ -52,12 +52,12 @@
             {% with acc=item.display_account_code op=item.display_operator_document %}
             {% if acc and op %}
             <div class="doc-dual-pill">
-              <span class="doc-dual-erp"><small>Cta ERP:</small> {{ acc }}</span>
+              <span class="doc-dual-erp"><small>Cta Borderó:</small> {{ acc }}</span>
               <span class="doc-dual-equal {% if acc != op %}doc-dual-diff{% endif %}">{% if acc == op %}={% else %}&#8800;{% endif %}</span>
               <span class="doc-dual-op {% if acc != op %}doc-dual-op-diff{% endif %}"><small>Doc PC:</small> {{ op }}{% if acc == op %}<span class="doc-check">&#10003;</span>{% endif %}</span>
             </div>
             {% elif acc %}
-            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1 font-mono">Cta ERP: {{ acc }} · Sin Pos. Cliente</span>
+            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1 font-mono">Cta Borderó: {{ acc }} · Sin Pos. Cliente</span>
             {% else %}
             <span class="text-muted small">—</span>
             {% endif %}
@@ -93,7 +93,7 @@
           {% endif %}
           <td>
             <div class="d-flex flex-wrap align-items-center gap-1">
-              <span class="status-chip {{ item.result_tone }}" title="{{ item.system_observation|default:'' }}">{{ item.result_label }}</span>
+              <span class="status-chip {{ item.result_tone }}" title="{{ item.system_observation|format_observation|default:'' }}">{{ item.result_label }}</span>
               {% if item.matched_by_new_input %}
               <span class="status-chip status-info" title="{{ item.matched_new_input_title|default:'' }}">
                 <i class="bi bi-arrow-repeat"></i> {{ item.matched_new_input_label }}
@@ -103,8 +103,8 @@
               <button type="button"
                       class="status-chip status-warning erp-modified-chip js-erp-history-trigger"
                       data-history-key="{{ item.erp_history_key }}"
-                      title="Fila ERP modificada: clic para ver cómo era antes">
-                <i class="bi bi-clock-history"></i>ERP modificado{% if item.erp_modifications_count > 1 %} ({{ item.erp_modifications_count }}){% endif %}
+                      title="Fila Borderó modificada: clic para ver cómo era antes">
+                <i class="bi bi-clock-history"></i>Borderó modificado{% if item.erp_modifications_count > 1 %} ({{ item.erp_modifications_count }}){% endif %}
               </button>
               {% endif %}
             </div>

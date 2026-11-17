@@ -8,17 +8,18 @@ from ..services.clp_reconciliation import MODALITY_LABELS as CLP_MODALITY_LABELS
 from ..services.clp_report_exporter import _split_status_detail
 from ..services.erp_editing import OPEN_STATUS_CODES
 from ..services.suggestion_actions import load_suggestion
+from ..templatetags.currency_filters import _normalize_bordero_text
 from ..models import CrossMatchResult, ReconciliationProcess
 
 
 EXCEPTION_LABELS = {
     "AMOUNT_MISMATCH": "Con diferencia de monto",
-    "NOT_FOUND_IN_ERP": "No ubicada en ERP",
+    "NOT_FOUND_IN_ERP": "No ubicada en Borderó",
 }
 
 USD_DEFAULT_ACTIONS = {
-    "AMOUNT_MISMATCH": "Revisar diferencia entre Transbank, ERP y Posición por Clientes",
-    "NOT_FOUND_IN_ERP": "Buscar la venta en el ERP y registrarla o verificar su código",
+    "AMOUNT_MISMATCH": "Revisar diferencia entre Transbank, Borderó y Posición por Clientes",
+    "NOT_FOUND_IN_ERP": "Buscar la venta en el Borderó y registrarla o verificar su código",
 }
 
 CLP_EXCEPTION_LABELS = {
@@ -111,7 +112,7 @@ def _pending_by_cashier(pending):
     return sorted(
         (
             {
-                "name": name or "Sin cajero (no está en ERP)",
+                "name": name or "Sin cajero (no está en Borderó)",
                 "is_unassigned": name is None,
                 "count": count,
                 "pct": round(count / max_cashier * 100) if max_cashier else 0,
@@ -126,7 +127,7 @@ def _classify_usd_error(item):
     """Maps a pending USD CrossMatchResult to a granular error type label and suggested action."""
     suggestion = load_suggestion(item)
     headline = (suggestion.get("headline") or "") if suggestion else ""
-    action = (suggestion.get("action") or "").strip() if suggestion else ""
+    action = _normalize_bordero_text((suggestion.get("action") or "").strip()) if suggestion else ""
     headline_lower = headline.lower()
 
     if item.system_result == "NOT_FOUND_IN_ERP":
@@ -135,11 +136,11 @@ def _classify_usd_error(item):
             if suggestion.get("db_match") or "venta pendiente en bd" in headline_lower:
                 label = "Venta previa en BD"
             elif "dividido" in headline_lower:
-                label = "Factura dividida en ERP"
-            elif "no facturado en erp" in headline_lower:
-                label = "En Pos. Clientes (falta en ERP)"
+                label = "Factura dividida en Borderó"
+            elif "no facturado en erp" in headline_lower or "no facturado en borderó" in headline_lower:
+                label = "En Pos. Clientes (falta en Borderó)"
             elif "sin código" in headline_lower or proposed_old in ("", "—"):
-                label = "Falta código en ERP"
+                label = "Falta código en Borderó"
             else:
                 label = "Error de tipeo"
         else:
@@ -175,7 +176,8 @@ def _classify_usd_error(item):
 
 def _classify_clp_error(item):
     _, error_type, action = _split_status_detail(item.system_status_detail)
-    return error_type or _exception_label(CLP_EXCEPTION_LABELS, item.system_result), action
+    label = _normalize_bordero_text(error_type) if error_type else _exception_label(CLP_EXCEPTION_LABELS, item.system_result)
+    return label, _normalize_bordero_text(action)
 
 
 def classify_exception_error(item, currency=None):

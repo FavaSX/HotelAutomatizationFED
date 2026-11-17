@@ -6,7 +6,7 @@
 <div id="processingOverlay">
   <div class="spinner-border text-warning mb-3 processing-spinner" role="status"></div>
   <h4 class="fw-bold mb-1">Analizando Conciliación en Dólares...</h4>
-  <p class="text-white-50 mb-0">Cruzando ERP vs. Transbank vs. Posición por Clientes en memoria. No se guardará nada hasta su confirmación.</p>
+  <p class="text-white-50 mb-0">Cruzando Borderó vs. Transbank vs. Posición por Clientes en memoria. No se guardará nada hasta su confirmación.</p>
 </div>
 
 <!-- Header -->
@@ -99,7 +99,7 @@
         <h5 class="fw-bold mb-1">Arrastre aquí los 7 archivos Excel o haga clic para seleccionarlos</h5>
         <p class="text-muted small mb-3">
           El sistema identificará automáticamente cuál corresponde a
-          <strong>ERP Hotel, Transbank, Cartola Bancaria y los 4 archivos de Posición por Clientes (Visa, MasterCard, American Express y Diners Club)</strong>.
+          <strong>Borderó Hotel, Transbank, Cartola Bancaria y los 4 archivos de Posición por Clientes (Visa, MasterCard, American Express y Diners Club)</strong>.
         </p>
         <span class="btn btn-brand rounded-pill px-4 py-2 fw-semibold shadow-sm">
           <i class="bi bi-folder2-open me-1"></i> Seleccionar Archivos (.xls / .xlsx)
@@ -140,7 +140,7 @@
             </span>
             <div>
               <h6 class="fw-bold mb-0">Archivos Principales de Conciliación (3)</h6>
-              <small class="text-muted">Borderó ERP Hotel, Liquidación de Abonos Transbank y Cartola Bancaria</small>
+              <small class="text-muted">Borderó Hotel, Liquidación de Abonos Transbank y Cartola Bancaria</small>
             </div>
           </div>
           <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1 rounded-pill">
@@ -216,5 +216,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/usd_upload.js' %}?v=12"></script>
+<script src="{% static 'js/usd_upload.js' %}?v=13"></script>
 {% endblock %}

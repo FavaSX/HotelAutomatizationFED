@@ -16,7 +16,7 @@ from .excel_parsers import read_excel_or_html_df
 
 
 USD_REQUIRED_ROLES: List[Dict[str, str]] = [
-    {"role_key": "erp", "input_name": "usd_erp_file", "role_label": "1. Consolidado ERP Hotel", "badge": "ERP", "badge_class": "bg-primary"},
+    {"role_key": "erp", "input_name": "usd_erp_file", "role_label": "1. Consolidado Borderó Hotel", "badge": "Borderó", "badge_class": "bg-primary"},
     {"role_key": "transbank", "input_name": "usd_transbank_file", "role_label": "2. Liquidación Abonos TBK", "badge": "TBK", "badge_class": "bg-info text-dark"},
     {"role_key": "bank", "input_name": "usd_bank_file", "role_label": "3. Cartola Bancaria", "badge": "BANCO", "badge_class": "bg-success"},
     {"role_key": "amex", "input_name": "usd_amex_file", "role_label": "4. American Express (USD)", "badge": "AX", "badge_class": "bg-dark"},
@@ -128,7 +128,7 @@ def inspect_single_excel_file(uploaded_file, file_index: int) -> Dict[str, Any]:
             res = _build_result(
                 "erp",
                 "HIGH",
-                "'HOTELERA SAN FRANCISCO S.A' + Códigos de tarjeta ERP (AME$, VIS$, MAS$, DIN$)",
+                "'HOTELERA SAN FRANCISCO S.A' + Códigos de tarjeta del Borderó (AME$, VIS$, MAS$, DIN$)",
             )
             res["_erp_stats"] = extract_bordero_df_stats(dataframe)
             return res
@@ -238,7 +238,7 @@ def align_inspected_files(inspected_files: List[Dict[str, Any]], required_roles:
 # ==============================================================================
 
 CLP_REQUIRED_ROLES: List[Dict[str, str]] = [
-    {"role_key": "erp", "input_name": "clp_erp_file", "role_label": "1. Borderó ERP Hotel", "badge": "ERP", "badge_class": "bg-primary"},
+    {"role_key": "erp", "input_name": "clp_erp_file", "role_label": "1. Borderó Hotel", "badge": "Borderó", "badge_class": "bg-primary"},
     {"role_key": "bank", "input_name": "clp_bank_file", "role_label": "2. Cartola Bancaria (Pesos)", "badge": "BANCO", "badge_class": "bg-success"},
     {"role_key": "tbk", "input_name": "clp_tbk_file", "role_label": "3. Abono(s) Transbank CLP", "badge": "TBK", "badge_class": "bg-info text-dark"},
 ]

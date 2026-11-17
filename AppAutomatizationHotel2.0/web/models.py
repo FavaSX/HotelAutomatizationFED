@@ -431,7 +431,7 @@ class CrossMatchResult(models.Model):
             return erp_doc
         op_doc = self.display_operator_document
         if erp_doc and op_doc:
-            return erp_doc if erp_doc == op_doc else f"ERP: {erp_doc} / PC: {op_doc}"
+            return erp_doc if erp_doc == op_doc else f"Borderó: {erp_doc} / PC: {op_doc}"
         if erp_doc:
             return erp_doc
         if op_doc:

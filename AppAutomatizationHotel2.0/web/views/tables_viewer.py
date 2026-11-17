@@ -116,9 +116,9 @@ def consolidated_erp_view(request):
     return _render_consolidated(
         request,
         tab_key="erp",
-        title="Borderó ERP Consolidado",
-        subtitle="Todos los movimientos cargados en el Borderó ERP a lo largo de las conciliaciones guardadas, incluyendo registros sin voucher Transbank.",
-        badge_label="Borderó ERP",
+        title="Borderó Consolidado",
+        subtitle="Todos los movimientos cargados en el Borderó a lo largo de las conciliaciones guardadas, incluyendo registros sin voucher Transbank.",
+        badge_label="Borderó",
         badge_icon="bi-building",
         reset_url_name="consolidated_erp",
         builder=lambda req: build_erp_view_data(req, process=None, per_page=PAGE_SIZE_ROWS),
@@ -327,7 +327,7 @@ def _closing_resumen_context(process: ReconciliationProcess) -> Dict[str, Any]:
         ]
 
     source_files = [
-        ("Borderó ERP", process.erp_file_name),
+        ("Borderó", process.erp_file_name),
         ("Cartola Bancaria", process.bank_statement_file_name),
         ("Transbank General (USD)", process.transbank_general_file_name),
         ("Transbank Crédito", process.transbank_credit_file_name),

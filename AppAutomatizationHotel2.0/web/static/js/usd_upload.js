@@ -259,7 +259,7 @@ function renderAlignmentTable(data) {
             <select class="form-select form-select-sm role-file-select" id="select_${safeRoleKey}" data-role-key="${safeRoleKey}" onchange="onManualAlignmentChange()">
               ${optionsHtml}
             </select>
-            <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir archivo principal ERP">
+            <label class="btn btn-outline-primary btn-sm rounded-pill px-3 text-nowrap mb-0" title="Subir archivo principal del Borderó">
               <i class="bi bi-upload me-1"></i>Subir
               <input type="file" class="d-none" accept=".xls,.xlsx" onchange="uploadSingleFileForRole('${safeRoleKey}', this)">
             </label>
@@ -400,7 +400,7 @@ function renderExtraErpWidgets() {
   renderExtraFilesWidget({
     containerId: 'extraErpContainer',
     indices: extraErpIndices,
-    label: 'ERP',
+    label: 'Borderó',
     iconClass: 'text-primary',
     removeFn: 'removeExtraErpFile',
     addFn: 'addExtraErpFileFromSelect',
@@ -456,7 +456,7 @@ async function uploadExtraErpFile(inputElem) {
     validateCurrentAlignmentSelection();
   } catch (err) {
     console.error(err);
-    notify('No se pudo subir el archivo ERP adicional.', 'error');
+    notify('No se pudo subir el archivo adicional del Borderó.', 'error');
   }
 }
 

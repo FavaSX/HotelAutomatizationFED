@@ -7,12 +7,12 @@
 <section id="erpPrecheckGate" class="precheck mb-1" aria-labelledby="erpPrecheckTitle">
   <header class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div class="min-w-0">
-      <div class="eyebrow mb-1"><i class="bi bi-database-check me-1"></i>Paso previo · Cobertura ERP en base de datos</div>
+      <div class="eyebrow mb-1"><i class="bi bi-database-check me-1"></i>Paso previo · Cobertura de Borderó en base de datos</div>
       <h2 id="erpPrecheckTitle" class="h5 fw-bold mb-0">Verifique el rango ideal del Borderó antes de subir los archivos</h2>
     </div>
     {% if not erp_coverage.has_data %}
     <span class="status-chip status-warning">
-      <i class="bi bi-database-exclamation"></i>BD ERP vacía (primera carga)
+      <i class="bi bi-database-exclamation"></i>BD de Borderó vacía (primera carga)
     </span>
     {% endif %}
   </header>
@@ -35,7 +35,7 @@
         </p>
         {% endif %}
         {% else %}
-        <div class="precheck-range">Sin movimientos ERP cargados todavía</div>
+        <div class="precheck-range">Sin movimientos de Borderó cargados todavía</div>
         <p class="small text-muted mb-0">
           Para evitar períodos faltantes y contar con un rango mínimo/máximo sólido, cargue el
           <strong class="text-body">año completo {{ erp_coverage.today.year }}</strong> o incluya <strong class="text-body">1 a 2 años anteriores</strong>.

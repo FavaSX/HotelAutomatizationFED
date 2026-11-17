@@ -39,15 +39,15 @@ def _compute_code_similarity(tbk_code: Any, erp_code: Any) -> Tuple[float, Optio
         diffs = [(ca, cb) for ca, cb in zip(raw_a, raw_b) if ca != cb]
         if len(diffs) == 1:
             ca, cb = diffs[0]
-            return max(best_ratio, 0.92), f"Cód. Similar en ERP: {erp_code} (tipeo {ca} por {cb})"
+            return max(best_ratio, 0.92), f"Cód. Similar en Borderó: {erp_code} (tipeo {ca} por {cb})"
         if len(diffs) == 2 and best_ratio >= 0.60:
             pairs = ", ".join(f"{ca} por {cb}" for ca, cb in diffs)
-            return max(best_ratio, 0.80), f"Cód. Similar en ERP: {erp_code} (tipeo {pairs})"
+            return max(best_ratio, 0.80), f"Cód. Similar en Borderó: {erp_code} (tipeo {pairs})"
 
     if abs(len(raw_a) - len(raw_b)) == 1 and best_ratio >= 0.80:
-        return best_ratio, f"Cód. Similar en ERP: {erp_code} (1 carácter omitido/extra)"
+        return best_ratio, f"Cód. Similar en Borderó: {erp_code} (1 carácter omitido/extra)"
     if best_ratio >= 0.65:
-        return best_ratio, f"Cód. Similar en ERP: {erp_code} ({int(round(best_ratio * 100))}% similitud)"
+        return best_ratio, f"Cód. Similar en Borderó: {erp_code} ({int(round(best_ratio * 100))}% similitud)"
     return best_ratio, None
 
 
@@ -71,7 +71,7 @@ def _build_standard_comparison_rows(
     """Builds the 5-row side-by-side comparison matrix across Transbank, ERP, and Card Operator."""
     return [
         _comp_row(tbk_auth, erp_auth, op_auth, auth_tone),
-        _comp_row("— (No incluye Doc ERP)", erp_doc_str, op_doc_str, doc_tone),
+        _comp_row("— (No incluye Doc Borderó)", erp_doc_str, op_doc_str, doc_tone),
         _comp_row(fmt_usd(tbk_usd), "— (Facturado en CLP)", op_usd_str, usd_tone),
         _comp_row("— (Liquidado en US$)", erp_clp_str, op_clp_str, clp_tone),
         _comp_row(tbk_context, erp_context, op_context, context_tone),
@@ -130,16 +130,16 @@ def _enrich_discrepancy_voucher(
             reasons.extend([
                 _chip(f"Monto US$ Exacto ({fmt_usd(cand_usd)})" if usd_var < 0.01 else f"Monto US$ Cercano ({fmt_usd(cand_usd)} · Dif: {fmt_usd(usd_var)})", "emerald"),
                 _chip(f"Misma Tarjeta ({card_code})", "purple"),
-                _chip(f"Doc. Pos. Clientes {op_doc} vs Cta. ERP {acc_num}", "gold"),
+                _chip(f"Doc. Pos. Clientes {op_doc} vs Cta. Borderó {acc_num}", "gold"),
             ])
             disc["suggestion"] = {
                 "confidence": "ALTA" if best_score >= 90 else "MEDIA",
                 "headline": f"Registro hallado en Posición por Clientes bajo Doc. {op_doc}",
-                "action": f"Validar Doc. {op_doc} en Posición por Clientes y vincular con Cta. ERP {acc_num}",
+                "action": f"Validar Doc. {op_doc} en Posición por Clientes y vincular con Cta. Borderó {acc_num}",
                 "files_involved": files_for_card(card_code),
                 "erp_cashier": cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date_val,
                 "manual_check_note": (
-                    f"El voucher {auth_code} sí está en el ERP (Cta. {acc_num}, Doc. {erp_doc_code}, cajero '{cashier}'), "
+                    f"El voucher {auth_code} sí está en el Borderó (Cta. {acc_num}, Doc. {erp_doc_code}, cajero '{cashier}'), "
                     f"pero no cruzó en Nivel 1 porque en '{op_file_label}' fue registrado con el Doc. {op_doc}. "
                     f"Sin embargo, el Saldo CLP ({fmt_clp(erp_clp)}) es 100% idéntico y el monto USD ({fmt_usd(cand_usd)} "
                     f"vs {fmt_usd(tbk_usd)}) varía solo en {fmt_usd(usd_var)}. Valide manualmente ambos folios."
@@ -162,17 +162,17 @@ def _enrich_discrepancy_voucher(
     if op_usd == 0.0 and erp_clp > 0 and "SALDO" in obs.upper():
         disc["suggestion"] = {
             "confidence": "ALTA",
-            "headline": f"Vinculado por Cta. ERP {acc_num} y Saldo CLP (Col. USD en 0,00 en Posición por Clientes)",
-            "action": f"Verificar columna USD en Posición por Clientes para Doc. {op_doc_display} (Cta. ERP {acc_num}); saldo CLP cuadra exactamente",
+            "headline": f"Vinculado por Cta. Borderó {acc_num} y Saldo CLP (Col. USD en 0,00 en Posición por Clientes)",
+            "action": f"Verificar columna USD en Posición por Clientes para Doc. {op_doc_display} (Cta. Borderó {acc_num}); saldo CLP cuadra exactamente",
             "files_involved": files_for_card(card_code),
             "erp_cashier": cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date_val,
             "manual_check_note": (
-                f"La Cuenta ERP {acc_num} (Doc. {erp_doc_code}, cajero '{cashier}') coincide exactamente en "
+                f"La Cuenta Borderó {acc_num} (Doc. {erp_doc_code}, cajero '{cashier}') coincide exactamente en "
                 f"Saldo Corregido CLP ({fmt_clp(erp_clp)}) con Doc. {op_doc_display} en '{op_file_label}', pero la columna "
                 f"Moneda Extranjera (US$) viene en 0,00 en el archivo de Posición por Clientes."
             ),
             "reasons": [
-                _chip(f"Cta. ERP {acc_num} = Doc. Pos. Clientes ({op_doc_display})", "cyan"),
+                _chip(f"Cta. Borderó {acc_num} = Doc. Pos. Clientes ({op_doc_display})", "cyan"),
                 _chip(f"Saldo CLP Exacto ({fmt_clp(erp_clp)})", "emerald"),
                 _chip(f"Documento / Autorización ({erp_doc_code})", "emerald"),
                 _chip("Col. USD en 0,00 en Pos. Clientes", "gold"),
@@ -193,8 +193,8 @@ def _enrich_discrepancy_voucher(
     if op_usd > 0.0:
         is_small_diff = abs(diff_usd) <= 5.0
         reasons = [
-            _chip(f"Voucher TBK = Doc. ERP ({erp_doc_code})", "emerald"),
-            _chip(f"Cta. ERP {acc_num} = Doc. Pos. Clientes ({op_doc_display})", "cyan"),
+            _chip(f"Voucher TBK = Doc. Borderó ({erp_doc_code})", "emerald"),
+            _chip(f"Cta. Borderó {acc_num} = Doc. Pos. Clientes ({op_doc_display})", "cyan"),
         ]
         if erp_clp > 0 and abs(erp_clp - op_clp) <= 10:
             reasons.append(_chip(f"Saldo CLP Exacto ({fmt_clp(erp_clp)})", "emerald"))
@@ -209,8 +209,8 @@ def _enrich_discrepancy_voucher(
         disc["suggestion"] = {
             "confidence": "ALTA" if is_small_diff else "MEDIA",
             "headline": (
-                f"Cruce confirmado por Cta. ERP {acc_num} / Doc. {op_doc_display} y Saldo CLP (Dif. cambiaria {fmt_usd(abs(diff_usd))})"
-                if is_small_diff else f"Cruce parcial en Cta. ERP {acc_num} — Saldo CLP cuadra en {fmt_clp(erp_clp)}"
+                f"Cruce confirmado por Cta. Borderó {acc_num} / Doc. {op_doc_display} y Saldo CLP (Dif. cambiaria {fmt_usd(abs(diff_usd))})"
+                if is_small_diff else f"Cruce parcial en Cta. Borderó {acc_num} — Saldo CLP cuadra en {fmt_clp(erp_clp)}"
             ),
             "action": (
                 f"Ajustar diferencia cambiaria de {fmt_usd(abs(diff_usd))} entre POS Transbank y Posición por Clientes (Cta. {acc_num})"
@@ -219,8 +219,8 @@ def _enrich_discrepancy_voucher(
             "files_involved": files_for_card(card_code),
             "erp_cashier": cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date_val,
             "manual_check_note": (
-                f"Tanto el Documento ({erp_doc_code}), la Cuenta ERP ({acc_num}) / Doc. Pos. Clientes ({op_doc_display}) como el Saldo CLP ({fmt_clp(erp_clp)}) "
-                f"coinciden al 100% entre ERP y '{op_file_label}'. La diferencia de {fmt_usd(abs(diff_usd))} "
+                f"Tanto el Documento ({erp_doc_code}), la Cuenta Borderó ({acc_num}) / Doc. Pos. Clientes ({op_doc_display}) como el Saldo CLP ({fmt_clp(erp_clp)}) "
+                f"coinciden al 100% entre Borderó y '{op_file_label}'. La diferencia de {fmt_usd(abs(diff_usd))} "
                 f"entre Transbank ({fmt_usd(tbk_usd)}) y Posición por Clientes ({fmt_usd(op_usd)}) debe verificarse manualmente."
             ),
             "reasons": reasons,
@@ -284,7 +284,7 @@ def _collect_orphan_erp_op_proposals(
                 reasons = [_chip(f"Monto US$ Exacto ({fmt_usd(op_usd)})" if usd_diff < 0.01 else f"Monto US$ Cercano ({fmt_usd(op_usd)})", "emerald")]
                 if typo_badge:
                     reasons.append(_chip(typo_badge, "gold"))
-                reasons.append(_chip(f"Cta. ERP {erp_acc} = Doc. Pos. Clientes ({op_doc})" if same_doc else f"Cta. ERP {erp_acc} / Doc. PC {op_doc}", "cyan"))
+                reasons.append(_chip(f"Cta. Borderó {erp_acc} = Doc. Pos. Clientes ({op_doc})" if same_doc else f"Cta. Borderó {erp_acc} / Doc. PC {op_doc}", "cyan"))
                 if same_clp:
                     reasons.append(_chip(f"Saldo CLP Exacto ({fmt_clp(erp_clp)})", "emerald"))
                 if same_date:
@@ -294,16 +294,16 @@ def _collect_orphan_erp_op_proposals(
                 erp_match_code = f"Doc. {erp_auth}" if erp_auth else "Sin código"
                 suggestion_payload = {
                     "confidence": "ALTA" if score >= 120 else "MEDIA",
-                    "headline": f"Coincidencia sugerida en ERP y Posición por Clientes ({erp_match_code})",
-                    "action": f"Corregir Documento en ERP de '{erp_auth or 'sin código'}' a '{auth_code}' (Cta. {erp_acc})",
+                    "headline": f"Coincidencia sugerida en Borderó y Posición por Clientes ({erp_match_code})",
+                    "action": f"Corregir Documento en Borderó de '{erp_auth or 'sin código'}' a '{auth_code}' (Cta. {erp_acc})",
                     "files_involved": files_for_card(card_code),
                     "erp_cashier": erp_cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": erp_date,
                     "manual_check_note": (
-                        f"El voucher de Transbank '{auth_code}' no cruzó de forma directa porque en el ERP Hotel "
+                        f"El voucher de Transbank '{auth_code}' no cruzó de forma directa porque en el Borderó "
                         f"(Cta. {erp_acc}, Factura {erp_invoice}) el cajero '{erp_cashier}' "
                         f"digitó el Documento como '{erp_auth}'. Sin embargo, el monto en dólares ({fmt_usd(op_usd)}), "
                         f"el saldo en pesos ({fmt_clp(erp_clp)}), la tarjeta ({card_code}) y la fecha ({erp_date}) "
-                        f"coinciden entre los archivos. Verifique manualmente la Cta. {erp_acc} en el ERP."
+                        f"coinciden entre los archivos. Verifique manualmente la Cta. {erp_acc} en el Borderó."
                     ),
                     "reasons": reasons,
                     "comparison_rows": _build_standard_comparison_rows(
@@ -376,19 +376,19 @@ def _enrich_unassigned_orphan(
                 if best_badge:
                     reasons.append(_chip(best_badge, "gold"))
                 reasons.extend([
-                    _chip(f"Factura Dividida en ERP (2 cargos = {fmt_clp(sum_clp)})", "emerald"),
+                    _chip(f"Factura Dividida en Borderó (2 cargos = {fmt_clp(sum_clp)})", "emerald"),
                     _chip(f"Misma Cuenta ({acc1})" if same_account else f"Cuentas {acc1} / {acc2}", "cyan"),
                     _chip(f"Misma Fecha ({sale_date})", "cyan"),
                 ])
                 orph["suggestion"] = {
                     "confidence": "ALTA",
-                    "headline": f"Posible voucher dividido en 2 facturas ERP ({accts_label})",
-                    "action": f"Unir facturas {inv1} y {inv2} ({accts_label}, {fmt_clp(sum_clp)} CLP) bajo voucher {auth_code} en ERP",
+                    "headline": f"Posible voucher dividido en 2 facturas Borderó ({accts_label})",
+                    "action": f"Unir facturas {inv1} y {inv2} ({accts_label}, {fmt_clp(sum_clp)} CLP) bajo voucher {auth_code} en Borderó",
                     "files_involved": files_for_card(card_code),
                     "erp_cashier": split_cashier, "erp_card": f"{card_name} ({card_code})", "erp_date": sale_date,
                     "manual_check_note": (
                         f"El voucher de Transbank '{auth_code}' por {fmt_usd(tbk_usd)} corresponde a la suma "
-                        f"exacta de 2 registros en el ERP Hotel ({accts_label}) "
+                        f"exacta de 2 registros en el Borderó ({accts_label}) "
                         f"en la misma fecha ({sale_date}): Cta. {acc1} / Fact. {inv1} ({fmt_clp(e1.get('amount'))}) y "
                         f"Cta. {acc2} / Fact. {inv2} ({fmt_clp(e2.get('amount'))}), totalizando {fmt_clp(sum_clp)} CLP."
                     ),
@@ -422,24 +422,24 @@ def _enrich_unassigned_orphan(
         op_match_str = f"Cód. {op_auth_match}" if op_auth_match else f"Monto {fmt_usd(op_usd)}"
         orph["suggestion"] = {
             "confidence": "MEDIA",
-            "headline": f"Ubicado en Posición por Clientes ({op_match_str}) — No facturado en ERP",
-            "action": f"Ingresar cobro de Doc. {op_doc} ({fmt_usd(tbk_usd)}) en ERP Hotel o verificar omisión de facturación",
+            "headline": f"Ubicado en Posición por Clientes ({op_match_str}) — No facturado en Borderó",
+            "action": f"Ingresar cobro de Doc. {op_doc} ({fmt_usd(tbk_usd)}) en Borderó o verificar omisión de facturación",
             "files_involved": files_for_card(card_code),
             "manual_check_note": (
                 f"El voucher '{auth_code}' ({fmt_usd(tbk_usd)}) fue localizado en Posición por Clientes bajo el Doc. {op_doc} "
-                f"con un saldo equivalente de {fmt_clp(op_clp)} CLP, pero ese folio no aparece en el ERP Hotel. "
+                f"con un saldo equivalente de {fmt_clp(op_clp)} CLP, pero ese folio no aparece en el Borderó. "
                 f"Revise manualmente si el número de cuenta/documento fue truncado o facturado en el período siguiente."
             ),
             "reasons": [
                 _chip(f"Monto US$ Exacto en Pos. Clientes ({fmt_usd(op_usd)})", "emerald"),
                 _chip(f"Saldo Pos. Clientes ({fmt_clp(op_clp)})", "cyan"),
                 _chip(f"Misma Tarjeta ({card_code})", "purple"),
-                _chip(f"Doc. Pos. Clientes {op_doc} ausente en ERP", "gold"),
+                _chip(f"Doc. Pos. Clientes {op_doc} ausente en Borderó", "gold"),
             ],
             "comparison_rows": _build_standard_comparison_rows(
-                tbk_auth=auth_code, erp_auth="— (No figura en ERP)",
+                tbk_auth=auth_code, erp_auth="— (No figura en Borderó)",
                 op_auth=exact_op.get("authorization_code") or "— (Sin cód. en origen)", auth_tone="gold",
-                erp_doc_str="— (Sin cuenta ERP asociada)", op_doc_str=f"Doc. {op_doc}", doc_tone="cyan",
+                erp_doc_str="— (Sin cuenta Borderó asociada)", op_doc_str=f"Doc. {op_doc}", doc_tone="cyan",
                 tbk_usd=tbk_usd, op_usd_str=fmt_usd(op_usd), usd_tone="emerald",
                 erp_clp_str="—", op_clp_str=fmt_clp(op_clp), clp_tone="cyan",
                 tbk_context=f"Tarjeta: {masked_card} · {sale_date}", erp_context="—",
@@ -547,14 +547,14 @@ def _find_db_suggestion_for_orphan(
         _chip(f"💾 Venta pendiente en Base de Datos (Proceso #{db_proc_id})", "purple"),
     ]
     if same_code and auth_code == db_auth:
-        reasons.append(_chip(f"Documento ERP Exacto ({db_auth})", "emerald"))
+        reasons.append(_chip(f"Documento Borderó Exacto ({db_auth})", "emerald"))
     elif typo_badge:
         reasons.append(_chip(typo_badge, "gold"))
     if same_doc:
-        reasons.append(_chip(f"Cta. ERP {db_acc} = Doc. Pos. Clientes ({op_doc})", "cyan"))
+        reasons.append(_chip(f"Cta. Borderó {db_acc} = Doc. Pos. Clientes ({op_doc})", "cyan"))
     if same_clp:
         reasons.append(_chip(f"Saldo CLP Coincide ({fmt_clp(db_clp)})", "emerald"))
-    reasons.append(_chip(f"Fecha Venta ERP: {db_date}", "cyan"))
+    reasons.append(_chip(f"Fecha Venta Borderó: {db_date}", "cyan"))
 
     headline = f"Venta pendiente en BD (Proceso #{db_proc_id} · {db_proc_period})"
     action = f"Vincular con venta pendiente de BD Proceso #{db_proc_id} (Cta. {db_acc}, Factura {db_inv})"

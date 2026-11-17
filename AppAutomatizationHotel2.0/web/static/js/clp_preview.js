@@ -159,7 +159,7 @@ function renderClpModalSuggestionsPage() {
               `<td><span class="badge bg-dark">${escapeHtmlStr(v.modality_label)}</span> <small class="text-muted">${escapeHtmlStr(v.card_name || '')}</small></td>` +
               `<td>${escapeHtmlStr(v.sale_date || '—')}</td>` +
               `<td class="text-end fw-bold">${escapeHtmlStr(formatClpClient(v.tbk_amount))}</td>` +
-              `<td class="pe-3 small text-muted"><i class="bi bi-slash-circle text-warning me-1"></i>${escapeHtmlStr(v.action || 'Sin coincidencia en Borderó ERP (no existe cobro con ese monto o código similar en el archivo cargado).')}</td>` +
+              `<td class="pe-3 small text-muted"><i class="bi bi-slash-circle text-warning me-1"></i>${escapeHtmlStr(v.action || 'Sin coincidencia en Borderó (no existe cobro con ese monto o código similar en el archivo cargado).')}</td>` +
             `</tr>`
           );
         }).join('');

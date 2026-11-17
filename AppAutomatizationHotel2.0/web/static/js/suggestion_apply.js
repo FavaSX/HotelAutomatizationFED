@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!previewCorrectionsApplied) return;
       const n = previewCorrectionsApplied;
       try {
-        sessionStorage.setItem(PREVIEW_NOTICE_KEY, `${n} corrección${n === 1 ? '' : 'es'} aplicada${n === 1 ? '' : 's'}. El cruce y los totales ya las incluyen; se guardan en el ERP al confirmar el cierre.`);
+        sessionStorage.setItem(PREVIEW_NOTICE_KEY, `${n} corrección${n === 1 ? '' : 'es'} aplicada${n === 1 ? '' : 's'}. El cruce y los totales ya las incluyen; se guardan en el Borderó al confirmar el cierre.`);
       } catch (e) { /* storage blocked: no notice */ }
       window.location.reload();
     });
