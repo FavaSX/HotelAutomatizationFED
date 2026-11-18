@@ -4585,7 +4585,7 @@ class WrongFileInErpBoxTests(TestCase):
         }, follow=True)
         self.assertRedirects(response, reverse("clp_upload"))
         self.assertContains(response, "cartola.xlsx")
-        self.assertContains(response, "Borderó ERP Hotel")
+        self.assertContains(response, "Borderó Hotel")
         from .views.common import CLP_SESSION_KEY
         self.assertNotIn(CLP_SESSION_KEY, self.client.session)
 
