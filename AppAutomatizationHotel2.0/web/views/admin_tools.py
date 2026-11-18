@@ -1,5 +1,7 @@
 """Administration utilities: reconciliation tolerance settings and test database cleanup."""
 
+import hmac
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import connection, transaction
@@ -48,21 +50,30 @@ def _clear_reconciliation_tables() -> int:
     return process_count
 
 
+CLEAR_DB_KEY = "borrarbd"
+
+
 @login_required(login_url="login")
 def clear_test_database_view(request):
     """
-    Temporary testing utility: deletes all ReconciliationProcess records and all
-    associated transaction/summary/validation tables while keeping catalog tables intact.
+    Deletes all ReconciliationProcess records and all associated transaction/summary/validation
+    tables while keeping catalog and user tables intact. Requires an authenticated user and
+    confirmation key.
     """
     if request.method == "POST":
+        entered_key = (request.POST.get("confirm_key") or "").strip()
+        if not hmac.compare_digest(entered_key, CLEAR_DB_KEY):
+            messages.error(request, "Clave incorrecta.")
+            return redirect("settings")
+
         process_count = _clear_reconciliation_tables()
         for session_key in (USD_SESSION_KEY, CLP_SESSION_KEY):
             request.session.pop(session_key, None)
         messages.warning(
             request,
-            f"Base de datos de pruebas limpiada: se eliminaron {process_count} proceso(s) y todas sus transacciones asociadas."
+            f"Base de datos limpiada: se eliminaron {process_count} proceso(s) y todas sus transacciones asociadas."
         )
-    return redirect("clp_upload" if request.POST.get("next") == "clp_upload" else "usd_upload")
+    return redirect("settings")
 
 
 @login_required(login_url="login")

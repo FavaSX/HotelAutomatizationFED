@@ -2297,7 +2297,7 @@ class UserManagementTests(TestCase):
             f"{reverse('login')}?next={reverse('users_manage')}",
         )
 
-        # Standard user has access to general app + Configuración + Vaciar BD Pruebas,
+        # Standard user has access to general app + Configuración (incl. Nothing),
         # and only Gestión de Usuarios is restricted to superadmin
         self.client.force_login(self.standard)
         dash = self.client.get(reverse("dashboard"))
@@ -2307,11 +2307,23 @@ class UserManagementTests(TestCase):
         self.assertNotContains(dash, "Base de Datos (Admin)")
         self.assertNotContains(dash, "/admin/")
         self.assertEqual(self.client.get("/admin/").status_code, 404)
-        self.assertEqual(self.client.get(reverse("settings")).status_code, 200)
+
+        settings_page = self.client.get(reverse("settings"))
+        self.assertEqual(settings_page.status_code, 200)
+        self.assertContains(settings_page, "Nothing")
+        self.assertContains(settings_page, reverse("clear_test_db"))
 
         upload_clp = self.client.get(reverse("clp_upload"))
-        self.assertContains(upload_clp, "Vaciar BD Pruebas")
-        self.assertRedirects(self.client.post(reverse("clear_test_db"), {"next": "clp_upload"}), reverse("clp_upload"))
+        self.assertNotContains(upload_clp, "Vaciar BD Pruebas")
+        self.assertNotContains(upload_clp, "clearTestDbModal")
+        upload_usd = self.client.get(reverse("usd_upload"))
+        self.assertNotContains(upload_usd, "Vaciar BD Pruebas")
+        self.assertNotContains(upload_usd, "clearTestDbModal")
+
+        self.assertRedirects(
+            self.client.post(reverse("clear_test_db"), {"confirm_key": "borrarbd"}),
+            reverse("settings"),
+        )
 
         self.assertRedirects(self.client.get(reverse("users_manage")), reverse("dashboard"))
         self.assertRedirects(
@@ -3106,10 +3118,24 @@ class ErpCoverageAndDbCrossMatchTests(TestCase):
             for i in range(35000)
         ]
         ErpTransaction.objects.bulk_create(bulk_rows, batch_size=1000)
-        self.assertGreater(ErpTransaction.all_objects.count(), 35000)
+        before_count = ErpTransaction.all_objects.count()
+        self.assertGreater(before_count, 35000)
 
-        resp = self.client.post(reverse("clear_test_db"), {"next": "clp_upload"})
-        self.assertRedirects(resp, reverse("clp_upload"))
+        # Unauthenticated client cannot clear even with the confirmation key
+        anon_client = self.client_class()
+        anon_resp = anon_client.post(reverse("clear_test_db"), {"confirm_key": "borrarbd"})
+        self.assertRedirects(anon_resp, f"{reverse('login')}?next={reverse('clear_test_db')}")
+        self.assertEqual(ErpTransaction.all_objects.count(), before_count)
+
+        # Wrong or missing confirmation key leaves the database untouched
+        bad_resp = self.client.post(reverse("clear_test_db"), {"confirm_key": "clave_mala"})
+        self.assertRedirects(bad_resp, reverse("settings"))
+        self.assertEqual(ReconciliationProcess.objects.count(), 1)
+        self.assertEqual(ErpTransaction.all_objects.count(), before_count)
+
+        # Valid confirmation key wipes everything cleanly
+        resp = self.client.post(reverse("clear_test_db"), {"confirm_key": "borrarbd"})
+        self.assertRedirects(resp, reverse("settings"))
 
         for model_cls in (
             ReconciliationProcess,

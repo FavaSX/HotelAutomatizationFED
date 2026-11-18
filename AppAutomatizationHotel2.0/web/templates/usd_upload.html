@@ -18,53 +18,6 @@
     <h3 class="fw-bold mb-0">Conciliación en Dólares (USD)</h3>
     <p class="text-muted small mb-0">El motor inspecciona la estructura interna de los 7 reportes Excel, los alinea automáticamente y le permite verificar o cambiar cualquier archivo antes de procesar.</p>
   </div>
-
-  <!-- Botón Temporal de Limpieza de Pruebas (BD) -->
-  <div class="d-flex align-items-center gap-2 card-executive px-3 py-2">
-    <div class="me-1">
-      <div class="text-uppercase text-muted fw-bold db-status-label">Estado BD (Pruebas)</div>
-      <div class="fw-bold small">
-        <i class="bi bi-database me-1 text-primary"></i> {{ saved_processes_count|default:0 }} proceso(s) guardado(s)
-      </div>
-    </div>
-    <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#clearTestDbModal" {% if not saved_processes_count %}disabled{% endif %}>
-      <i class="bi bi-trash3 me-1"></i> Vaciar BD Pruebas
-    </button>
-  </div>
-</div>
-
-<!-- Modal Ejecutivo: Vaciar BD Pruebas -->
-<div class="modal fade" id="clearTestDbModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
-      <div class="modal-header border-0 pb-0 pt-4 px-4">
-        <div class="d-flex align-items-center gap-3">
-          <div class="rounded-circle bg-danger-subtle text-danger d-flex align-items-center justify-content-center modal-icon-danger">
-            <i class="bi bi-database-dash fs-4"></i>
-          </div>
-          <div>
-            <h5 class="modal-title fw-bold mb-0">¿Vaciar Base de Datos de Pruebas?</h5>
-            <small class="text-muted">{{ saved_processes_count|default:0 }} proceso(s) almacenado(s)</small>
-          </div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-      </div>
-      <div class="modal-body px-4 py-3">
-        <p class="text-muted small mb-0">
-          Se eliminarán todos los cierres de conciliación de prueba y sus transacciones asociadas (conservando intactos los catálogos de tarjetas y monedas).
-        </p>
-      </div>
-      <div class="modal-footer border-0 upload-modal-foot px-4 py-3 d-flex justify-content-end gap-2">
-        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
-        <form method="post" action="{% url 'clear_test_db' %}" class="m-0">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-danger rounded-pill px-4 fw-semibold shadow-sm">
-            <i class="bi bi-trash3 me-1"></i> Sí, Vaciar Base de Datos
-          </button>
-        </form>
-      </div>
-    </div>
-  </div>
 </div>
 
 <form method="post" enctype="multipart/form-data" id="usdUploadForm" data-detect-url="{% url 'usd_detect_files' %}">
