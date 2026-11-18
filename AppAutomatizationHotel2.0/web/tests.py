@@ -2038,6 +2038,9 @@ class ReadOnlyTableVisualizationPanelsTests(TestCase):
         self.assertContains(res_audit, "888999")
         self.assertContains(res_audit, "Ajuste contable registrado")
         self.assertContains(res_audit, "Validado con tesorería")
+        # Each status has its own color: Pendiente (yellow) → Ajuste contable (blue)
+        self.assertContains(res_audit, '<span class="status-chip status-pending">Pendiente</span>', html=True)
+        self.assertContains(res_audit, '<span class="status-chip status-primary">Ajuste contable registrado</span>', html=True)
 
     def test_preview_source_tables_render_sanitized_in_usd_and_clp(self):
         usd_preview = calculate_usd_preview(**_build_usd_files())

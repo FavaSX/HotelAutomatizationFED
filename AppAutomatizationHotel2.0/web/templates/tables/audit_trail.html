@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load l10n %}
+{% load l10n currency_filters %}
 
 {% block page_title %}Hotel Plaza San Francisco | Bitácora de Auditoría{% endblock %}
 
@@ -157,9 +157,9 @@
             <div class="text-muted">Doc: {{ log.cross_match_result.display_document_number|default:"—" }}</div>
           </td>
           <td class="small">
-            <span class="status-chip status-neutral">{{ log.previous_status.display_name|default:"—" }}</span>
+            <span class="status-chip {{ log.previous_status|status_chip_class }}">{{ log.previous_status.display_name|default:"—" }}</span>
             <i class="bi bi-arrow-right mx-1 text-primary"></i>
-            <span class="status-chip status-success">{{ log.new_status.display_name }}</span>
+            <span class="status-chip {{ log.new_status|status_chip_class }}">{{ log.new_status.display_name }}</span>
           </td>
           <td class="pe-4 small text-muted">{{ log.comment|default:"—" }}</td>
         </tr>

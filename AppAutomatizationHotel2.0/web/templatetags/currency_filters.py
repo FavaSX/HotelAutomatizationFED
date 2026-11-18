@@ -108,3 +108,23 @@ def file_name(value: Any) -> str:
     """Last part of a stored file path (Windows or POSIX), to show "cartola.xlsx" instead of the full folder."""
     text = str(value or "")
     return text.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] or text
+
+
+# Color of each reconciliation status chip, so every state reads differently in the audit trail.
+STATUS_CHIP_CLASSES = {
+    "PENDING": "status-pending",
+    "REJECTED": "status-danger",
+    "RESOLVED_ERP_FIXED": "status-success",
+    "ACCEPTED_ROUNDING": "status-info",
+    "RESOLVED_ACCEPTED": "status-info",
+    "RESOLVED_ADJUSTMENT": "status-primary",
+    "RESOLVED_REVERSAL": "status-purple",
+    "RESOLVED_CASHIER": "status-orange",
+}
+
+
+@register.filter(name="status_chip_class")
+def status_chip_class(status: Any) -> str:
+    """CSS class for a ReconciliationStatus (or its code); unknown or empty statuses stay neutral."""
+    code = getattr(status, "code", status) or ""
+    return STATUS_CHIP_CLASSES.get(str(code), "status-neutral")

@@ -1367,6 +1367,13 @@ body.table-focus-mode #voucherSectionCard .voucher-pagination-bar {
 .status-danger { background: var(--bs-danger-bg-subtle); color: var(--bs-danger-text-emphasis); border-color: var(--bs-danger-border-subtle); }
 .status-success { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); border-color: var(--bs-success-border-subtle); }
 .status-info { background: var(--bs-info-bg-subtle); color: var(--bs-info-text-emphasis); border-color: var(--bs-info-border-subtle); }
+.status-primary { background: var(--bs-primary-bg-subtle); color: var(--bs-primary-text-emphasis); border-color: var(--bs-primary-border-subtle); }
+.status-purple { background: rgba(111, 66, 193, .12); color: #59359a; border-color: rgba(111, 66, 193, .35); }
+.status-orange { background: rgba(253, 126, 20, .12); color: #a84f05; border-color: rgba(253, 126, 20, .4); }
+.status-pending { background: #fff7c2; color: #7a6200; border-color: #f2d94e; }
+[data-bs-theme="dark"] .status-purple { background: rgba(163, 128, 230, .16); color: #c5b0f2; border-color: rgba(163, 128, 230, .4); }
+[data-bs-theme="dark"] .status-orange { background: rgba(253, 152, 72, .16); color: #feb47a; border-color: rgba(253, 152, 72, .4); }
+[data-bs-theme="dark"] .status-pending { background: rgba(255, 221, 51, .16); color: #ffe066; border-color: rgba(255, 221, 51, .4); }
 
 /* Compact dashboard table */
 .table-dash { --bs-table-bg: transparent; --bs-table-color: var(--text); --bs-table-border-color: var(--border); }
