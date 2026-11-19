@@ -396,6 +396,8 @@ def _correction_text(outcome, done_text):
         return "success", f"{done_text[:1].upper()}{done_text[1:]}. Ahora cuadra y quedó como “Corregido en Borderó”."
     if outcome.get("system_result") == "NOT_FOUND_IN_ERP":
         return "warning", f"{done_text[:1].upper()}{done_text[1:]}. Sigue pendiente: no se encuentra en el Borderó."
+    if outcome.get("pending_reason"):
+        return "warning", f"{done_text[:1].upper()}{done_text[1:]}. Sigue pendiente porque {outcome['pending_reason']}."
     return "warning", f"{done_text[:1].upper()}{done_text[1:]}. Sigue pendiente: aún hay diferencia de {outcome.get('remaining')}."
 
 

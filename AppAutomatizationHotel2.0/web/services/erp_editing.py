@@ -352,7 +352,9 @@ def _settle_case(match: CrossMatchResult, user, summary: str, previous_result: O
         f"{summary}. Cruce: {RESULT_LABELS.get(outcome['previous_result'], outcome['previous_result'])} → "
         f"{RESULT_LABELS.get(outcome['system_result'], outcome['system_result'])}"
     )
-    if not matched and outcome["system_result"] != "NOT_FOUND_IN_ERP":
+    if not matched and outcome.get("pending_reason"):
+        comment += f". Sigue pendiente porque {outcome['pending_reason']}"
+    elif not matched and outcome["system_result"] != "NOT_FOUND_IN_ERP":
         comment += f". Aún hay diferencia de {outcome['remaining']}"
     AuditResolutionLog.objects.create(
         cross_match_result=match, user=user, previous_status=previous_status, new_status=new_status, comment=comment,

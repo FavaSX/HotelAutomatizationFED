@@ -919,6 +919,16 @@ html[data-bs-theme="light"] .reason-gold {
   border: 1px solid rgba(var(--accent-rgb), 0.45);
   transition: all 0.18s ease;
 }
+.exc-modal[data-mode="suggestion"] .exc-manual-part,
+.exc-modal[data-mode="manual"] .exc-suggestion-part { display: none; }
+.btn-suggestion-icon {
+  justify-content: center;
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  font-size: .9rem;
+  vertical-align: middle;
+}
 .btn-suggestion-trigger:hover {
   background: var(--accent-gradient);
   color: var(--on-accent);
@@ -1727,6 +1737,12 @@ a.segmented-item { text-decoration: none; }
   font-size: .875rem; border-radius: 12px; padding: .7rem .9rem;
   background: var(--brand-subtle); border: 1px solid var(--brand-border); color: var(--text);
 }
+
+.exc-callout-usd {
+  display: flex; align-items: flex-start;
+  background: var(--bs-warning-bg-subtle); border-color: var(--bs-warning-border-subtle); color: var(--bs-warning-text-emphasis);
+}
+.exc-callout-usd > i { margin-top: .15rem; }
 
 /* Actions: one tab per way of solving the case */
 .exc-tabs { display: flex; width: 100%; }

@@ -237,7 +237,7 @@
             </div>
           </td>
           <td>
-            <span class="status-chip {% if e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}">{{ e.type_label }}</span>
+            <span class="status-chip {{ e.system_result|exception_chip_class }}">{{ e.type_label }}</span>
           </td>
           <td class="d-none d-lg-table-cell">
             {% if e.display_account_code or e.display_document_number %}
@@ -259,13 +259,18 @@
             {% if e.is_rejected %}
             <span class="status-chip status-danger" title="Se rechazó la sugerencia; se puede corregir a mano">Rechazada</span>
             {% elif e.is_pending %}
-            <span class="status-chip status-muted">Pendiente</span>
+            <span class="status-chip status-pending">Pendiente</span>
             {% else %}
-            <span class="status-chip status-success" title="{{ e.resolved_by.first_name|default:e.resolved_by.username }} · {{ e.resolution_date|date:'d/m/Y H:i' }}">{{ e.management_status.display_name }}</span>
+            <span class="status-chip {{ e.management_status|status_chip_class }}" title="{{ e.resolved_by.first_name|default:e.resolved_by.username }} · {{ e.resolution_date|date:'d/m/Y H:i' }}">{{ e.management_status.display_name }}</span>
             {% endif %}
           </td>
-          <td class="text-end">
-            <button type="button" class="btn btn-sm {% if e.is_pending %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#exc-{{ e.id|unlocalize }}">
+          <td class="text-end text-nowrap">
+            {% if e.is_pending and e.suggestion and not e.is_rejected %}
+            <button type="button" class="btn-suggestion-trigger btn-suggestion-icon me-1" data-bs-toggle="modal" data-bs-target="#exc-{{ e.id|unlocalize }}" data-exc-mode="suggestion" title="Tiene sugerencia asistida" aria-label="Ver sugerencia asistida del voucher {{ e.authorization_code|default:'' }}">
+              <i class="bi bi-stars"></i>
+            </button>
+            {% endif %}
+            <button type="button" class="btn btn-sm {% if e.is_pending %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#exc-{{ e.id|unlocalize }}"{% if e.is_pending %} data-exc-mode="manual"{% endif %}>
               {% if e.is_pending %}Resolver{% else %}Ver{% endif %}
             </button>
           </td>
@@ -347,12 +352,15 @@
 
           {% if e.system_observation and not e.suggestion %}
           <p class="exc-diagnosis"><i class="bi bi-info-circle me-2"></i>{{ e.system_observation|format_observation }}</p>
+          {% elif e.system_observation and not e.is_rejected %}
+          {# With a suggestion the card explains the case; the manual view still needs the diagnosis #}
+          <p class="exc-diagnosis exc-manual-part"><i class="bi bi-info-circle me-2"></i>{{ e.system_observation|format_observation }}</p>
           {% endif %}
         </section>
 
         <!-- 2. What the system proposes -->
         {% if e.suggestion or e.action or e.is_rejected %}
-        <section class="exc-section">
+        <section class="exc-section{% if e.suggestion and not e.is_rejected %} exc-suggestion-part{% endif %}">
           <h6 class="exc-section-title">Sugerencia del sistema</h6>
           {% if e.suggestion %}
           <div data-suggestion-case="{{ e.id|unlocalize }}" data-suffix="m"></div>
@@ -367,8 +375,8 @@
 
         <!-- 3. What to do -->
         {% if e.is_pending %}
-        <section class="exc-section">
-          <h6 class="exc-section-title">{% if e.proposal %}¿O lo resuelves a mano?{% else %}¿Cómo lo resuelves?{% endif %}</h6>
+        <section class="exc-section exc-manual-part">
+          <h6 class="exc-section-title">{% if e.suggestion and not e.is_rejected %}Resolver manualmente{% else %}¿Cómo lo resuelves?{% endif %}</h6>
           <div class="segmented exc-tabs" role="tablist">
             {% if e.can_correct and e.erp_rows %}
             <button type="button" class="segmented-item active" data-bs-toggle="tab" data-bs-target="#exc-{{ e.id|unlocalize }}-fix" role="tab" aria-selected="true"><i class="bi bi-pencil-square"></i>Corregir fila del Borderó</button>
@@ -492,12 +500,24 @@
             <!-- 3b. Add the missing Bordero row -->
             <div class="tab-pane fade {% if not e.erp_rows %}show active{% endif %}" id="exc-{{ e.id|unlocalize }}-add" role="tabpanel">
               <p class="exc-hint">Úsalo si el pago no quedó registrado en el Borderó. Los campos siguen el orden de las columnas del Excel; Valor, Documento, Fecha y Cod. Deb. vienen de Transbank. <span class="text-danger">*</span> obligatorio.</p>
+              {% if not e.is_clp %}
+              <div class="exc-callout exc-callout-usd mb-3" role="note">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <div>
+                  <strong>En dólares la fila solo cuadra si existe en el archivo de {{ e.card_type.name }}.</strong>
+                  <ul class="mb-0 mt-1 ps-3">
+                    <li><strong>Cuenta:</strong> debe ser el mismo Documento que aparece en la Posición por clientes de {{ e.card_type.name }}. Si no está ahí, el voucher sigue pendiente aunque agregues la fila.</li>
+                    <li><strong>Valor:</strong> va en <strong>pesos (CLP)</strong>, el cobro que figura en el Borderó, no los US$ {{ e.transbank_amount|num_usd }} del voucher.</li>
+                  </ul>
+                </div>
+              </div>
+              {% endif %}
               <form method="post" action="{% url 'exception_erp_add' e.id %}" class="row g-2 bordero-form">
                 {% csrf_token %}
                 <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number|unlocalize }}{% endif %}">
                 <div class="col-6 col-md-4">
                   <label class="form-label small mb-0" for="nacc-{{ e.id|unlocalize }}">Cuenta</label>
-                  <input id="nacc-{{ e.id|unlocalize }}" name="account_code" class="form-control form-control-sm font-mono" maxlength="50">
+                  <input id="nacc-{{ e.id|unlocalize }}" name="account_code" class="form-control form-control-sm font-mono" maxlength="50"{% if not e.is_clp %} title="Documento de la Posición por clientes de {{ e.card_type.name }}"{% endif %}>
                 </div>
                 <div class="col-6 col-md-4">
                   <label class="form-label small mb-0" for="npay-{{ e.id|unlocalize }}">Cod. Deb. <span class="text-danger" aria-hidden="true">*</span></label>
@@ -510,7 +530,7 @@
                   <input id="ndesc-{{ e.id|unlocalize }}" class="form-control form-control-sm" readonly tabindex="-1" title="Se completa según el Cod. Deb.">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label small mb-0" for="namt-{{ e.id|unlocalize }}">Valor <span class="text-danger" aria-hidden="true">*</span></label>
+                  <label class="form-label small mb-0" for="namt-{{ e.id|unlocalize }}">Valor{% if not e.is_clp %} (CLP){% endif %} <span class="text-danger" aria-hidden="true">*</span></label>
                   <input id="namt-{{ e.id|unlocalize }}" name="amount" class="form-control form-control-sm font-mono text-end" inputmode="decimal" required value="{{ e.new_row.bordero_amount }}" title="Como en el Borderó: los pagos van en negativo">
                 </div>
                 <div class="col-6 col-md-4">
@@ -576,7 +596,7 @@
         <section class="exc-section">
           <h6 class="exc-section-title">Caso cerrado</h6>
           <p class="small mb-3">
-            <span class="status-chip status-success me-1">{{ e.management_status.display_name }}</span>
+            <span class="status-chip {{ e.management_status|status_chip_class }} me-1">{{ e.management_status.display_name }}</span>
             {% if e.resolved_by %}por {{ e.resolved_by.first_name|default:e.resolved_by.username }}{% endif %}
             {% if e.resolution_date %}el {{ e.resolution_date|date:"d/m/Y H:i" }}{% endif %}
           </p>
@@ -623,6 +643,12 @@
 {{ suggestion_cards|json_script:"inboxSuggestionData" }}
 <script src="{% static 'js/suggestion_card.js' %}?v=9"></script>
  <script>
+  // The ✦ button opens the case with only the assisted suggestion; "Resolver" with only the manual options.
+  document.querySelectorAll(".exc-modal").forEach((modal) => {
+    modal.addEventListener("show.bs.modal", (event) => {
+      modal.dataset.mode = event.relatedTarget?.dataset.excMode || "";
+    });
+  });
   // "Agregar a mano": the Descripción column follows the chosen Cod. Deb.
   document.querySelectorAll(".js-erp-paycode").forEach((select) => {
     const target = document.getElementById(select.dataset.descTarget);

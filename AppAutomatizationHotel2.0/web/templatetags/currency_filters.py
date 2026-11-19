@@ -128,3 +128,19 @@ def status_chip_class(status: Any) -> str:
     """CSS class for a ReconciliationStatus (or its code); unknown or empty statuses stay neutral."""
     code = getattr(status, "code", status) or ""
     return STATUS_CHIP_CLASSES.get(str(code), "status-neutral")
+
+
+# Color of each exception type (system_result), so "Diferencia de monto" and "No está en el Borderó" never look alike.
+EXCEPTION_CHIP_CLASSES = {
+    "NOT_FOUND_IN_ERP": "status-danger",
+    "AMOUNT_MISMATCH": "status-primary",
+    "CARD_TYPE_MISMATCH": "status-purple",
+    "OUT_OF_PERIOD": "status-neutral",
+    "MATCHED": "status-success",
+}
+
+
+@register.filter(name="exception_chip_class")
+def exception_chip_class(system_result: Any) -> str:
+    """CSS class for an exception type; unknown types use the amber warning."""
+    return EXCEPTION_CHIP_CLASSES.get(str(system_result or ""), "status-warning")

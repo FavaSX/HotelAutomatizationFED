@@ -140,7 +140,7 @@
                 {% endif %}
               </td>
               <td>
-                <span class="status-chip {% if e.system_result == 'OUT_OF_PERIOD' %}status-neutral{% elif e.system_result == 'NOT_FOUND_IN_ERP' %}status-danger{% else %}status-warning{% endif %}" title="{{ e.action }}">
+                <span class="status-chip {{ e.system_result|exception_chip_class }}" title="{{ e.action }}">
                   <i class="bi {% if e.system_result == 'OUT_OF_PERIOD' %}bi-calendar-x{% elif e.system_result == 'NOT_FOUND_IN_ERP' %}bi-search{% else %}bi-plus-slash-minus{% endif %}"></i><span class="d-none d-sm-inline">{{ e.type_label }}</span>
                 </span>
               </td>

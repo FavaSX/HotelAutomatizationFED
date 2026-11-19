@@ -1501,6 +1501,22 @@ class ErpCorrectionInboxViewTests(TestCase):
         self.assertContains(response, "Corregir fila del Borderó")
         self.assertContains(response, reverse("exception_erp_edit", args=[self.case.id, self.case.erp_transaction_id]))
 
+    def test_suggestion_icon_sits_next_to_resolver_only_on_open_cases_with_a_suggestion(self):
+        icon = f'class="btn-suggestion-trigger btn-suggestion-icon me-1" data-bs-toggle="modal" data-bs-target="#exc-{self.case.id}" data-exc-mode="suggestion"'
+        response = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(response, icon)
+        # ✦ opens only the suggestion, "Resolver" only the manual options
+        self.assertContains(response, f'data-bs-target="#exc-{self.case.id}" data-exc-mode="manual"')
+        self.assertContains(response, 'class="exc-section exc-suggestion-part"')
+        self.assertContains(response, 'class="exc-section exc-manual-part"')
+        self.assertContains(response, "Resolver manualmente")
+        self.client.post(
+            reverse("exception_resolve", args=[self.case.id]),
+            {"status": "RESOLVED_ADJUSTMENT", "comment": "ok", "return_query": "moneda=clp"},
+        )
+        resolved = self.client.get(reverse("exceptions") + "?moneda=clp&estado=todas")
+        self.assertNotContains(resolved, icon)
+
     def test_posting_a_fix_matches_and_the_case_moves_to_resolved(self):
         response = self.client.post(
             reverse("exception_erp_edit", args=[self.case.id, self.case.erp_transaction_id]),
@@ -1812,6 +1828,9 @@ class SuggestionModalAjaxTests(TestCase):
             self.assertContains(page, f'data-suggestion-case="{case_id}" data-suffix="m"')
             self.assertContains(page, f'data-bs-target="#exc-{case_id}"')
             self.assertContains(page, f'id="exc-{case_id}"')
+            # The ✦ icon and the Resolver button must point to the same unlocalized modal id
+            self.assertContains(page, f'data-bs-target="#exc-{case_id}" data-exc-mode="suggestion"')
+            self.assertContains(page, f'data-bs-target="#exc-{case_id}" data-exc-mode="manual"')
             self.assertContains(page, "suggestion_card.js?v=9")
             self.assertEqual(re.findall(r'[a-zA-Z0-9_-]+="[^"]*\xa0[^"]*"', html), [])
             m = re.search(r'<script id="inboxSuggestionData"[^>]*>(.*?)</script>', html, re.S)
@@ -4608,3 +4627,304 @@ class WrongFileInErpBoxTests(TestCase):
             "clp_tbk_prepaid_file": files["transbank_prepaid_file"],
         })
         self.assertRedirects(response, reverse("clp_preview"))
+
+
+class UsdManualRowWithoutOperatorTests(TestCase):
+    """In USD a Bordero row only cuadra through the operator file: say so instead of 'Aún hay diferencia'."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador_usd", password="x")
+        self.client.force_login(self.user)
+        self.process = commit_usd_preview_to_database(self.user, calculate_usd_preview(**_build_usd_files()))
+        self.case = self.process.cross_match_results.get(authorization_code="888999")
+
+    def test_add_row_form_warns_about_operator_and_pesos(self):
+        response = self.client.get(reverse("exceptions") + "?moneda=usd")
+        self.assertContains(response, "En dólares la fila solo cuadra si existe en el archivo de")
+        self.assertContains(response, "Valor (CLP)")
+
+    def test_unknown_account_explains_the_operator_file(self):
+        response = self.client.post(
+            reverse("exception_erp_add", args=[self.case.id]),
+            {"account_code": "NOEXISTE", "payment_code": "VUS$", "amount": "40", "authorization_code": "888999",
+             "transaction_date": "2026-09-06", "return_query": "moneda=usd"},
+            follow=True,
+        )
+        card = self.case.card_type.name
+        self.assertContains(response, f"Sigue pendiente porque la Cuenta NOEXISTE no está en el archivo de {card}")
+        log = AuditResolutionLog.objects.filter(cross_match_result=self.case).order_by("-id").first()
+        self.assertIn(f"la Cuenta NOEXISTE no está en el archivo de {card}", log.comment)
+        self.assertNotIn("Aún hay diferencia", log.comment)
+
+    def test_clp_form_has_no_usd_warning(self):
+        clp = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        self.assertTrue(clp.pk)
+        response = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertNotContains(response, "En dólares la fila solo cuadra")
+
+
+class StatusChipColorTests(TestCase):
+    """Audit trail colors: every status gets one, and the ones people confuse never share it."""
+
+    def test_every_status_in_the_catalog_has_its_own_color(self):
+        from .templatetags.currency_filters import STATUS_CHIP_CLASSES, status_chip_class
+
+        codes = set(ReconciliationStatus.objects.values_list("code", flat=True))
+        self.assertTrue(codes, "the migrations should seed the status catalog")
+        missing = codes - set(STATUS_CHIP_CLASSES)
+        self.assertFalse(missing, f"statuses without a color (they would look grey): {missing}")
+        for code in codes:
+            self.assertNotEqual(status_chip_class(code), "status-neutral", code)
+
+    def test_states_that_mean_different_things_never_share_a_color(self):
+        from .templatetags.currency_filters import status_chip_class
+
+        pending, rejected, fixed = (status_chip_class(c) for c in ("PENDING", "REJECTED", "RESOLVED_ERP_FIXED"))
+        self.assertEqual(len({pending, rejected, fixed}), 3)
+        # Pendiente is its own yellow, not the amber used by other warnings in the app
+        self.assertEqual(pending, "status-pending")
+
+    def test_empty_unknown_and_object_inputs(self):
+        from .templatetags.currency_filters import status_chip_class
+
+        self.assertEqual(status_chip_class(None), "status-neutral")
+        self.assertEqual(status_chip_class(""), "status-neutral")
+        self.assertEqual(status_chip_class("ALGO_NUEVO"), "status-neutral")
+        self.assertEqual(status_chip_class(ReconciliationStatus(code="REJECTED")), "status-danger")
+        self.assertEqual(status_chip_class(ReconciliationStatus(code=None)), "status-neutral")
+
+    def test_css_defines_every_class_the_filter_returns(self):
+        from pathlib import Path
+        from .templatetags.currency_filters import STATUS_CHIP_CLASSES
+
+        css = (Path(__file__).resolve().parent / "static" / "css" / "theme.css").read_text(encoding="utf-8")
+        for css_class in set(STATUS_CHIP_CLASSES.values()) | {"status-neutral"}:
+            self.assertIn(f".{css_class} {{", css, css_class)
+
+    def test_first_transition_without_previous_status_renders(self):
+        user = User.objects.create_user("auditor_colores", password="x")
+        self.client.force_login(user)
+        process = commit_clp_preview_to_database(user, calculate_clp_preview(**build_clp_files()))
+        case = process.cross_match_results.get(authorization_code="007626")
+        AuditResolutionLog.objects.create(
+            cross_match_result=case, user=user, previous_status=None,
+            new_status=ReconciliationStatus.objects.get(code="REJECTED"), comment="primer cambio",
+        )
+        page = self.client.get(reverse("audit_trail"), {"vista": "resoluciones", "moneda": "CLP"})
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, '<span class="status-chip status-neutral">—</span>', html=True)
+        self.assertContains(page, '<span class="status-chip status-danger">Rechazada</span>', html=True)
+
+
+class InboxSuggestionAndManualModesTests(TestCase):
+    """✦ opens only the suggestion and Resolver only the manual options, for every kind of row."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador_modos", password="x")
+        self.client.force_login(self.user)
+        self.process = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+
+    def _page(self, query="?moneda=clp&estado=todas"):
+        response = self.client.get(reverse("exceptions") + query)
+        self.assertEqual(response.status_code, 200)
+        return response, response.content.decode("utf-8")
+
+    def test_every_row_gets_the_right_buttons(self):
+        response, html = self._page()
+        rows = list(response.context["rows"])
+        self.assertTrue(rows)
+        for e in rows:
+            icon = f'data-bs-target="#exc-{e.id}" data-exc-mode="suggestion"'
+            manual = f'data-bs-target="#exc-{e.id}" data-exc-mode="manual"'
+            wants_icon = bool(e.is_pending and e.suggestion and not e.is_rejected)
+            self.assertEqual(icon in html, wants_icon, f"icono ✦ del voucher {e.authorization_code}")
+            self.assertEqual(manual in html, bool(e.is_pending), f"Resolver del voucher {e.authorization_code}")
+
+    def test_icon_never_shows_twice_for_the_same_case(self):
+        _, html = self._page()
+        for case in self.process.cross_match_results.all():
+            self.assertLessEqual(html.count(f'data-bs-target="#exc-{case.id}" data-exc-mode="suggestion"'), 1)
+
+    def test_rejected_case_keeps_its_note_visible_in_the_manual_view(self):
+        case = self.process.cross_match_results.get(authorization_code="007626")
+        self.client.post(reverse("exception_suggestion_reject", args=[case.id]), {"return_query": "moneda=clp"})
+        case.refresh_from_db()
+        self.assertEqual(case.management_status.code, "REJECTED")
+
+        _, html = self._page("?moneda=clp")
+        self.assertNotIn(f'data-bs-target="#exc-{case.id}" data-exc-mode="suggestion"', html)
+        self.assertIn(f'data-bs-target="#exc-{case.id}" data-exc-mode="manual"', html)
+        modal = html.split(f'id="exc-{case.id}"', 1)[1].split('class="modal fade exc-modal"', 1)[0]
+        self.assertIn("Se rechazó la sugerencia", modal)
+        # nothing in a rejected case may be hidden by the manual view
+        self.assertNotIn("exc-suggestion-part", modal)
+
+    def test_closed_case_shows_everything_with_ver(self):
+        case = self.process.cross_match_results.get(authorization_code="007626")
+        self.client.post(
+            reverse("exception_resolve", args=[case.id]),
+            {"status": "RESOLVED_ACCEPTED", "comment": "aceptada", "return_query": "moneda=clp"},
+        )
+        _, html = self._page()
+        self.assertNotIn(f'data-bs-target="#exc-{case.id}" data-exc-mode=', html)
+        modal = html.split(f'id="exc-{case.id}"', 1)[1].split('class="modal fade exc-modal"', 1)[0]
+        self.assertIn("Caso cerrado", modal)
+
+    def test_manual_view_of_a_case_with_suggestion_keeps_the_diagnosis(self):
+        response, html = self._page("?moneda=clp")
+        with_suggestion = [e for e in response.context["rows"] if e.is_pending and e.suggestion and not e.is_rejected]
+        self.assertTrue(with_suggestion)
+        for e in with_suggestion:
+            modal = html.split(f'id="exc-{e.id}"', 1)[1].split('class="modal fade exc-modal"', 1)[0]
+            self.assertIn("exc-suggestion-part", modal)
+            self.assertIn('class="exc-section exc-manual-part"', modal)
+            self.assertIn("Resolver manualmente", modal)
+            if e.system_observation:
+                self.assertIn('class="exc-diagnosis exc-manual-part"', modal)
+
+    def test_case_without_suggestion_has_no_hidden_parts(self):
+        response, html = self._page("?moneda=clp")
+        plain = [e for e in response.context["rows"] if e.is_pending and not e.suggestion]
+        self.assertTrue(plain, "the CLP fixture should have at least one open case without a suggestion")
+        for e in plain:
+            modal = html.split(f'id="exc-{e.id}"', 1)[1].split('class="modal fade exc-modal"', 1)[0]
+            self.assertNotIn("exc-suggestion-part", modal)
+            self.assertIn("¿Cómo lo resuelves?", modal)
+
+    def test_mode_script_and_css_are_on_the_page(self):
+        from pathlib import Path
+
+        _, html = self._page("?moneda=clp")
+        self.assertIn('modal.dataset.mode = event.relatedTarget?.dataset.excMode || ""', html)
+        css = (Path(__file__).resolve().parent / "static" / "css" / "theme.css").read_text(encoding="utf-8")
+        self.assertIn('.exc-modal[data-mode="suggestion"] .exc-manual-part', css)
+        self.assertIn('.exc-modal[data-mode="manual"] .exc-suggestion-part', css)
+
+
+class UsdPendingReasonEdgeCasesTests(TestCase):
+    """The new 'la Cuenta no está en el archivo de …' message must only show when that is really the cause."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador_usd_bordes", password="x")
+        self.client.force_login(self.user)
+        self.process = commit_usd_preview_to_database(self.user, calculate_usd_preview(**_build_usd_files()))
+        self.orphan = self.process.cross_match_results.get(authorization_code="888999")   # VI US$40, not in Bordero
+        self.wrong_doc = self.process.cross_match_results.get(authorization_code="334455")  # MC, Cuenta 1715800 ≠ 999888
+
+    def _add(self, case, **values):
+        data = {"payment_code": "VUS$", "amount": "38000", "authorization_code": case.authorization_code,
+                "transaction_date": "2026-09-06"}
+        data.update(values)
+        return add_row(case, data, self.user)
+
+    def _last_comment(self, case):
+        return AuditResolutionLog.objects.filter(cross_match_result=case).order_by("-id").first().comment
+
+    def test_account_that_exists_but_amount_differs_still_reports_the_difference(self):
+        # 1715625 is in the Visa file with US$120; the voucher is US$40 → a real difference of US$80
+        outcome = self._add(self.orphan, account_code="1715625")
+        self.assertFalse(outcome["matched"])
+        self.assertEqual(outcome["pending_reason"], "")
+        self.assertIn("Aún hay diferencia de US$ 80,00", self._last_comment(self.orphan))
+        self.assertNotIn("no está en el archivo", self._last_comment(self.orphan))
+
+    def test_blank_account_is_named_instead_of_left_empty(self):
+        outcome = self._add(self.orphan)
+        self.assertIn("(sin Cuenta)", outcome["pending_reason"])
+        self.assertIn("Visa", outcome["pending_reason"])
+
+    def test_two_manual_rows_without_operator_use_the_plural(self):
+        self._add(self.orphan, account_code="NOEXISTE1")
+        outcome = self._add(self.orphan, account_code="NOEXISTE2")
+        self.assertIn("las Cuentas", outcome["pending_reason"])
+        self.assertIn("NOEXISTE1", outcome["pending_reason"])
+        self.assertIn("NOEXISTE2", outcome["pending_reason"])
+        self.assertIn("no están en el archivo de Visa", outcome["pending_reason"])
+
+    def test_fixing_the_account_to_the_operator_document_matches(self):
+        row = self.wrong_doc.erp_transaction
+        self.assertIsNotNone(row)
+        outcome = edit_row(row, {"document_number": "999888"}, self.user, match=self.wrong_doc)
+        self.assertTrue(outcome["matched"], outcome)
+        self.assertEqual(outcome["pending_reason"], "")
+        self.wrong_doc.refresh_from_db()
+        self.assertEqual(self.wrong_doc.management_status.code, "RESOLVED_ERP_FIXED")
+
+    def test_editing_a_row_to_another_unknown_account_explains_why_via_the_view(self):
+        row = self.wrong_doc.erp_transaction
+        response = self.client.post(
+            reverse("exception_erp_edit", args=[self.wrong_doc.id, row.id]),
+            {"amount": str(abs(row.amount)), "authorization_code": row.authorization_code,
+             "transaction_date": row.transaction_date.isoformat(), "payment_code": row.payment_code,
+             "document_number": "OTRACUENTA", "return_query": "moneda=usd"},
+            follow=True,
+        )
+        self.assertContains(response, "Sigue pendiente porque la Cuenta OTRACUENTA no está en el archivo de MasterCard")
+
+    def test_clp_corrections_never_get_the_usd_reason(self):
+        clp = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        case = clp.cross_match_results.get(authorization_code="007626")
+        outcome = edit_row(case.erp_transaction, {"amount": "1"}, self.user, match=case)
+        self.assertFalse(outcome["matched"])
+        self.assertFalse(outcome.get("pending_reason"))
+        self.assertIn("Aún hay diferencia", self._last_comment(case))
+
+    def test_new_bordero_upload_recross_still_works_with_the_new_key(self):
+        self._add(self.orphan, account_code="NOEXISTE")
+        # Uploading the same closing again re-crosses pending cases; it must not break on pending_reason
+        again = commit_usd_preview_to_database(self.user, calculate_usd_preview(**_build_usd_files()))
+        self.assertTrue(again.pk)
+        self.orphan.refresh_from_db()
+        self.assertNotEqual(self.orphan.system_result, "MATCHED")
+
+
+class ExceptionTypeColorTests(TestCase):
+    """Pendientes: each exception type (Diferencia de monto, No está en el Borderó…) has its own color."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("contador_tipos", password="x")
+        self.client.force_login(self.user)
+        self.clp = commit_clp_preview_to_database(self.user, calculate_clp_preview(**build_clp_files()))
+        self.usd = commit_usd_preview_to_database(self.user, calculate_usd_preview(**_build_usd_files()))
+
+    def test_every_exception_type_has_a_different_color(self):
+        from .templatetags.currency_filters import EXCEPTION_CHIP_CLASSES
+        from .views.dashboard import CLP_EXCEPTION_LABELS, EXCEPTION_LABELS
+
+        types = set(CLP_EXCEPTION_LABELS) | set(EXCEPTION_LABELS)
+        self.assertFalse(types - set(EXCEPTION_CHIP_CLASSES), "exception types without a color")
+        colors = [EXCEPTION_CHIP_CLASSES[t] for t in types]
+        self.assertEqual(len(colors), len(set(colors)), "two exception types share a color")
+        # the pair that looked alike
+        self.assertNotEqual(EXCEPTION_CHIP_CLASSES["AMOUNT_MISMATCH"], EXCEPTION_CHIP_CLASSES["NOT_FOUND_IN_ERP"])
+
+    def test_unknown_type_falls_back_to_amber(self):
+        from .templatetags.currency_filters import exception_chip_class
+
+        self.assertEqual(exception_chip_class("ALGO_NUEVO"), "status-warning")
+        self.assertEqual(exception_chip_class(None), "status-warning")
+
+    def test_inbox_and_dashboard_color_each_row_by_its_type(self):
+        from .templatetags.currency_filters import exception_chip_class
+
+        for moneda in ("clp", "usd"):
+            response = self.client.get(reverse("exceptions") + f"?moneda={moneda}&estado=todas")
+            html = response.content.decode("utf-8")
+            rows = list(response.context["rows"])
+            self.assertTrue(rows, moneda)
+            for e in rows:
+                self.assertIn(f'<span class="status-chip {exception_chip_class(e.system_result)}">{e.type_label}</span>', html)
+            dash = self.client.get(reverse("dashboard"), {"moneda": moneda}).content.decode("utf-8")
+            self.assertNotIn("{% if e.system_result", dash)
+
+    def test_inbox_status_column_matches_audit_colors(self):
+        case = self.clp.cross_match_results.get(authorization_code="007626")
+        page = self.client.get(reverse("exceptions") + "?moneda=clp")
+        self.assertContains(page, '<span class="status-chip status-pending">Pendiente</span>', html=True)
+        self.client.post(
+            reverse("exception_resolve", args=[case.id]),
+            {"status": "RESOLVED_REVERSAL", "comment": "contracargo", "return_query": "moneda=clp"},
+        )
+        resolved = self.client.get(reverse("exceptions") + "?moneda=clp&estado=resueltas").content.decode("utf-8")
+        self.assertIn('class="status-chip status-purple"', resolved)   # row chip
+        self.assertIn('class="status-chip status-purple me-1"', resolved)  # "Caso cerrado" in the modal

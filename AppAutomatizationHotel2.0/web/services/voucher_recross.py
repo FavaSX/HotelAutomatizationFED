@@ -267,8 +267,22 @@ def _recross_usd(match: CrossMatchResult, restrict_to_date_window: bool = False)
 
     difference_usd = round(gross_usd - operator_usd, 2)
     matched = abs(difference_usd) <= tolerance and op is not None
+    # In USD the Bordero row only bridges to the operator file: say so when its Cuenta is not there
+    missing_accounts = list(dict.fromkeys(
+        (c[0].account_code or c[0].document_number or "(sin Cuenta)")
+        for c in (resolved if len(linked) > 1 else [(row, op, "")]) if c[1] is None
+    ))
+    pending_reason = ""
+    if not matched and missing_accounts:
+        card_name = match.card_type.name if match.card_type_id else (tbk.card_type.name if tbk.card_type_id else "la operadora")
+        plural = len(missing_accounts) > 1
+        pending_reason = (
+            f"la{'s' if plural else ''} Cuenta{'s' if plural else ''} {', '.join(missing_accounts)} "
+            f"no {'están' if plural else 'está'} en el archivo de {card_name} (Posición por clientes)"
+        )
     return {
         "system_result": "MATCHED" if matched else "AMOUNT_MISMATCH",
+        "pending_reason": pending_reason,
         "linked_rows": linked,
         "fields": {
             "erp_transaction": row,
@@ -373,7 +387,7 @@ def recross_voucher(match: CrossMatchResult, restrict_to_date_window: bool = Fal
     (not saved: the caller saves it with the status change, inside its transaction).
     When `restrict_to_date_window=True`, only considers unclaimed (`reconciled=False` or already linked
     to `match`) ERP rows within the coherent [-7, +14] day window across different closings.
-    Returns {"system_result", "previous_result", "remaining", "linked_rows"}.
+    Returns {"system_result", "previous_result", "remaining", "linked_rows"} (+ "pending_reason" in USD when the operator row is missing).
     """
     if match.transbank_transaction_id is None:
         raise RecrossError("Este caso no tiene un voucher de Transbank asociado; no se puede volver a cruzar.")
