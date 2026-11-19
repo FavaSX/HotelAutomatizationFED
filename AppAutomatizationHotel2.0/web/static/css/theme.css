@@ -1738,12 +1738,6 @@ a.segmented-item { text-decoration: none; }
   background: var(--brand-subtle); border: 1px solid var(--brand-border); color: var(--text);
 }
 
-.exc-callout-usd {
-  display: flex; align-items: flex-start;
-  background: var(--bs-warning-bg-subtle); border-color: var(--bs-warning-border-subtle); color: var(--bs-warning-text-emphasis);
-}
-.exc-callout-usd > i { margin-top: .15rem; }
-
 /* Actions: one tab per way of solving the case */
 .exc-tabs { display: flex; width: 100%; }
 .exc-tabs .segmented-item { flex: 1 1 0; justify-content: center; }

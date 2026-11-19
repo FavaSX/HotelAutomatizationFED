@@ -500,18 +500,6 @@
             <!-- 3b. Add the missing Bordero row -->
             <div class="tab-pane fade {% if not e.erp_rows %}show active{% endif %}" id="exc-{{ e.id|unlocalize }}-add" role="tabpanel">
               <p class="exc-hint">Úsalo si el pago no quedó registrado en el Borderó. Los campos siguen el orden de las columnas del Excel; Valor, Documento, Fecha y Cod. Deb. vienen de Transbank. <span class="text-danger">*</span> obligatorio.</p>
-              {% if not e.is_clp %}
-              <div class="exc-callout exc-callout-usd mb-3" role="note">
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                <div>
-                  <strong>En dólares la fila solo cuadra si existe en el archivo de {{ e.card_type.name }}.</strong>
-                  <ul class="mb-0 mt-1 ps-3">
-                    <li><strong>Cuenta:</strong> debe ser el mismo Documento que aparece en la Posición por clientes de {{ e.card_type.name }}. Si no está ahí, el voucher sigue pendiente aunque agregues la fila.</li>
-                    <li><strong>Valor:</strong> va en <strong>pesos (CLP)</strong>, el cobro que figura en el Borderó, no los US$ {{ e.transbank_amount|num_usd }} del voucher.</li>
-                  </ul>
-                </div>
-              </div>
-              {% endif %}
               <form method="post" action="{% url 'exception_erp_add' e.id %}" class="row g-2 bordero-form">
                 {% csrf_token %}
                 <input type="hidden" name="return_query" value="{{ query_string }}{% if page.number > 1 %}&page={{ page.number|unlocalize }}{% endif %}">
