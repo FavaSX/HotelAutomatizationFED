@@ -4638,9 +4638,9 @@ class UsdManualRowWithoutOperatorTests(TestCase):
         self.process = commit_usd_preview_to_database(self.user, calculate_usd_preview(**_build_usd_files()))
         self.case = self.process.cross_match_results.get(authorization_code="888999")
 
-    def test_add_row_form_warns_about_operator_and_pesos(self):
+    def test_add_row_form_has_no_usd_note(self):
         response = self.client.get(reverse("exceptions") + "?moneda=usd")
-        self.assertContains(response, "En dólares la fila solo cuadra si existe en el archivo de")
+        self.assertNotContains(response, "En dólares la fila solo cuadra")
         self.assertContains(response, "Valor (CLP)")
 
     def test_unknown_account_explains_the_operator_file(self):
