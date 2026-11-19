@@ -309,7 +309,7 @@ Detectar una diferencia es solo la mitad del trabajo: el contador también tiene
 ---
 
 ## 👥 Equipo de Desarrollo (Proyecto APT — Duoc UC)
-* **Fabián Araya** — *Lead Software Architect & Backend Developer*
-* **Eva González** — *Project Manager & Quality Assurance Documentation*
+* **Fabián Araya** — *Jefe de Proyecto (Project Manager), Lead Software Architect & Backend Developer*
+* **Eva González** — *Quality Assurance & Documentation*
 * **Diego Reyes** — *Data Engineer & Database Administrator*
 

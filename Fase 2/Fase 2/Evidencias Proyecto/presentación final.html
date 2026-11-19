@@ -1,0 +1,1386 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conciliación Financiera HPSF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,600;1,700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy-950: #030817;
+  --navy-900: #061028;
+  --navy-800: #0A1A3D;
+  --navy-700: #102654;
+  --blue-600: #1D3F8F;
+  --blue-500: #2C5BD6;
+  --blue-400: #5C88F2;
+  --blue-300: #9DB8FF;
+  --gold-700: #9A7420;
+  --gold-600: #B98F2E;
+  --gold-500: #D4AF37;
+  --gold-400: #E6C568;
+  --gold-300: #F4E2A6;
+  --text: #EEF2FF;
+  --muted: rgba(222, 230, 255, .70);
+  --soft: rgba(222, 230, 255, .48);
+  --glass: rgba(255, 255, 255, .055);
+  --glass-2: rgba(255, 255, 255, .09);
+  --line: rgba(255, 255, 255, .11);
+  --gold-line: rgba(212, 175, 55, .38);
+  --ok: #34D399;
+  --warn: #FB923C;
+  --bad: #F87171;
+  --gold-grad: linear-gradient(100deg, #9A7420 0%, #E6C568 28%, #FFF1C2 46%, #D4AF37 64%, #9A7420 100%);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--navy-950); color: var(--text); font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+h1, h2, .serif { font-family: 'Playfair Display', Georgia, serif; }
+.num-font, .kpi .v, .big, .count { font-family: 'Space Grotesk', 'Inter', sans-serif; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+/* ---------- Global background: gradient, gold dust and mouse spotlight ---------- */
+#bg { position: fixed; inset: 0; z-index: 0; overflow: hidden;
+  background:
+    radial-gradient(1200px 800px at 85% -10%, rgba(44, 91, 214, .35), transparent 60%),
+    radial-gradient(900px 700px at -10% 110%, rgba(212, 175, 55, .16), transparent 60%),
+    linear-gradient(160deg, var(--navy-800) 0%, var(--navy-900) 45%, var(--navy-950) 100%); }
+#bg::before { content: ""; position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 64px 64px; mask-image: radial-gradient(ellipse at 50% 40%, #000 20%, transparent 75%); }
+#bg::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(520px circle at var(--mx, 50%) var(--my, 40%), rgba(230, 197, 104, .13), transparent 60%); transition: background .2s; }
+#dust { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* ---------- Stage ---------- */
+#viewport { position: fixed; inset: 0; overflow: hidden; z-index: 1; }
+#deck { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: center center; transform: translate(-50%, -50%); }
+.slide { position: absolute; inset: 0; overflow: hidden; opacity: 0; visibility: hidden; transform: scale(1.035);
+  transition: opacity .7s ease, transform .9s cubic-bezier(.2,.8,.2,1), visibility .7s; transform-origin: center; }
+.slide.active { opacity: 1; visibility: visible; transform: none; }
+.slide.past { transform: scale(.97); }
+
+/* Reveal: every .rv animates in order when its slide becomes active */
+.slide .rv { opacity: 0; }
+.slide.active .rv { opacity: 1; animation: rise .95s cubic-bezier(.16,.84,.24,1) backwards; animation-delay: calc(var(--i, 0) * 85ms + 180ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(38px) scale(.985); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
+
+/* ---------- Slide chrome ---------- */
+.chrome { position: absolute; inset: 0; padding: 86px 130px 128px; display: flex; flex-direction: column; z-index: 2; }
+.eyebrow { display: inline-flex; align-items: center; gap: 16px; font-size: 21px; font-weight: 600; letter-spacing: .24em; text-transform: uppercase; color: var(--gold-400); }
+.eyebrow::before { content: ""; width: 56px; height: 2px; background: var(--gold-grad); }
+.title { font-size: 74px; line-height: 1.06; font-weight: 700; margin-top: 18px; letter-spacing: -.005em; }
+.title em, .gold { font-style: italic; background: var(--gold-grad); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 7s linear infinite; }
+@keyframes shimmer { from { background-position: 0% 0; } to { background-position: -220% 0; } }
+.lead { font-size: 29px; line-height: 1.5; color: var(--muted); margin-top: 20px; max-width: 1480px; }
+.lead b { color: var(--text); }
+.body { flex: 1; display: flex; flex-direction: column; justify-content: center; margin-top: 40px; }
+
+.footer { position: absolute; left: 130px; right: 130px; bottom: 46px; display: flex; align-items: center; justify-content: space-between; font-size: 18px; color: var(--soft); z-index: 3; }
+.footer .brand { display: flex; align-items: center; gap: 14px; letter-spacing: .04em; }
+.footer .brand svg { width: 32px; height: 32px; color: var(--gold-400); }
+.footer .num { font-family: 'Space Grotesk'; font-weight: 600; font-size: 21px; color: var(--gold-400); letter-spacing: .08em; }
+.footer::before { content: ""; position: absolute; left: 0; right: 0; top: -22px; height: 1px; background: linear-gradient(90deg, var(--gold-line), transparent 70%); }
+
+/* ---------- Glass cards ---------- */
+.glass { position: relative; background: linear-gradient(160deg, rgba(255,255,255,.085), rgba(255,255,255,.025)); border: 1px solid var(--line); border-radius: 28px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  transition: border-color .35s, box-shadow .35s, background .35s; transform-style: preserve-3d; }
+.glass::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .35s;
+  background: radial-gradient(420px circle at var(--gx, 50%) var(--gy, 50%), rgba(230,197,104,.16), transparent 60%); }
+.glass:hover { border-color: var(--gold-line); box-shadow: 0 40px 100px rgba(0,0,0,.45), 0 0 0 1px rgba(212,175,55,.15), inset 0 1px 0 rgba(255,255,255,.1); }
+.glass:hover::after { opacity: 1; }
+.tilt { will-change: transform; transition: transform .25s ease, border-color .35s, box-shadow .35s; }
+
+.icon { width: 74px; height: 74px; border-radius: 22px; display: grid; place-items: center; color: var(--gold-300);
+  background: linear-gradient(145deg, rgba(212,175,55,.28), rgba(212,175,55,.06)); border: 1px solid rgba(212,175,55,.35); }
+.icon svg, .ico svg { width: 38px; height: 38px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.icon.blue { color: var(--blue-300); background: linear-gradient(145deg, rgba(44,91,214,.4), rgba(44,91,214,.08)); border-color: rgba(92,136,242,.4); }
+
+.grid { display: grid; gap: 30px; }
+.g3 { grid-template-columns: repeat(3, 1fr); }
+.g4 { grid-template-columns: repeat(4, 1fr); }
+.card { padding: 40px 40px 44px; }
+.card h3 { font-size: 31px; font-weight: 700; margin: 24px 0 12px; line-height: 1.2; }
+.card p { font-size: 23px; line-height: 1.5; color: var(--muted); }
+.g3 .card { padding: 34px 38px 38px; }
+
+.callout { margin-top: 40px; padding: 30px 40px; border-radius: 24px; font-size: 27px; line-height: 1.45; display: flex; gap: 26px; align-items: center;
+  background: linear-gradient(100deg, rgba(212,175,55,.18), rgba(44,91,214,.14)); border: 1px solid var(--gold-line); }
+.callout b { color: var(--gold-300); }
+.callout svg { flex: none; width: 54px; height: 54px; stroke: var(--gold-400); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Cover ---------- */
+.cover { display: grid; grid-template-columns: 1fr 760px; align-items: center; height: 100%; padding: 0 120px 0 150px; position: relative; z-index: 2; gap: 40px; }
+.cover .kicker { display: inline-flex; align-items: center; gap: 16px; font-size: 22px; font-weight: 600; letter-spacing: .32em; color: var(--gold-400); text-transform: uppercase; }
+.cover .kicker::before { content: ""; width: 64px; height: 2px; background: var(--gold-grad); }
+.cover h1 { font-size: 104px; line-height: 1.02; font-weight: 700; margin: 34px 0 34px; letter-spacing: -.015em; }
+.cover h1 em { font-style: italic; background: var(--gold-grad); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 6s linear infinite; }
+.cover .sub { font-size: 31px; color: var(--muted); line-height: 1.5; max-width: 900px; }
+.chips { margin-top: 60px; display: flex; gap: 22px; }
+.chip { padding: 18px 26px; border-radius: 18px; font-size: 19px; color: var(--soft); letter-spacing: .06em; text-transform: uppercase; }
+.chip b { display: block; color: var(--text); font-size: 25px; font-weight: 600; margin-top: 6px; letter-spacing: 0; text-transform: none; }
+.halo { position: relative; display: grid; place-items: center; }
+.halo .ring { position: absolute; width: 700px; height: 700px; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 20%, rgba(230,197,104,.9) 30%, transparent 42% 70%, rgba(92,136,242,.8) 80%, transparent 92%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  animation: spin 14s linear infinite; }
+.halo .ring.r2 { width: 620px; height: 620px; animation-duration: 22s; animation-direction: reverse; opacity: .55; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.fountain-glass { position: relative; width: 520px; aspect-ratio: 1; padding: 7%; border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.18), rgba(255,255,255,.04) 60%);
+  border: 1px solid rgba(230,197,104,.35); box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 50px 120px rgba(0,0,0,.55), 0 0 120px rgba(44,91,214,.35);
+  backdrop-filter: blur(20px); animation: float 9s ease-in-out infinite; }
+.fountain-glass::before { content: ""; position: absolute; inset: -40%; background: linear-gradient(115deg, transparent 42%, rgba(255,255,255,.14) 50%, transparent 58%); animation: sheen 8s ease-in-out infinite; pointer-events: none; }
+.fountain-stage { position: relative; width: 100%; height: 100%; }
+.fountain-logo { display: block; width: 100%; height: 100%; color: #fff; filter: drop-shadow(0 0 22px rgba(230,197,104,.45)); }
+.fountain-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+@keyframes sheen { 0%,20% { transform: translateX(-60%); } 60%,100% { transform: translateX(60%); } }
+.caption { position: absolute; bottom: -10px; text-align: center; }
+.caption .word { display: block; font-family: 'Playfair Display'; font-size: 30px; font-weight: 700; letter-spacing: .32em; color: var(--gold-300); }
+.caption small { font-size: 19px; color: var(--soft); letter-spacing: .2em; text-transform: uppercase; }
+.hint { position: absolute; left: 150px; bottom: 60px; z-index: 3; display: flex; align-items: center; gap: 14px; font-size: 18px; color: var(--soft); letter-spacing: .12em; text-transform: uppercase; }
+.hint kbd { font-family: 'Space Grotesk'; border: 1px solid var(--gold-line); border-radius: 8px; padding: 4px 10px; color: var(--gold-300); animation: nudge 2.4s ease-in-out infinite; }
+@keyframes nudge { 0%,100% { transform: translateX(0); } 50% { transform: translateX(6px); } }
+
+/* ---------- Team ---------- */
+.team { display: grid; grid-template-columns: repeat(3, 1fr); gap: 38px; }
+.member { padding: 54px 48px 50px; text-align: left; }
+.avatar { position: relative; width: 132px; height: 132px; border-radius: 50%; display: grid; place-items: center;
+  font-family: 'Playfair Display'; font-size: 50px; font-weight: 700; color: var(--gold-300); background: radial-gradient(circle at 30% 25%, var(--blue-600), var(--navy-900)); }
+.avatar::before { content: ""; position: absolute; inset: -7px; border-radius: 50%; padding: 3px;
+  background: conic-gradient(var(--gold-500), var(--blue-400), var(--gold-300), var(--gold-500));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: spin 8s linear infinite; animation-play-state: paused; }
+.member:hover .avatar::before { animation-play-state: running; }
+.member h3 { font-family: 'Playfair Display'; font-size: 40px; margin-top: 34px; }
+.member .role { font-size: 22px; font-weight: 600; color: var(--gold-400); margin-top: 10px; letter-spacing: .02em; }
+.member ul { list-style: none; margin-top: 30px; display: grid; gap: 16px; border-top: 1px solid var(--line); padding-top: 28px; }
+.member li { font-size: 23px; color: var(--muted); line-height: 1.4; padding-left: 34px; position: relative; }
+.member li::before { content: ""; position: absolute; left: 0; top: 11px; width: 14px; height: 14px; transform: rotate(45deg); background: var(--gold-grad); border-radius: 3px; }
+
+/* ---------- Agenda ---------- */
+.agenda { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 60px; }
+.agenda button { display: flex; align-items: center; gap: 30px; font-size: 33px; font-weight: 500; padding: 22px 30px; border-radius: 20px; text-align: left;
+  border: 1px solid transparent; transition: background .3s, border-color .3s, transform .3s; position: relative; }
+.agenda button span { font-family: 'Space Grotesk'; font-size: 30px; font-weight: 700; min-width: 58px; background: var(--gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.agenda button::after { content: "→"; margin-left: auto; color: var(--gold-400); opacity: 0; transform: translateX(-10px); transition: .3s; }
+.agenda button:hover { background: var(--glass-2); border-color: var(--gold-line); transform: translateX(8px); }
+.agenda button:hover::after { opacity: 1; transform: none; }
+
+/* ---------- Problem: typo chip ---------- */
+.typo { margin-top: 20px; display: inline-flex; align-items: center; gap: 14px; font-family: 'Space Grotesk'; font-size: 26px; padding: 10px 18px; border-radius: 14px; background: rgba(0,0,0,.25); border: 1px solid var(--line); }
+.typo .x { color: var(--bad); text-decoration: line-through; }
+.typo .y { color: var(--ok); }
+
+/* ---------- Objectives ---------- */
+.split { display: grid; grid-template-columns: 1fr 1.05fr; gap: 70px; align-items: center; }
+.checks { list-style: none; display: grid; gap: 20px; }
+.checks li { display: flex; gap: 22px; align-items: flex-start; font-size: 26px; line-height: 1.45; color: var(--muted); padding: 20px 26px; border-radius: 20px; transition: background .3s, transform .3s; }
+.checks li:hover { background: var(--glass-2); transform: translateX(6px); }
+.checks li b { color: var(--text); }
+.checks .ico { flex: none; width: 50px; height: 50px; border-radius: 14px; display: grid; place-items: center; color: var(--navy-900); background: var(--gold-grad); }
+.checks .ico svg { width: 28px; height: 28px; stroke-width: 2.6; }
+.target { position: relative; padding: 50px 54px; }
+.target .serif { font-size: 40px; line-height: 1.3; }
+.target p { font-size: 26px; line-height: 1.55; color: var(--muted); margin-top: 22px; }
+
+/* ---------- Flow ---------- */
+.flow { position: relative; display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; }
+.flow-line { position: absolute; left: 8%; right: 8%; top: 58px; height: 3px; background: rgba(255,255,255,.12); border-radius: 3px; overflow: hidden; }
+.flow-line::after { content: ""; position: absolute; top: 0; bottom: 0; width: 18%; background: linear-gradient(90deg, transparent, var(--gold-400), transparent); animation: travel 3.2s linear infinite; }
+@keyframes travel { from { left: -18%; } to { left: 100%; } }
+.step { position: relative; text-align: center; padding: 0 6px; cursor: pointer; }
+.step .dot { width: 116px; height: 116px; margin: 0 auto 24px; border-radius: 50%; display: grid; place-items: center; color: var(--blue-300);
+  background: radial-gradient(circle at 30% 25%, var(--navy-700), var(--navy-900)); border: 2px solid rgba(92,136,242,.5); position: relative; z-index: 1;
+  transition: transform .35s, border-color .35s, color .35s, box-shadow .35s, background .35s; }
+.step .dot svg { width: 48px; height: 48px; stroke: currentColor; fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.step .tag { display: inline-block; font-size: 16px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--gold-400); margin-bottom: 10px; }
+.step h3 { font-size: 29px; font-weight: 700; }
+.step:hover .dot { transform: translateY(-6px); }
+.step.on .dot { background: var(--gold-grad); color: var(--navy-900); border-color: var(--gold-300); box-shadow: 0 0 0 10px rgba(212,175,55,.14), 0 20px 50px rgba(212,175,55,.35); transform: scale(1.08); }
+.detail { margin-top: 54px; padding: 36px 46px; display: grid; grid-template-columns: 90px 1fr; gap: 30px; align-items: center; min-height: 190px; }
+.detail .n { font-family: 'Space Grotesk'; font-size: 74px; font-weight: 700; background: var(--gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; line-height: 1; }
+.detail h4 { font-size: 32px; font-family: 'Playfair Display'; }
+.detail p { font-size: 25px; line-height: 1.5; color: var(--muted); margin-top: 10px; }
+.detail .swap { animation: fadeIn .45s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Use cases ---------- */
+.cu { width: 100%; border-collapse: separate; border-spacing: 0 10px; font-size: 25px; }
+.cu th { text-align: left; font-size: 17px; text-transform: uppercase; letter-spacing: .16em; color: var(--gold-400); font-weight: 600; padding: 0 26px 4px; }
+.cu td { padding: 17px 26px; background: var(--glass); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); transition: background .3s; }
+.cu tr:hover td { background: var(--glass-2); }
+.cu td:first-child { border-left: 1px solid var(--line); border-radius: 16px 0 0 16px; font-family: 'Space Grotesk'; font-weight: 700; color: var(--gold-300); width: 110px; }
+.cu td:last-child { border-right: 1px solid var(--line); border-radius: 0 16px 16px 0; width: 380px; }
+.cu .who { color: var(--muted); font-size: 22px; }
+.bar { display: flex; align-items: center; gap: 18px; }
+.bar i { flex: 1; height: 12px; border-radius: 99px; background: rgba(255,255,255,.09); overflow: hidden; display: block; }
+.bar i b { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--blue-500), var(--blue-300)); box-shadow: 0 0 18px rgba(92,136,242,.6);
+  transition: width 1.4s cubic-bezier(.2,.8,.2,1); transition-delay: calc(var(--r, 0) * 110ms + 400ms); }
+.slide.active .bar i b { width: var(--w); }
+.bar.part i b { background: var(--gold-grad); box-shadow: 0 0 18px rgba(212,175,55,.6); }
+.bar span { font-family: 'Space Grotesk'; font-weight: 700; min-width: 76px; text-align: right; }
+
+/* ---------- Suggestion demo ---------- */
+.confusions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+.confusions span { font-family: 'Space Grotesk'; font-size: 22px; padding: 8px 16px; border-radius: 12px; border: 1px solid var(--gold-line); color: var(--gold-300); background: rgba(212,175,55,.08); }
+.confusions span.hot { background: var(--gold-grad); color: var(--navy-900); border-color: transparent; font-weight: 700; }
+.mock { overflow: hidden; font-size: 22px; padding: 0; }
+.mock .hd { display: flex; justify-content: space-between; align-items: center; padding: 26px 34px; border-bottom: 1px solid var(--line); }
+.mock .hd b { font-family: 'Playfair Display'; font-size: 28px; }
+.pill { font-size: 16px; font-weight: 700; padding: 7px 16px; border-radius: 99px; letter-spacing: .04em; transition: .4s; }
+.pill.hi { background: rgba(212,175,55,.18); color: var(--gold-300); border: 1px solid var(--gold-line); }
+.pill.done { background: rgba(52,211,153,.16); color: var(--ok); border: 1px solid rgba(52,211,153,.45); }
+.mock table { width: 100%; border-collapse: collapse; }
+.mock th { font-size: 15px; text-transform: uppercase; letter-spacing: .12em; color: var(--soft); text-align: left; padding: 18px 34px 8px; font-weight: 600; }
+.mock td { padding: 14px 34px; border-top: 1px solid rgba(255,255,255,.06); }
+.mock td.k { color: var(--soft); }
+.mock td.code { font-family: 'Space Grotesk'; font-size: 27px; letter-spacing: .08em; }
+.mock .ch { display: inline-block; transition: color .4s; }
+.mock .ch.bad { color: var(--bad); text-shadow: 0 0 14px rgba(248,113,113,.6); animation: blink 1.2s ease-in-out infinite; }
+.mock .ch.fixed { color: var(--ok); text-shadow: 0 0 16px rgba(52,211,153,.8); animation: flip .6s ease; }
+@keyframes blink { 50% { opacity: .45; } }
+@keyframes flip { from { transform: rotateX(90deg); } to { transform: none; } }
+.mock td.why { color: var(--muted); font-size: 20px; }
+.mock td.ok { color: var(--ok); }
+.mock .fix { margin: 20px 34px; padding: 18px 24px; border-radius: 16px; background: rgba(44,91,214,.16); border: 1px dashed rgba(92,136,242,.55); color: var(--blue-300); transition: .4s; }
+.mock .fix b { color: var(--text); }
+.mock .fix.done { background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.5); color: var(--ok); }
+.mock .ft { display: flex; justify-content: flex-end; gap: 14px; padding: 4px 34px 30px; }
+.btn { font-size: 19px; font-weight: 600; padding: 14px 28px; border-radius: 99px; transition: transform .2s, box-shadow .3s, opacity .3s; }
+.btn:hover { transform: translateY(-2px); }
+.btn.p { background: var(--gold-grad); background-size: 200% 100%; color: var(--navy-900); box-shadow: 0 12px 30px rgba(212,175,55,.35); animation: shimmer 5s linear infinite; }
+.btn.s { border: 1px solid var(--line); color: var(--muted); }
+.btn[disabled] { opacity: .45; cursor: default; transform: none; }
+
+/* ---------- Architecture ---------- */
+.arch { display: flex; align-items: center; justify-content: space-between; gap: 0; margin-bottom: 50px; }
+.arch .node { flex: 1; text-align: center; padding: 28px 18px; font-size: 26px; font-weight: 600; }
+.arch .node small { display: block; font-size: 18px; font-weight: 400; color: var(--muted); margin-top: 6px; }
+.arch .node.g { background: linear-gradient(145deg, rgba(212,175,55,.35), rgba(212,175,55,.08)); border-color: var(--gold-line); }
+.arch .node.b { background: linear-gradient(145deg, rgba(44,91,214,.45), rgba(44,91,214,.1)); border-color: rgba(92,136,242,.5); }
+.arch .arr { flex: none; width: 70px; height: 2px; background: rgba(255,255,255,.18); position: relative; overflow: visible; }
+.arch .arr i { position: absolute; top: -4px; left: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--gold-300); box-shadow: 0 0 14px var(--gold-400); animation: packet 1.6s linear infinite; }
+.arch .arr i:nth-child(2) { animation-delay: -.8s; }
+@keyframes packet { from { left: -4px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } to { left: 64px; opacity: 0; } }
+.stack { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+.tech { padding: 30px 30px 32px; }
+.tech .lbl { font-size: 15px; text-transform: uppercase; letter-spacing: .18em; color: var(--gold-400); font-weight: 700; }
+.tech h3 { font-size: 30px; margin: 12px 0 10px; }
+.tech p { font-size: 20px; line-height: 1.45; color: var(--muted); }
+
+/* ---------- Results ---------- */
+.res { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; }
+.res .card { padding: 42px 46px; }
+.res .top { display: grid; grid-template-columns: 220px 1fr; gap: 40px; align-items: center; }
+.res h3 { font-family: 'Playfair Display'; font-size: 36px; margin: 0; }
+.res .tot { font-size: 22px; color: var(--muted); margin-top: 8px; }
+.donut { position: relative; width: 220px; height: 220px; }
+.donut svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.donut circle { fill: none; stroke-width: 16; }
+.donut .track { stroke: rgba(255,255,255,.08); }
+.donut .val { stroke: url(#gGold); stroke-linecap: round; stroke-dasharray: 565.5; stroke-dashoffset: 565.5; transition: stroke-dashoffset 1.8s cubic-bezier(.2,.8,.2,1) .4s; filter: drop-shadow(0 0 10px rgba(212,175,55,.55)); }
+.slide.active .donut .val { stroke-dashoffset: calc(565.5px * (1 - var(--p))); }
+.donut .c { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.donut .c b { font-family: 'Space Grotesk'; font-size: 58px; line-height: 1; }
+.donut .c small { font-size: 16px; color: var(--soft); letter-spacing: .1em; text-transform: uppercase; margin-top: 6px; }
+.stackbar { display: flex; height: 30px; border-radius: 10px; overflow: hidden; margin: 34px 0 24px; gap: 3px; background: rgba(255,255,255,.05); }
+.stackbar div { height: 100%; flex: 0.0001 1 0; transition: flex-grow 1.5s cubic-bezier(.2,.8,.2,1), opacity .3s; transition-delay: .6s; }
+.slide.active .stackbar div { flex-grow: var(--f); }
+.legend { display: grid; gap: 10px; }
+.legend div { display: flex; align-items: center; gap: 16px; font-size: 22px; color: var(--muted); padding: 6px 12px; border-radius: 10px; transition: background .25s, color .25s; cursor: default; }
+.legend div:hover { background: var(--glass-2); color: var(--text); }
+.legend i { width: 18px; height: 18px; border-radius: 5px; flex: none; }
+.legend b { margin-left: auto; font-family: 'Space Grotesk'; font-size: 25px; color: var(--text); }
+.c-ok { background: linear-gradient(90deg, var(--blue-500), var(--blue-400)); }
+.c-dif { background: var(--gold-grad); }
+.c-no { background: #E0795A; }
+.c-out { background: #7F8BB8; }
+.res .card.dim .stackbar div:not(.hl) { opacity: .25; }
+
+/* ---------- Tests ---------- */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px; margin-bottom: 40px; }
+.kpi { padding: 32px 34px; }
+.kpi .v { font-size: 82px; font-weight: 700; line-height: 1; }
+.kpi .l { font-size: 21px; color: var(--muted); margin-top: 12px; line-height: 1.4; }
+.kpi.gold .v { background: var(--gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kpi.ok .v { color: var(--ok); }
+.kpi.blue .v { color: var(--blue-300); }
+.kpi.warn .v { color: var(--warn); }
+.defects { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+.defect { padding: 28px 30px; border-left: 6px solid var(--warn); }
+.defect.fixed { border-left-color: var(--ok); }
+.defect .id { display: flex; align-items: center; gap: 12px; font-family: 'Space Grotesk'; font-weight: 700; font-size: 21px; color: var(--warn); letter-spacing: .06em; }
+.defect.fixed .id { color: var(--ok); }
+.defect h3 { font-size: 24px; margin: 12px 0 10px; line-height: 1.3; }
+.defect p { font-size: 19px; color: var(--muted); line-height: 1.45; }
+.sev { font-size: 14px; padding: 3px 12px; border-radius: 99px; background: rgba(248,113,113,.15); color: var(--bad); letter-spacing: .04em; }
+.sev.m { background: rgba(251,146,60,.15); color: var(--warn); }
+.sev.ok { background: rgba(52,211,153,.15); color: var(--ok); }
+.defect.info { border-left-color: var(--blue-400); }
+.defect.info .id { color: var(--blue-300); }
+.sev.info { background: rgba(92,136,242,.18); color: var(--blue-300); }
+
+/* ---------- Timeline ---------- */
+.timeline { position: relative; display: grid; grid-template-columns: repeat(6, 1fr); gap: 20px; padding-top: 86px; }
+.timeline .track { position: absolute; left: 0; right: 0; top: 34px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
+.timeline .track b { position: absolute; inset: 0; transform: scaleX(0); transform-origin: left; background: linear-gradient(90deg, var(--blue-500), var(--blue-400) 60%, var(--gold-400)); transition: transform 2.4s cubic-bezier(.2,.8,.2,1) .3s; }
+.slide.active .timeline .track b { transform: scaleX(1); }
+.ms { position: relative; padding: 26px 24px 28px; border-radius: 22px; transition: background .3s, transform .3s; }
+.ms:hover { background: var(--glass-2); transform: translateY(-6px); }
+.ms::before { content: ""; position: absolute; top: -62px; left: 24px; width: 24px; height: 24px; border-radius: 50%; background: var(--navy-900); border: 4px solid var(--blue-400); box-shadow: 0 0 0 6px rgba(92,136,242,.15); }
+.ms.go::before { background: var(--gold-400); border-color: var(--gold-300); width: 32px; height: 32px; top: -66px; left: 20px; box-shadow: 0 0 0 10px rgba(212,175,55,.2), 0 0 30px var(--gold-400); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 18px rgba(212,175,55,.06), 0 0 40px var(--gold-400); } }
+.ms .d { font-family: 'Space Grotesk'; font-size: 22px; font-weight: 700; color: var(--blue-300); }
+.ms.go .d { color: var(--gold-300); }
+.ms h3 { font-family: 'Playfair Display'; font-size: 30px; margin: 8px 0 10px; }
+.ms p { font-size: 20px; line-height: 1.45; color: var(--muted); }
+
+/* ---------- Docs ---------- */
+.docs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.doc { padding: 28px 32px; display: grid; grid-template-columns: 84px 1fr; gap: 22px; align-items: center; }
+.doc .ext { width: 84px; height: 96px; border-radius: 14px; display: grid; place-items: center; font-family: 'Space Grotesk'; font-size: 17px; font-weight: 700; letter-spacing: .08em;
+  background: linear-gradient(160deg, rgba(44,91,214,.5), rgba(44,91,214,.15)); border: 1px solid rgba(92,136,242,.5); color: var(--blue-300); position: relative; }
+.doc .ext::before { content: ""; position: absolute; top: -1px; right: -1px; width: 22px; height: 22px; background: linear-gradient(225deg, var(--navy-900) 50%, rgba(255,255,255,.25) 50%); border-radius: 0 14px 0 6px; }
+.doc .ext.x { background: linear-gradient(160deg, rgba(52,211,153,.35), rgba(52,211,153,.08)); border-color: rgba(52,211,153,.5); color: var(--ok); }
+.doc .ext.g { background: linear-gradient(160deg, rgba(212,175,55,.45), rgba(212,175,55,.1)); border-color: var(--gold-line); color: var(--gold-300); }
+.doc h3 { font-size: 26px; line-height: 1.25; }
+.doc p { font-size: 19px; line-height: 1.45; color: var(--muted); margin-top: 6px; }
+
+/* ---------- Closing ---------- */
+.closing { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.closing .mark-wrap { position: relative; display: grid; place-items: center; width: 300px; height: 300px; }
+.closing .mark-wrap .ring { position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 25%, var(--gold-400) 35%, transparent 45% 75%, var(--blue-400) 85%, transparent 95%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); animation: spin 10s linear infinite; }
+.closing .mark { width: 190px; height: 190px; color: var(--gold-300); filter: drop-shadow(0 0 30px rgba(212,175,55,.55)); }
+.closing h1 { font-size: 150px; font-weight: 700; margin: 34px 0 10px; letter-spacing: -.02em; }
+.closing p { font-size: 34px; color: var(--muted); }
+.closing .names { margin-top: 64px; display: flex; gap: 60px; font-size: 26px; color: var(--text); }
+.closing .names span { display: flex; align-items: center; gap: 14px; }
+.closing .names span::before { content: ""; width: 12px; height: 12px; transform: rotate(45deg); background: var(--gold-grad); }
+#confetti { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+
+/* ---------- Controls ---------- */
+#progress { position: fixed; left: 0; bottom: 0; height: 4px; background: var(--gold-grad); box-shadow: 0 0 16px var(--gold-500); transition: width .5s cubic-bezier(.2,.8,.2,1); z-index: 20; }
+#dots { position: fixed; right: 22px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 12px; z-index: 20; }
+#dots button { position: relative; width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.25); transition: .3s; }
+#dots button:hover { background: var(--gold-300); transform: scale(1.3); }
+#dots button.on { background: var(--gold-400); height: 30px; border-radius: 8px; box-shadow: 0 0 14px var(--gold-500); }
+#dots button span { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 13px; padding: 5px 10px; border-radius: 8px;
+  background: rgba(6,16,40,.92); border: 1px solid var(--gold-line); color: var(--gold-300); opacity: 0; pointer-events: none; transition: .2s; }
+#dots button:hover span { opacity: 1; }
+#nav { position: fixed; left: 16px; top: 14px; display: flex; gap: 10px; z-index: 20; opacity: .0; transition: opacity .3s; }
+body:hover #nav, body:hover #help { opacity: 1; }
+#nav button { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--gold-line); background: rgba(6,16,40,.8); color: var(--gold-300); font-size: 20px; backdrop-filter: blur(8px); transition: .25s; }
+#nav button:hover { background: var(--gold-grad); color: var(--navy-900); }
+#notes { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); width: min(1000px, calc(100% - 32px)); background: rgba(6, 12, 32, .95); color: #E8EAF6;
+  border: 1px solid var(--gold-line); border-radius: 16px; padding: 18px 22px; font-size: 16px; line-height: 1.55; z-index: 30; display: none; backdrop-filter: blur(10px); }
+#notes.show { display: block; }
+#notes strong { color: var(--gold-300); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+#help { position: fixed; top: 16px; right: 22px; font-size: 13px; color: var(--soft); z-index: 20; opacity: 0; transition: opacity .3s; }
+aside.note { display: none; }
+
+/* ---------- Overview (O) ---------- */
+#deck.overview .slide { opacity: 1; visibility: visible; cursor: pointer; transform-origin: top left; border-radius: 40px; outline: 8px solid rgba(255,255,255,.12);
+  background: linear-gradient(160deg, var(--navy-800), var(--navy-950)); transition: transform .6s cubic-bezier(.2,.8,.2,1), outline-color .3s; }
+#deck.overview .slide:hover { outline-color: var(--gold-300); }
+#deck.overview .slide.active { outline: 12px solid var(--gold-400); }
+#deck.overview .rv { opacity: 1; animation: none; }
+#deck.overview .slide.active .bar i b { transition: none; }
+body.ov #dots, body.ov #nav { display: none; }
+
+@media print {
+  @page { size: 1920px 1080px; margin: 0; }
+  body { overflow: visible; background: var(--navy-900); }
+  #bg { position: fixed; }
+  #viewport { position: static; overflow: visible; }
+  #deck { position: static; transform: none !important; }
+  .slide { position: relative; opacity: 1; visibility: visible; transform: none; width: 1920px; height: 1080px; break-after: page; }
+  .slide .rv { opacity: 1; animation: none; }
+  .bar i b { width: var(--w); } .stackbar div { flex-grow: var(--f); } .timeline .track b { transform: none; }
+  #progress, #nav, #notes, #help, #dots { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; }
+  .slide .rv { opacity: 1; }
+}
+
+/* ---------- Capstone format additions ---------- */
+.proj { font-size: 19px; letter-spacing: .22em; }
+.ps { display: grid; grid-template-columns: 1fr 90px 1fr; gap: 0; align-items: stretch; }
+.ps .card { padding: 44px 46px; }
+.ps .tagl { display: inline-flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--gold-400); }
+.ps .card.sol .tagl { color: var(--blue-300); }
+.ps h3 { font-family: 'Playfair Display'; font-size: 38px; margin: 18px 0 18px; }
+.ps .mid { display: grid; place-items: center; }
+.ps .mid span { width: 70px; height: 70px; border-radius: 50%; display: grid; place-items: center; background: var(--gold-grad); color: var(--navy-900); font-size: 34px; font-weight: 700; box-shadow: 0 0 40px rgba(212,175,55,.5); animation: pulse 2.4s ease-in-out infinite; }
+.plist { list-style: none; display: grid; gap: 16px; }
+.plist li { display: flex; gap: 16px; font-size: 23px; line-height: 1.45; color: var(--muted); }
+.plist li b { color: var(--text); }
+.plist li i { flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-style: normal; font-size: 18px; font-weight: 700; margin-top: 2px; }
+.plist.bad li i { background: rgba(248,113,113,.15); color: var(--bad); }
+.plist.good li i { background: rgba(52,211,153,.15); color: var(--ok); }
+.plist.gold li i { background: rgba(212,175,55,.18); color: var(--gold-300); }
+.plist.blue li i { background: rgba(92,136,242,.2); color: var(--blue-300); }
+
+.al { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; }
+.al .card { padding: 40px 44px; }
+.al h3 { font-family: 'Playfair Display'; font-size: 36px; margin: 0 0 24px; display: flex; align-items: center; gap: 16px; }
+
+.epics { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 22px; }
+.epics span { font-size: 19px; padding: 10px 16px; border-radius: 14px; background: var(--glass-2); border: 1px solid var(--line); color: var(--muted); }
+.epics span b { color: var(--gold-300); font-family: 'Space Grotesk'; margin-right: 6px; }
+.sprints { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; margin-top: 40px; position: relative; }
+.sprint { padding: 26px 24px 28px; }
+.sprint .n { font-family: 'Space Grotesk'; font-size: 16px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--gold-400); }
+.sprint h3 { font-family: 'Playfair Display'; font-size: 27px; margin: 8px 0 6px; }
+.sprint .d { font-size: 17px; color: var(--blue-300); font-weight: 600; }
+.sprint p { font-size: 18px; line-height: 1.45; color: var(--muted); margin-top: 12px; }
+.method { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.method .card { padding: 30px 34px; }
+.method h3 { margin: 16px 0 8px; font-size: 27px; }
+.method p { font-size: 20px; }
+
+.gw { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 19px; }
+.gw th, .gw td { padding: 9px 8px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.gw thead th { font-size: 15px; font-weight: 600; color: var(--soft); text-align: center; letter-spacing: .04em; }
+.gw thead tr.ph th { font-size: 16px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold-300); border-bottom: 2px solid var(--gold-line); }
+.gw td.a { color: var(--text); white-space: nowrap; padding-right: 18px; }
+.gw td.a small { display: block; color: var(--soft); font-size: 15px; }
+.gw td.w { width: 70px; padding: 9px 4px; }
+.gw td.w b { display: block; height: 22px; border-radius: 6px; transform: scaleX(0); transform-origin: left; transition: transform .7s cubic-bezier(.2,.8,.2,1); transition-delay: calc(var(--d, 0) * 70ms + 400ms); }
+.slide.active .gw td.w b { transform: none; }
+.gw .f1 { background: linear-gradient(90deg, var(--blue-400), var(--blue-300)); }
+.gw .f2 { background: var(--gold-grad); }
+.gw .f3 { background: linear-gradient(90deg, #2BB37A, var(--ok)); }
+.gw td.c { text-align: center; font-family: 'Space Grotesk'; font-weight: 700; color: var(--ok); white-space: nowrap; }
+.gw td.c.part { color: var(--gold-300); }
+.gw tbody tr:hover td { background: rgba(255,255,255,.035); }
+.gw .sep td { border-bottom: 1px solid var(--gold-line); }
+.gnote { margin-top: 18px; font-size: 18px; color: var(--soft); }
+
+.layers { display: grid; grid-template-columns: 300px 70px 1fr 70px 300px; align-items: center; }
+.layer { padding: 28px 26px; text-align: center; }
+.layer h3 { font-family: 'Playfair Display'; font-size: 28px; margin: 14px 0 6px; }
+.layer p { font-size: 18px; color: var(--muted); line-height: 1.4; }
+.layer .icon { margin: 0 auto; }
+.core { padding: 30px 32px; }
+.core .hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.core .hd b { font-family: 'Playfair Display'; font-size: 30px; }
+.core .hd span { font-size: 16px; color: var(--gold-300); letter-spacing: .14em; text-transform: uppercase; }
+.svc { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.svc div { padding: 14px 16px; border-radius: 14px; background: rgba(0,0,0,.2); border: 1px solid var(--line); font-size: 18px; color: var(--muted); }
+.svc div b { display: block; color: var(--text); font-size: 19px; margin-bottom: 4px; }
+.hconn { position: relative; height: 2px; background: rgba(255,255,255,.18); margin: 0 6px; }
+.hconn i { position: absolute; top: -4px; left: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--gold-300); box-shadow: 0 0 14px var(--gold-400); animation: packet2 1.6s linear infinite; }
+.hconn i:nth-child(2) { animation-delay: -.8s; }
+@keyframes packet2 { from { left: -4px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } to { left: calc(100% - 6px); opacity: 0; } }
+.inputs { display: flex; gap: 14px; justify-content: center; margin-top: 34px; flex-wrap: wrap; }
+.inputs span { font-size: 19px; padding: 10px 18px; border-radius: 99px; border: 1px dashed var(--gold-line); color: var(--gold-300); background: rgba(212,175,55,.06); }
+.deploy { margin-top: 26px; text-align: center; font-size: 20px; color: var(--muted); }
+.deploy b { color: var(--text); }
+
+.er { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 34px 46px; align-items: start; }
+.er .col { display: grid; gap: 16px; }
+.er .col h4 { font-size: 15px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold-400); font-weight: 700; margin-bottom: 2px; }
+.ent { padding: 16px 20px; border-radius: 16px; }
+.ent .t { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ent .t b { font-size: 21px; }
+.ent .t code { font-family: 'Space Grotesk'; font-size: 14px; color: var(--blue-300); }
+.ent p { font-size: 16px; color: var(--soft); margin-top: 6px; line-height: 1.4; }
+.ent.main { padding: 26px 26px; background: linear-gradient(145deg, rgba(212,175,55,.3), rgba(212,175,55,.06)); border-color: var(--gold-line); }
+.ent.main .t b { font-family: 'Playfair Display'; font-size: 30px; }
+.ent.main p { font-size: 18px; color: var(--muted); }
+.ent.key { background: linear-gradient(145deg, rgba(44,91,214,.4), rgba(44,91,214,.08)); border-color: rgba(92,136,242,.5); }
+.rel { font-size: 15px; color: var(--gold-300); font-family: 'Space Grotesk'; letter-spacing: .06em; text-align: center; }
+.er-foot { margin-top: 26px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+.demo { display: grid; grid-template-columns: 1fr 1.05fr; gap: 60px; align-items: center; }
+.route { list-style: none; counter-reset: r; display: grid; gap: 14px; }
+.route li { counter-increment: r; display: flex; gap: 20px; align-items: center; padding: 16px 22px; border-radius: 18px; font-size: 24px; color: var(--muted); transition: background .3s, transform .3s; }
+.route li:hover { background: var(--glass-2); transform: translateX(6px); }
+.route li::before { content: counter(r); flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-family: 'Space Grotesk'; font-weight: 700; color: var(--navy-900); background: var(--gold-grad); }
+.route li b { color: var(--text); }
+.live { margin-top: 26px; display: inline-flex; align-items: center; gap: 12px; font-size: 21px; font-weight: 600; padding: 16px 30px; border-radius: 99px; background: var(--gold-grad); color: var(--navy-900); text-decoration: none; box-shadow: 0 14px 40px rgba(212,175,55,.35); }
+
+.kstrip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; margin-top: 30px; }
+.kstrip .kpi { padding: 22px 26px; display: flex; align-items: center; gap: 22px; }
+.kstrip .kpi .v { font-size: 54px; }
+.kstrip .kpi .l { margin-top: 0; font-size: 19px; }
+
+.obs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 26px; }
+.ob { padding: 30px 34px; display: grid; grid-template-columns: 64px 1fr; gap: 22px; }
+.ob .num { font-family: 'Playfair Display'; font-size: 52px; font-weight: 700; line-height: 1; background: var(--gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ob h3 { font-size: 27px; line-height: 1.25; }
+.ob p { font-size: 20px; line-height: 1.45; color: var(--muted); margin-top: 8px; }
+.ob .fix { margin-top: 12px; font-size: 19px; line-height: 1.45; color: var(--ok); display: flex; gap: 10px; }
+.ob .fix::before { content: "✓"; font-weight: 700; }
+
+.res-tight .res .card { padding: 30px 40px; }
+.res-tight .stackbar { margin: 22px 0 16px; }
+.res-tight .legend { gap: 4px; }
+.res-tight .kstrip { margin-top: 22px; }
+.res-tight .kstrip .kpi { padding: 16px 22px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs><symbol id="logo" viewBox="0 0 1000 1000"><path fill="currentColor" fill-rule="evenodd" d="M187.0 978.0C176.8 970.5 174.6 968.7 170.5 964.8C168.4 962.8 164.7 959.7 162.2 957.9C159.8 956.1 157.1 953.9 156.2 953.0C154.7 951.3 145.3 943.3 141.8 940.7C140.6 939.9 138.7 938.3 137.5 937.1C136.3 936.0 132.7 932.9 129.5 930.3C119.2 921.6 116.8 919.6 111.3 914.9C108.3 912.3 105.3 909.8 104.6 909.3C103.8 908.7 102.3 907.5 101.2 906.5C100.1 905.6 97.6 903.5 95.7 902.0C93.8 900.5 90.7 897.8 88.7 896.0C86.8 894.2 83.9 891.8 82.5 890.6C81.0 889.5 78.3 887.4 76.5 886.0C74.7 884.6 71.9 882.1 70.2 880.5C68.6 878.9 66.4 876.9 65.4 876.2C59.8 871.9 55.6 868.5 54.5 867.3C53.8 866.5 52.2 865.2 51.0 864.3C49.8 863.5 47.4 861.5 45.7 860.0C44.0 858.5 40.1 855.0 37.0 852.3C33.9 849.5 31.2 846.8 30.8 846.3C30.4 845.5 30.2 762.5 30.1 499.7L30.0 154.2L30.9 152.5C31.4 151.5 33.1 149.7 34.6 148.5C41.2 143.1 52.0 133.9 55.0 131.2C56.8 129.6 59.5 127.3 61.0 126.1C65.7 122.5 70.7 118.4 77.3 112.9C80.9 109.9 85.2 106.3 87.0 104.9C88.7 103.4 93.5 99.3 97.7 95.7C101.9 92.1 106.5 88.3 108.0 87.1C110.7 85.1 111.9 84.1 121.4 76.0C123.8 73.9 126.8 71.5 128.0 70.6C129.2 69.8 132.1 67.4 134.3 65.4C136.5 63.4 139.4 60.9 140.8 59.8C147.0 54.7 154.3 48.6 155.0 47.8C155.4 47.3 157.3 45.7 159.2 44.2C166.6 38.7 168.3 37.3 171.3 34.6C174.4 31.6 181.0 26.3 186.1 22.6L189.0 20.5L499.3 20.5L809.5 20.5L812.1 21.8C815.0 23.3 819.9 27.0 825.2 32.0C827.2 33.8 830.5 36.6 832.8 38.2C835.0 39.9 838.0 42.4 839.5 43.8C843.0 47.0 851.6 54.2 854.1 55.9C855.2 56.6 856.0 57.3 856.0 57.5C856.0 57.7 860.2 61.3 865.3 65.5C870.4 69.8 875.6 74.1 876.9 75.2C878.3 76.4 881.2 78.8 883.5 80.6C885.9 82.5 889.2 85.2 891.0 86.8C892.8 88.3 896.4 91.3 899.0 93.4C901.6 95.5 905.1 98.5 906.8 100.0C910.3 103.1 913.0 105.4 917.0 108.3C918.5 109.4 921.7 112.1 924.0 114.3C926.4 116.5 930.3 119.7 932.7 121.5C935.2 123.3 939.3 126.7 941.9 129.0C944.5 131.3 948.8 134.9 951.3 137.0C958.5 142.9 967.1 150.3 968.5 151.7L969.8 153.1L969.9 498.2C970.0 742.8 969.9 843.8 969.5 845.1C969.0 846.8 963.0 852.7 957.6 856.7C956.8 857.3 952.7 860.9 948.2 864.7C943.8 868.6 938.0 873.4 935.4 875.5C932.7 877.5 928.6 880.9 926.4 883.0C921.1 887.8 916.8 891.4 914.2 893.1C913.2 893.8 910.1 896.4 907.5 898.8C904.9 901.3 900.9 904.6 898.8 906.2C896.6 907.9 893.2 910.7 891.3 912.5C889.3 914.3 885.1 917.9 881.8 920.5C878.5 923.1 874.5 926.5 872.8 928.0C869.0 931.5 861.4 937.8 858.8 939.8C857.7 940.6 855.0 942.8 852.8 944.8C850.5 946.8 846.4 950.3 843.5 952.7C835.7 959.1 828.2 965.4 825.0 968.3C819.5 973.3 814.9 977.0 812.6 978.4L810.2 979.8L500.0 979.9L189.7 980.0L187.0 978.0ZM797.8 945.3C800.3 944.2 805.6 940.2 809.8 936.3C811.7 934.4 815.6 931.1 818.5 928.8C821.3 926.6 824.8 923.7 826.2 922.5C831.0 918.1 840.1 910.4 841.8 909.2C842.8 908.6 846.1 905.8 849.3 903.0C852.4 900.2 856.9 896.3 859.4 894.4C861.8 892.4 866.1 888.8 869.0 886.4C871.9 883.9 876.8 879.7 879.9 877.1C883.1 874.4 888.3 870.0 891.4 867.2C894.6 864.5 898.7 861.1 900.4 859.8C902.1 858.5 905.4 855.8 907.7 853.8C910.0 851.9 913.3 849.1 915.0 847.8C916.7 846.4 919.4 844.1 921.0 842.8C935.5 829.9 936.0 829.5 936.5 827.6C936.8 826.2 937.0 723.4 936.9 498.4L936.8 171.2L935.9 169.7C935.4 168.9 934.2 167.6 933.1 166.9C932.1 166.2 928.6 163.3 925.4 160.4C922.2 157.6 918.3 154.2 916.7 152.9C910.5 147.9 897.4 137.0 889.3 130.1C886.0 127.2 881.7 123.7 879.8 122.3C877.8 120.8 874.7 118.2 872.8 116.5C869.6 113.6 862.2 107.4 857.0 103.2C855.9 102.4 851.5 98.7 847.2 95.0C842.9 91.3 838.2 87.4 836.8 86.4C835.4 85.4 832.0 82.6 829.2 80.2C826.4 77.7 822.6 74.5 820.8 73.0C818.9 71.5 814.9 68.1 811.8 65.5C802.4 57.4 799.1 55.0 797.4 54.5C794.6 53.7 204.2 53.9 201.9 54.7C200.1 55.3 193.6 60.4 186.8 66.4C184.9 68.2 182.4 70.2 181.2 70.9C180.1 71.6 178.4 73.0 177.2 74.0C170.1 80.7 166.7 83.7 162.5 86.8C159.9 88.8 155.4 92.4 152.5 95.0C149.6 97.5 146.0 100.5 144.5 101.6C143.0 102.8 139.5 105.7 136.8 108.2C134.0 110.6 131.0 113.2 130.0 113.9C127.6 115.7 123.6 119.0 117.5 124.3C114.6 126.8 110.9 129.8 109.4 130.8C107.8 131.9 104.2 134.8 101.4 137.3C94.9 143.0 87.8 149.0 83.5 152.4C75.7 158.6 74.1 160.0 69.8 163.9C67.3 166.2 64.8 168.8 64.3 169.6L63.2 171.2L63.1 498.4C63.0 735.3 63.1 826.2 63.5 827.7C64.1 829.9 70.0 836.0 75.5 840.2C80.5 843.9 85.2 847.9 86.5 849.2C87.8 850.7 92.1 854.3 97.9 858.7C99.8 860.0 102.9 862.7 105.0 864.6C107.1 866.5 110.4 869.3 112.5 870.9C114.6 872.5 118.2 875.5 120.5 877.7C122.9 880.0 126.8 883.3 129.3 885.2C131.7 887.1 136.5 891.1 139.8 894.0C150.3 903.1 154.6 906.7 157.9 909.2C161.5 911.8 169.0 918.3 173.8 922.7C175.4 924.2 176.9 925.5 177.1 925.5C177.3 925.5 179.2 927.0 181.4 928.9C192.8 938.9 200.0 944.6 202.2 945.4C204.9 946.3 795.5 946.2 797.8 945.3ZM268.8 788.2C263.4 786.8 257.4 781.0 253.2 773.2C249.4 766.0 252.5 766.8 224.8 766.5L200.8 766.2L199.0 765.2C197.7 764.4 197.1 763.7 196.7 762.0C195.7 758.4 195.8 397.0 196.7 388.2C198.3 374.0 198.6 371.6 199.5 368.0C200.0 365.9 200.5 363.4 200.7 362.2C201.7 355.9 206.8 339.3 209.2 334.5C210.1 332.7 211.1 330.4 211.5 329.3C212.6 326.0 222.4 308.8 224.8 306.0C225.3 305.3 227.4 302.5 229.3 299.8C232.7 294.8 246.1 279.0 247.0 279.0C247.2 279.0 248.9 277.6 250.8 275.8C252.7 274.1 255.5 271.8 257.0 270.6C258.5 269.5 260.9 267.7 262.3 266.7C263.6 265.6 266.0 263.9 267.5 262.9C269.0 261.9 271.5 260.1 273.0 259.0C274.5 257.9 278.2 255.7 281.2 254.2C284.3 252.7 288.0 250.6 289.5 249.7C291.0 248.8 293.3 247.8 294.5 247.5C295.7 247.2 297.6 246.5 298.6 245.9C302.0 244.2 311.6 241.1 316.8 240.0C339.8 235.2 341.2 235.0 360.0 235.0L373.3 235.0L374.4 233.9C374.9 233.3 375.7 232.2 376.0 231.5C376.7 230.1 378.8 227.4 381.5 224.2C382.5 223.0 384.3 220.8 385.5 219.3C390.7 212.8 393.2 210.1 399.8 203.9C408.8 195.4 415.3 190.4 420.8 187.6C421.6 187.2 423.0 186.2 423.9 185.4C426.3 183.1 447.1 172.0 449.0 172.0C449.3 172.0 451.5 171.2 453.7 170.3C457.2 168.8 460.4 167.8 471.2 164.8C472.6 164.4 478.0 163.3 483.2 162.4L492.8 160.8L508.8 160.8C521.9 160.8 525.5 160.9 529.0 161.6C531.3 162.1 535.6 162.8 538.5 163.3C545.6 164.3 557.1 167.6 563.2 170.3C564.6 170.9 566.5 171.5 567.5 171.7C569.7 172.1 577.4 175.7 585.1 180.0C590.6 183.1 602.8 191.2 608.0 195.3C611.5 198.0 625.3 211.4 628.4 215.1C634.3 222.0 638.6 227.5 640.2 230.1C641.0 231.5 642.5 233.2 643.4 233.9L645.1 235.0L657.4 235.0C673.4 235.0 683.0 236.0 694.2 238.8C695.9 239.2 699.2 239.9 701.5 240.3C703.8 240.7 706.6 241.5 707.7 242.1C708.8 242.7 711.6 243.7 713.9 244.3C718.5 245.7 731.3 251.5 733.9 253.4C734.8 254.0 736.5 255.0 737.7 255.5C741.7 257.3 752.8 264.8 758.1 269.4C759.6 270.7 762.9 273.4 765.4 275.4C771.2 280.0 784.0 293.9 788.0 300.1C796.2 312.4 798.5 316.0 801.3 321.7C803.1 325.3 805.2 329.5 806.0 331.0C806.8 332.5 807.7 335.0 808.0 336.5C808.3 338.0 809.2 340.2 810.0 341.4C810.8 342.6 811.6 344.5 811.8 345.6C812.0 346.8 812.6 349.1 813.3 350.8C814.6 354.2 817.0 364.9 818.9 376.2L819.7 381.2L819.9 572.0C820.0 708.3 819.9 763.1 819.5 764.1C818.5 766.5 817.8 766.5 796.3 766.5C772.8 766.4 774.1 766.2 771.7 771.2C767.1 780.7 761.6 786.4 755.3 788.3C751.8 789.3 272.6 789.3 268.8 788.2ZM247.0 743.6C248.0 742.6 248.5 741.4 248.8 739.7C249.0 738.4 249.6 735.6 250.3 733.5C250.9 731.4 251.5 729.1 251.7 728.4C251.9 727.7 252.6 726.4 253.3 725.6C254.0 724.8 255.0 723.1 255.5 721.8C256.9 718.8 262.7 713.4 266.9 711.4L270.2 709.8L299.9 709.5L329.5 709.2L330.6 708.1L331.7 707.0L331.6 702.3L331.5 697.6L332.7 696.2L333.9 694.8L395.8 694.5C461.9 694.2 459.5 694.3 460.4 691.8C460.8 691.0 460.8 680.7 460.5 674.7C460.5 674.4 460.2 673.8 459.8 673.2L459.1 672.2L404.5 672.0L349.9 671.8L349.0 670.6L348.0 669.4L348.0 489.6C348.0 381.9 348.2 308.5 348.5 306.8C348.7 305.1 349.3 301.8 349.7 299.5C350.2 297.2 350.8 293.8 351.0 292.0C351.3 290.2 352.0 287.3 352.5 285.5C353.0 283.7 354.2 279.3 355.2 275.8C356.2 272.2 358.0 266.8 359.2 263.8C361.6 257.8 361.6 256.9 359.1 255.9C357.2 255.2 339.6 255.8 335.8 256.7C334.1 257.1 330.5 257.9 327.8 258.5C325.0 259.1 321.1 260.2 319.0 261.0C316.9 261.8 314.1 262.7 312.8 263.0C308.1 264.1 293.8 270.5 288.5 273.9C281.6 278.3 278.5 280.4 275.1 283.0C273.0 284.5 270.3 286.4 269.1 287.3C262.5 291.7 246.9 309.3 240.7 319.2C239.9 320.5 238.5 322.7 237.7 324.0C235.9 326.8 230.0 338.5 230.0 339.3C230.0 339.6 229.3 340.9 228.5 342.2C227.6 343.5 226.7 345.7 226.5 347.1C226.2 348.4 225.5 350.5 224.8 351.7C224.1 352.8 223.2 355.5 222.8 357.5C222.4 359.6 221.7 362.1 221.2 363.2C220.2 365.6 218.7 373.7 217.7 382.2C216.7 390.7 216.7 740.5 217.6 742.5C218.8 744.8 219.9 745.0 233.2 745.0L245.6 745.0L247.0 743.6ZM798.3 743.3L799.5 741.9L799.5 565.8C799.5 380.0 799.6 389.4 797.5 373.8C796.8 368.6 795.2 361.8 793.8 357.6C793.1 355.6 792.5 353.8 792.5 353.5C792.5 350.5 781.4 327.0 776.8 320.3C775.1 317.9 773.1 314.8 772.3 313.6C770.7 310.9 769.5 309.6 760.1 299.6C751.7 290.7 746.5 286.3 734.4 277.8C732.6 276.5 726.7 273.1 718.2 268.6C715.2 266.9 707.7 264.0 703.2 262.8C701.0 262.1 698.1 261.2 696.8 260.6C695.4 260.1 693.1 259.5 691.8 259.3C690.4 259.1 687.4 258.4 685.1 257.7C677.8 255.6 658.3 254.5 656.7 256.1C655.5 257.3 655.7 259.7 657.4 262.6C658.3 264.1 659.2 266.4 659.5 267.8C659.9 269.1 660.7 271.1 661.3 272.2C661.9 273.4 662.6 275.4 662.8 276.8C663.0 278.1 663.7 280.7 664.3 282.5C664.9 284.3 665.6 286.9 665.8 288.2C665.9 289.6 666.4 292.0 666.8 293.5C667.6 296.9 667.8 298.9 668.8 310.0C669.6 320.4 669.9 666.9 669.0 669.2C668.0 671.8 670.0 671.7 614.8 672.0L563.4 672.2L562.2 673.6L561.0 675.0L561.1 683.1C561.1 687.6 561.3 691.6 561.6 692.1C562.7 694.3 561.3 694.2 625.5 694.5L686.7 694.8L687.9 696.5C688.9 698.0 689.0 698.7 688.9 702.5C688.7 709.9 686.6 709.5 723.8 709.5L753.8 709.5L757.5 711.5C764.1 715.1 770.7 722.8 772.0 728.6C772.4 730.1 773.2 732.5 774.0 734.0C774.7 735.5 775.5 738.1 775.7 739.7C775.9 741.4 776.4 743.3 776.8 743.9L777.6 745.1L787.3 744.9L797.1 744.8L798.3 743.3ZM459.4 650.4L460.7 649.0L460.8 638.9C460.9 626.9 461.0 627.4 455.8 625.0C448.1 621.3 446.5 616.8 451.6 612.2C455.5 608.7 456.4 608.5 470.2 608.4L482.4 608.2L483.5 607.3L484.5 606.3L484.5 588.4L484.5 570.4L483.1 569.1L481.8 567.7L468.8 567.1C461.6 566.8 454.0 566.2 451.8 565.8C449.5 565.4 445.4 564.8 442.5 564.5C433.1 563.6 421.0 560.5 409.8 556.3C405.9 554.8 400.5 550.7 398.1 547.3C396.7 545.4 395.5 544.5 390.6 542.1C383.8 538.7 383.4 538.2 383.6 533.4C383.8 529.5 384.5 528.5 388.7 526.2L391.2 524.8L436.8 524.5L482.4 524.2L483.4 523.3L484.5 522.3L484.5 480.2L484.5 438.0L483.6 436.1C483.0 435.1 482.1 433.8 481.5 433.3C477.0 429.2 477.4 424.8 482.7 420.2C485.7 417.7 486.0 417.1 487.0 410.9C488.2 403.6 487.2 401.0 483.3 401.0C479.5 401.0 470.3 399.6 465.8 398.2C452.5 394.3 443.0 385.8 447.8 382.1L449.1 381.0L511.2 381.0C579.7 381.0 575.5 380.8 575.5 384.1C575.5 390.4 561.5 398.4 547.6 400.0C534.6 401.5 534.3 401.7 535.4 409.0C535.7 411.0 536.0 413.7 536.0 414.9C536.0 417.2 536.5 417.9 540.9 421.3C545.3 424.8 545.4 428.2 541.4 432.8C540.1 434.4 538.7 436.2 538.5 436.8C538.2 437.4 538.0 457.0 538.0 480.3L537.9 522.7L538.8 523.2C539.3 523.5 540.2 523.9 540.8 524.1C541.3 524.3 561.1 524.4 584.8 524.5C631.8 524.5 630.3 524.4 634.7 527.5C639.4 530.7 639.8 537.0 635.5 539.4C630.6 542.1 626.4 545.2 624.3 547.8C623.0 549.3 620.9 551.5 619.6 552.5C617.3 554.4 615.7 555.1 606.4 558.5C601.7 560.3 586.5 563.8 582.0 564.2C580.2 564.4 576.0 565.0 572.8 565.5C568.9 566.2 561.9 566.7 553.4 567.1L540.0 567.7L539.0 568.7L538.1 569.8L538.0 587.9C537.9 608.0 537.8 607.2 541.1 607.9C542.0 608.2 547.5 608.4 553.4 608.4C564.6 608.6 565.2 608.7 568.4 610.8C571.1 612.6 572.2 614.9 571.8 618.4C571.5 622.2 570.6 623.2 566.5 624.8C561.1 626.8 561.0 627.1 561.0 638.8C561.0 645.4 561.2 648.6 561.6 649.5C562.9 652.0 563.1 652.0 606.3 651.9L646.5 651.8L647.3 650.9C647.8 650.4 648.3 648.7 648.6 647.2C648.8 645.6 649.0 570.3 649.0 480.0C649.0 313.8 648.9 305.2 647.3 302.5C647.1 302.3 646.8 300.2 646.5 298.0C645.9 293.2 643.4 283.2 641.9 279.8C641.3 278.4 640.6 276.0 640.2 274.5C639.1 269.9 634.7 261.1 632.8 259.9C630.6 258.5 625.1 258.9 621.2 260.7C619.6 261.4 616.9 262.4 615.1 262.8C611.7 263.6 607.0 265.5 599.2 269.3C596.8 270.5 594.5 271.5 594.2 271.5C593.8 271.5 592.6 272.3 591.3 273.2C590.1 274.2 588.3 275.3 587.4 275.8C577.9 280.6 556.8 298.9 551.0 307.4C550.3 308.4 548.3 311.2 546.6 313.5C544.9 315.8 542.8 318.7 542.0 319.8C541.2 320.9 540.2 322.7 539.7 323.7C539.3 324.8 538.3 326.5 537.5 327.5C533.9 332.2 525.1 355.1 523.0 365.5C522.1 369.9 521.7 371.0 520.5 372.2L519.0 373.8L509.4 373.9C496.7 374.1 496.4 374.0 494.7 366.6C493.0 359.2 490.6 351.1 489.4 348.7C488.7 347.4 487.8 345.3 487.5 344.1C487.2 343.0 485.1 338.3 482.8 333.6C479.1 326.2 477.1 323.0 473.2 317.2C472.6 316.4 471.1 314.1 469.7 312.0C464.7 304.5 451.4 291.2 440.9 283.4C434.0 278.3 426.3 273.4 422.0 271.4C420.8 270.9 419.3 270.0 418.7 269.5C418.2 269.0 415.6 267.8 413.0 266.8C410.4 265.9 406.7 264.6 404.8 263.9C393.1 259.6 386.4 258.1 384.7 259.2C383.3 260.1 379.9 266.4 378.9 269.8C378.4 271.2 377.5 273.4 376.9 274.8C376.2 276.1 375.3 278.6 375.0 280.2C374.7 281.9 373.9 284.1 373.4 285.2C371.7 288.6 369.7 300.9 368.5 316.5C368.3 319.4 368.0 395.4 368.0 485.3L368.0 648.9L368.9 650.0C370.4 651.8 372.0 651.9 415.6 651.8L458.0 651.8L459.4 650.4ZM510.6 337.1C511.1 336.6 511.9 334.6 512.4 332.6C513.6 328.4 514.8 325.9 519.0 318.5C520.6 315.6 522.4 312.4 523.0 311.2C523.6 310.1 524.8 308.4 525.6 307.2C530.8 300.0 534.7 294.8 536.9 292.2C538.4 290.6 540.9 287.6 542.6 285.6C544.3 283.6 547.3 280.7 549.1 279.2C551.0 277.7 553.6 275.4 554.9 274.1C559.0 270.3 562.1 267.8 566.8 264.5C569.2 262.8 572.9 260.3 575.0 258.8C577.1 257.3 579.6 255.9 580.6 255.6C581.5 255.2 583.1 254.4 584.0 253.7C586.9 251.6 604.6 243.5 606.5 243.5C606.8 243.5 608.4 242.9 610.0 242.2C611.7 241.5 614.2 240.7 615.6 240.5C620.8 239.5 620.8 238.1 615.6 231.9C610.8 226.1 603.9 219.1 599.1 215.2C591.9 209.3 585.2 204.4 583.0 203.2C581.7 202.6 578.4 200.7 575.7 199.0C570.9 196.0 565.7 193.5 560.0 191.4C558.5 190.9 556.4 189.9 555.4 189.3C554.4 188.6 552.4 187.8 550.8 187.5C549.2 187.3 546.1 186.4 543.8 185.7C536.0 183.3 526.5 181.9 512.8 181.3C501.6 180.7 478.0 183.4 473.5 185.7C472.7 186.2 470.1 186.9 467.9 187.3C465.4 187.7 463.1 188.5 462.0 189.2C460.9 189.9 459.4 190.6 458.7 190.8C457.9 191.0 455.9 191.8 454.2 192.7C452.6 193.6 450.6 194.5 449.8 194.7C449.0 194.9 446.9 195.9 445.1 197.0C443.3 198.1 441.6 199.0 441.4 199.0C441.1 199.0 440.0 199.6 438.8 200.4C437.7 201.2 435.6 202.5 434.2 203.2C427.7 206.8 410.3 221.4 405.5 227.3C404.3 228.8 402.2 231.4 400.9 232.9C397.0 237.4 397.4 239.8 402.3 240.7C403.3 240.9 405.2 241.6 406.5 242.2C407.7 242.9 410.5 243.9 412.6 244.4C416.5 245.5 430.4 251.8 435.1 254.6C444.0 259.9 452.6 265.7 455.5 268.3C457.0 269.7 459.1 271.4 460.2 272.1C466.2 276.0 483.6 294.8 487.1 301.1C487.4 301.7 489.4 304.6 491.4 307.4C493.8 310.7 497.1 316.5 501.0 324.3C508.2 338.6 508.7 339.2 510.6 337.1Z"/></symbol>
+    <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9A7420"/><stop offset=".45" stop-color="#F4E2A6"/><stop offset="1" stop-color="#D4AF37"/></linearGradient>
+  </defs>
+</svg>
+
+<div id="bg"><canvas id="dust"></canvas></div>
+
+<div id="viewport"><div id="deck">
+<!-- 1. Portada -->
+<section class="slide" data-title="Portada">
+  <div class="cover">
+    <div>
+      <div class="kicker rv">Presentación Final Capstone · Duoc UC</div>
+      <h1 class="rv">Proyecto Sistema de Conciliación <em>Financiera</em></h1>
+      <p class="sub rv">Cruce automático entre el ERP del hotel, Transbank y los depósitos bancarios, en dólares y en pesos.</p>
+      <div class="chips">
+        <div class="chip glass rv">Cliente<b>Hotel Plaza San Francisco</b></div>
+        <div class="chip glass rv">Institución<b>Duoc UC</b></div>
+        <div class="chip glass rv">Fecha<b>Noviembre 2026</b></div>
+      </div>
+    </div>
+    <div class="halo rv">
+      <span class="ring"></span><span class="ring r2"></span>
+      <div class="fountain-glass">
+        <div class="fountain-stage">
+          <svg class="fountain-logo" viewBox="0 0 1000 1000" role="img" aria-label="Logo Hotel Plaza San Francisco"><use href="#logo"/></svg>
+          <canvas id="fountainCanvas" class="fountain-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="hint rv">Presiona <kbd>→</kbd> para comenzar</div>
+  <aside class="note">Buenos días. Somos el equipo del proyecto Sistema de Conciliación Financiera para el Hotel Plaza San Francisco, desarrollado en el Portafolio de Título de Duoc UC. Esta es nuestra presentación final del Capstone.</aside>
+</section>
+
+<!-- 2. Integrantes -->
+<section class="slide" data-title="Integrantes">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Integrantes del <em>proyecto</em></h2>
+    <div class="body">
+      <div class="team">
+        <div class="member glass tilt rv">
+          <div class="avatar">FA</div>
+          <h3>Fabián Araya</h3>
+          <div class="role">Jefe de proyecto y arquitecto de software</div>
+          <ul><li>Planificación y seguimiento</li><li>Arquitectura y motor de conciliación en dólares</li><li>Carga y lectura de archivos</li></ul>
+        </div>
+        <div class="member glass tilt rv">
+          <div class="avatar">EG</div>
+          <h3>Eva Luna González</h3>
+          <div class="role">QA, diseño y documentación</div>
+          <ul><li>Diseño de la interfaz y experiencia</li><li>Plan de pruebas y manuales</li><li>Documentación del proyecto</li></ul>
+        </div>
+        <div class="member glass tilt rv">
+          <div class="avatar">DR</div>
+          <h3>Diego Reyes</h3>
+          <div class="role">Ingeniero de datos y DBA</div>
+          <ul><li>Conciliación en pesos y Borderó</li><li>Bandeja de Pendientes y sugerencias</li><li>Modelo de datos y despliegue</li></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">Presentar a cada integrante y su rol. Fabián fue el jefe de proyecto: coordinó la planificación y lideró la arquitectura y el motor en dólares; Eva estuvo a cargo del diseño, las pruebas y la documentación; Diego desarrolló la conciliación en pesos, la bandeja de pendientes, el modelo de datos y el despliegue.</aside>
+</section>
+
+<!-- 3. Descripción del proyecto -->
+<section class="slide" data-title="Descripción">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Descripción del <em>proyecto</em></h2>
+    <div class="body">
+      <div class="ps">
+        <div class="card glass tilt rv">
+          <span class="tagl">Problema o dolor</span>
+          <h3>La conciliación se hacía a mano</h3>
+          <ul class="plist bad">
+            <li><i>!</i><span><b>Horas de trabajo:</b> cruzar planilla por planilla el ERP, Transbank, las operadoras y el banco, en dólares y en pesos.</span></li>
+            <li><i>!</i><span><b>Errores de digitación:</b> el código de autorización se escribe a mano (O por 0, Z por 7) y el cruce falla.</span></li>
+            <li><i>!</i><span><b>Sin criterio ni registro:</b> no había regla para las diferencias ni historial de lo corregido.</span></li>
+          </ul>
+        </div>
+        <div class="mid rv"><span>→</span></div>
+        <div class="card glass tilt sol rv">
+          <span class="tagl">Propuesta de solución</span>
+          <h3>Una aplicación web que concilia sola</h3>
+          <ul class="plist good">
+            <li><i>✓</i><span><b>Cruce automático</b> de lo esperado (ERP) contra lo cobrado y depositado (Transbank, operadoras y banco).</span></li>
+            <li><i>✓</i><span><b>Sugerencias asistidas</b> que detectan el error probable y proponen la corrección.</span></li>
+            <li><i>✓</i><span><b>Bandeja de excepciones</b> con historial de auditoría y reportes en Excel.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">El problema: el hotel conciliaba a mano, con muchas planillas en dos monedas; el código de autorización se digita a mano y falla, y no había criterio objetivo ni registro de lo corregido. Nuestra propuesta es una aplicación web que hace el cruce automáticamente, sugiere la corrección probable y deja trazabilidad de cada cambio.</aside>
+</section>
+
+<!-- 4. Objetivos -->
+<section class="slide" data-title="Objetivos">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Objetivo general y <em>objetivos específicos</em></h2>
+    <div class="body">
+      <div class="split">
+        <div class="target glass tilt rv">
+          <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg></div>
+          <div class="tagl" style="margin-top:28px;font-size:18px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold-400)">Objetivo general</div>
+          <p class="serif" style="margin-top:14px;color:var(--text)"><span class="gold">Automatizar la conciliación</span> de las ventas con tarjeta del Hotel Plaza San Francisco, en dólares y en pesos, reduciendo el trabajo manual y dejando trazabilidad de cada corrección.</p>
+        </div>
+        <div>
+          <div class="eyebrow rv" style="margin-bottom:10px">Objetivos específicos</div>
+          <ul class="checks">
+            <li class="rv"><span class="ico"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Cargar y normalizar</b> los archivos del ERP, Transbank, operadoras y banco.</span></li>
+            <li class="rv"><span class="ico"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Cruzar automáticamente</b> por código, monto y fecha, con tolerancia configurable.</span></li>
+            <li class="rv"><span class="ico"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Sugerir la corrección</b> de los errores de digitación.</span></li>
+            <li class="rv"><span class="ico"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Gestionar excepciones</b> con historial de auditoría y exportar a Excel.</span></li>
+            <li class="rv"><span class="ico"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Proteger el acceso</b> con usuarios, roles y bloqueo por intentos.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">El objetivo general es automatizar la conciliación con trazabilidad. Los específicos: cargar y normalizar los archivos, cruzar automáticamente con tolerancia, sugerir correcciones, gestionar excepciones con auditoría y exportar, y proteger el acceso.</aside>
+</section>
+
+<!-- 5. Alcances y limitaciones -->
+<section class="slide" data-title="Alcances">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Alcances y <em>limitaciones</em> del proyecto</h2>
+    <div class="body">
+      <div class="al">
+        <div class="card glass tilt rv">
+          <h3><span class="icon" style="width:58px;height:58px"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>Alcances</h3>
+          <ul class="plist good">
+            <li><i>✓</i><span>Conciliación en <b>dólares</b> (Transbank, cartola, Borderó y Posición por Clientes) y en <b>pesos</b> (Borderó, cartola y abonos Transbank).</span></li>
+            <li><i>✓</i><span>Los <b>8 casos de uso</b>: acceso, carga, normalización, cruce, reporte, visualización, gestión de excepciones y exportación.</span></li>
+            <li><i>✓</i><span><b>Sugerencias asistidas</b>, bandeja de Pendientes con corrección del ERP y bitácora de auditoría.</span></li>
+            <li><i>✓</i><span><b>Usuarios y roles</b>, tolerancias configurables y despliegue web en <b>PythonAnywhere</b>.</span></li>
+          </ul>
+        </div>
+        <div class="card glass tilt rv">
+          <h3><span class="icon blue" style="width:58px;height:58px"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg></span>Limitaciones</h3>
+          <ul class="plist blue">
+            <li><i>i</i><span>Trabaja con <b>archivos Excel exportados</b>: no se conecta directo al ERP, a Transbank ni al banco.</span></li>
+            <li><i>i</i><span>Si un reporte <b>cambia de formato</b>, hay que ajustar su lector.</span></li>
+            <li><i>i</i><span>Base <b>SQLite</b> en un servidor: no se probó con muchos usuarios simultáneos.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">El alcance cubre la conciliación en ambas monedas, los ocho casos de uso, las sugerencias asistidas, la bandeja de excepciones con auditoría, los usuarios y el despliegue web. Como limitaciones: el sistema trabaja con los Excel exportados de cada fuente y no con conexión directa; si un reporte cambia de formato hay que ajustar el lector; y usa SQLite en un solo servidor.</aside>
+</section>
+
+<!-- 6. Metodología -->
+<section class="slide" data-title="Metodología">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Metodología de <em>trabajo</em></h2>
+    <p class="lead rv">Metodología ágil basada en Scrum: casos de uso agrupados en épicas, cada uno como historia de usuario, distribuidas en sprints.</p>
+    <div class="body" style="margin-top:28px">
+      <div class="method">
+        <div class="card glass tilt rv"><div class="icon"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div><h3>Épicas e historias</h3><p>5 épicas y 8 historias de usuario (HU&#8209;01 a HU&#8209;08), una por caso de uso, con criterios de aceptación.</p></div>
+        <div class="card glass tilt rv"><div class="icon blue"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 8v8M8 6h4a4 4 0 0 1 4 4v0"/></svg></div><h3>GitHub</h3><p>Ramas por funcionalidad, pull requests revisados por el equipo y pruebas automatizadas.</p></div>
+        <div class="card glass tilt rv"><div class="icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg></div><h3>Seguimiento semanal</h3><p>Avance de cada caso de uso registrado semana a semana y documentación al cierre de cada fase.</p></div>
+      </div>
+      <div class="sprints">
+        <div class="sprint glass rv"><div class="n">Sprint 0</div><h3>Preparación</h3><div class="d">11 – 22 sep</div><p>Arquitectura, diseño y scripts de base de datos.</p></div>
+        <div class="sprint glass rv"><div class="n">Sprint 1</div><h3>Acceso y carga</h3><div class="d">22 sep – 8 oct</div><p>HU-01 a HU-03.</p></div>
+        <div class="sprint glass rv"><div class="n">Sprint 2</div><h3>Motor y excepciones</h3><div class="d">2 – 13 oct</div><p>HU-04 a HU-07.</p></div>
+        <div class="sprint glass rv"><div class="n">Sprint 3</div><h3>Exportación</h3><div class="d">12 – 18 oct</div><p>HU-08 y documentación de codificación.</p></div>
+        <div class="sprint glass rv"><div class="n">Sprint 4</div><h3>Pruebas</h3><div class="d">19 – 30 oct</div><p>Unitarias, integración y datos reales.</p></div>
+        <div class="sprint glass rv"><div class="n">Cierre</div><h3>Entrega</h3><div class="d">2 – 6 nov</div><p>Manual, presentación y entrega final.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">Trabajamos con una metodología ágil basada en Scrum. Los ocho casos de uso se agruparon en cinco épicas y se escribieron como historias de usuario con criterios de aceptación. Las historias se repartieron en sprints, desde la preparación técnica hasta las pruebas y el cierre. Usamos GitHub con ramas y pull requests, y registramos el avance de cada caso de uso semana a semana.</aside>
+</section>
+
+<!-- 7. Cronograma -->
+<section class="slide" data-title="Cronograma">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Cronograma del <em>proyecto</em></h2>
+    <div class="body" style="margin-top:22px">
+      <div class="rv"><table class="gw"><thead><tr class="ph"><th></th><th colspan="3">Fase 1</th><th colspan="5">Fase 2</th><th colspan="2">Fase 3</th><th></th></tr><tr><th style="text-align:left">Actividad</th><th>S1<br><span style="font-weight:400">07/09</span></th><th>S2<br><span style="font-weight:400">14/09</span></th><th>S3<br><span style="font-weight:400">21/09</span></th><th>S4<br><span style="font-weight:400">28/09</span></th><th>S5<br><span style="font-weight:400">05/10</span></th><th>S6<br><span style="font-weight:400">12/10</span></th><th>S7<br><span style="font-weight:400">19/10</span></th><th>S8<br><span style="font-weight:400">26/10</span></th><th>S9<br><span style="font-weight:400">02/11</span></th><th>S10<br><span style="font-weight:400">09/11</span></th><th>Cumplimiento</th></tr></thead><tbody><tr><td class="a">Análisis de requerimientos y casos de uso<small>RF/RNF, CU1–CU8</small></td><td class="w"><b class="f1" style="--d:1"></b></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="c">✓ 100%</td></tr><tr><td class="a">Diseño<small>Diagramas, modelo de datos y arquitectura</small></td><td class="w"><b class="f1" style="--d:3"></b></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="c">✓ 100%</td></tr><tr><td class="a">Scripts de base de datos<small>SQLite</small></td><td class="w"></td><td class="w"><b class="f1" style="--d:6"></b></td><td class="w"><b class="f1" style="--d:7"></b></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="c">✓ 100%</td></tr><tr><td class="a">Acceso, carga y normalización<small>CU1, CU2, CU3</small></td><td class="w"></td><td class="w"></td><td class="w"><b class="f2" style="--d:9"></b></td><td class="w"><b class="f2" style="--d:10"></b></td><td class="w"><b class="f2" style="--d:11"></b></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="c">✓ 100%</td></tr><tr><td class="a">Cruce, excepciones y visualización<small>CU4, CU5, CU6, CU7</small></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"><b class="f2" style="--d:12"></b></td><td class="w"><b class="f2" style="--d:13"></b></td><td class="w"><b class="f2" style="--d:14"></b></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="c">✓ 100%</td></tr><tr><td class="a">Exportación y documentación<small>CU8 · fase codificación</small></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"><b class="f2" style="--d:16"></b></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="c">✓ 100%</td></tr><tr><td class="a">Pruebas unitarias y con datos reales<small>Ciclo 1 y documentación</small></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"><b class="f2" style="--d:19"></b></td><td class="w"><b class="f2" style="--d:20"></b></td><td class="w"></td><td class="w"></td><td class="c">✓ 100%</td></tr><tr><td class="a">Manual de usuario y presentación<small>Entrega final</small></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"><b class="f3" style="--d:23"></b></td><td class="w"></td><td class="c">✓ 100%</td></tr><tr><td class="a">Plan de pruebas (ciclo 2) e implementación<small>Documentación final</small></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"><b class="f3" style="--d:26"></b></td><td class="c">✓ 100%</td></tr></tbody></table></div>
+      <p class="gnote rv">S1 = semana del 7 de septiembre de 2026. Cumplimiento al término del proyecto: todas las actividades y los ocho casos de uso completados.</p>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">Este es el cronograma real del proyecto por semana y fase, con el cumplimiento al término. La fase 1 cubrió análisis y diseño; la fase 2, la base de datos, los ocho casos de uso y las pruebas; y la fase 3, el manual, los planes de pruebas e implementación y la presentación. Todas las actividades y los ocho casos de uso se completaron.</aside>
+</section>
+
+<!-- 8. Arquitectura -->
+<section class="slide" data-title="Arquitectura">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Arquitectura del <em>software</em></h2>
+    <div class="body">
+      <div class="layers">
+        <div class="layer glass rv"><div class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div><h3>Navegador</h3><p>Analista contable · HTML, Bootstrap y JavaScript</p></div>
+        <div class="hconn rv"><i></i><i></i></div>
+        <div class="core glass rv">
+          <div class="hd"><b>Aplicación Django 6.1</b><span>Python 3.12</span></div>
+          <div class="svc">
+            <div><b>Vistas y plantillas</b>Pantallas por módulo</div>
+            <div><b>Autenticación</b>Sesiones, roles y django-axes</div>
+            <div><b>Lectores de archivos</b>Detección y normalización de Excel</div>
+            <div><b>Motor USD</b>Cruce con operadoras y cartola</div>
+            <div><b>Motor CLP</b>Cruce por modalidad y cuotas</div>
+            <div><b>Sugerencias Nivel 2</b>Coincidencias probables</div>
+            <div><b>Persistencia</b>Cierres sin duplicados</div>
+            <div><b>Correcciones ERP</b>Con historial de auditoría</div>
+            <div><b>Reportes</b>Exportación a Excel</div>
+          </div>
+        </div>
+        <div class="hconn rv"><i></i><i></i></div>
+        <div class="layer glass rv"><div class="icon blue"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div><h3>SQLite</h3><p>Cierres, ERP corregido, excepciones y auditoría</p></div>
+      </div>
+      <div class="inputs rv"><span>Borderó ERP</span><span>Transbank</span><span>Cartola bancaria</span><span>Posición por Clientes (Amex, Diners, Visa, MasterCard)</span></div>
+      <p class="deploy rv">Insumos Excel subidos por el analista · Desplegado en <b>PythonAnywhere</b> con HTTPS · Código en <b>GitHub</b></p>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">La arquitectura es una aplicación web en capas. El analista trabaja desde el navegador; la aplicación Django gestiona pantallas, sesiones y permisos, y sus servicios leen los Excel, ejecutan los motores de cruce en dólares y en pesos, generan las sugerencias, guardan los cierres, aplican las correcciones con auditoría y exportan los reportes. Todo se guarda en SQLite. Está desplegada en PythonAnywhere.</aside>
+</section>
+
+<!-- 9. Modelo de datos -->
+<section class="slide" data-title="Modelo de datos">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Modelo de <em>datos</em></h2>
+    <div class="body" style="margin-top:26px">
+      <div class="er">
+        <div class="col">
+          <h4 class="rv">Insumos del cierre</h4>
+          <div class="ent glass rv"><div class="t"><b>Borderó ERP</b><code>ErpTransaction</code></div><p>Cuenta, documento, código, monto, cajero · borrado lógico</p></div>
+          <div class="ent glass rv"><div class="t"><b>Transbank</b><code>TransbankTransaction</code></div><p>Código de autorización, monto, fecha, cuota</p></div>
+          <div class="ent glass rv"><div class="t"><b>Posición por Clientes</b><code>CardOperatorTransaction</code></div><p>Documento y saldos de cada operadora</p></div>
+          <div class="ent glass rv"><div class="t"><b>Cartola bancaria</b><code>BankStatementMovement</code></div><p>Movimientos del banco</p></div>
+        </div>
+        <div class="col">
+          <h4 class="rv">Núcleo</h4>
+          <div class="ent glass main rv"><div class="t"><b>Cierre de conciliación</b><code>ReconciliationProcess</code></div><p>Moneda, período, archivos de origen, tolerancia aplicada, usuario y fecha. Cada cierre agrupa sus insumos y resultados (1 : N).</p></div>
+          <div class="rel rv">1 cierre → N resultados</div>
+          <div class="ent glass key rv"><div class="t"><b>Resultado del cruce</b><code>CrossMatchResult</code></div><p>Une el voucher de Transbank con su fila del ERP y de la operadora; guarda la diferencia, el resultado y el estado de la excepción.</p></div>
+          <div class="ent glass rv"><div class="t"><b>Resumen y abono</b><code>ReconciliationSummary · BankDepositValidation</code></div><p>Totales por tarjeta y validación del depósito en la cartola</p></div>
+        </div>
+        <div class="col">
+          <h4 class="rv">Auditoría y usuarios</h4>
+          <div class="ent glass rv"><div class="t"><b>Bitácora de resoluciones</b><code>AuditResolutionLog</code></div><p>Estado anterior y nuevo, usuario y comentario</p></div>
+          <div class="ent glass rv"><div class="t"><b>Cambios en el ERP</b><code>ErpTransactionChange</code></div><p>Campo, valor anterior, valor nuevo y motivo</p></div>
+          <div class="ent glass rv"><div class="t"><b>Usuarios</b><code>User · UserAccountStatus · UserAuditLog</code></div><p>Rol, estado de la cuenta e historial de movimientos</p></div>
+          <div class="ent glass rv"><div class="t"><b>Catálogos</b><code>CardType · ReconciliationStatus · SystemConfiguration</code></div><p>Tarjetas, estados de resolución y tolerancias</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">El modelo de datos gira en torno al cierre de conciliación. Cada cierre guarda sus insumos: el Borderó del ERP, Transbank, la Posición por Clientes y la cartola. El resultado del cruce une cada voucher con su fila del ERP y de la operadora y guarda el estado de la excepción. Toda resolución y todo cambio en el ERP quedan en tablas de auditoría, y las filas del ERP se eliminan de forma lógica.</aside>
+</section>
+
+<!-- 10. Tecnologías -->
+<section class="slide" data-title="Tecnologías">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Tecnologías <em>utilizadas</em></h2>
+    <div class="body">
+      <div class="stack">
+        <div class="tech glass tilt rv"><div class="lbl">Lenguaje</div><h3>Python 3.12</h3><p>Base del motor de cruce y de las reglas de negocio.</p></div>
+        <div class="tech glass tilt rv"><div class="lbl">Framework web</div><h3>Django 6.1</h3><p>Autenticación, vistas, plantillas y administración.</p></div>
+        <div class="tech glass tilt rv"><div class="lbl">Datos</div><h3>pandas · openpyxl</h3><p>Lectura de planillas .xls y .xlsx y exportación a Excel.</p></div>
+        <div class="tech glass tilt rv"><div class="lbl">Seguridad</div><h3>django-axes</h3><p>Bloqueo por intentos fallidos de inicio de sesión.</p></div>
+        <div class="tech glass tilt rv"><div class="lbl">Base de datos</div><h3>SQLite</h3><p>Cierres, ERP corregido, pendientes y bitácora.</p></div>
+        <div class="tech glass tilt rv"><div class="lbl">Interfaz</div><h3>Bootstrap 5</h3><p>Diseño responsivo con modo claro y oscuro.</p></div>
+        <div class="tech glass tilt rv"><div class="lbl">Despliegue</div><h3>PythonAnywhere</h3><p>Servidor web en la nube para el hotel.</p></div>
+        <div class="tech glass tilt rv"><div class="lbl">Colaboración</div><h3>Git · GitHub</h3><p>Control de versiones, ramas y pull requests.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">Usamos Python 3.12 y Django 6.1; pandas y openpyxl para leer y exportar las planillas; django-axes para el bloqueo por intentos; SQLite como base de datos; Bootstrap 5 para la interfaz; PythonAnywhere para el despliegue y GitHub para el trabajo en equipo.</aside>
+</section>
+
+<!-- 11. Demostración -->
+<section class="slide" data-title="Demostración">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Demostración del resultado del proyecto</div>
+    <h2 class="title rv">Exposición del <em>sistema</em></h2>
+    <div class="body">
+      <div class="demo">
+        <div>
+          <ol class="route">
+            <li class="rv"><span><b>Inicio:</b> indicadores del último cierre y excepciones por cajero y por tipo de error.</span></li>
+            <li class="rv"><span><b>Carga:</b> paso previo de cobertura y detección automática de los archivos.</span></li>
+            <li class="rv"><span><b>Previsualización:</b> cruce en memoria, cuadraturas y detalle de vouchers.</span></li>
+            <li class="rv"><span><b>Sugerencias Nivel 2:</b> corrección propuesta y aplicada por el analista.</span></li>
+            <li class="rv"><span><b>Pendientes y auditoría:</b> resolver, exportar y revisar el historial.</span></li>
+          </ol>
+          <a class="live rv" href="https://hotelsanfrancisco.pythonanywhere.com/" target="_blank" rel="noopener">Abrir el sistema en vivo →</a>
+        </div>
+        <div class="mock glass rv" id="demo">
+          <div class="hd"><b>Voucher no encontrado en el ERP</b><span class="pill hi" id="demoPill">Confianza alta</span></div>
+          <table>
+            <thead><tr><th></th><th>Transbank</th><th>ERP Hotel</th><th>Por qué</th></tr></thead>
+            <tbody>
+              <tr><td class="k">Código</td><td class="code">4B2705</td><td class="code">4B2<span class="ch bad" id="demoCh">Z</span>05</td><td class="why" id="demoWhy">7 digitado como Z</td></tr>
+              <tr><td class="k">Monto</td><td>US$ 245,00</td><td>US$ 245,00</td><td class="why ok">Coincide</td></tr>
+              <tr><td class="k">Fecha</td><td>05-11-2026</td><td>05-11-2026</td><td class="why ok">Coincide</td></tr>
+            </tbody>
+          </table>
+          <div class="fix" id="demoFix"><b>Corrección en el ERP:</b> fila 37 · Documento → 4B2705</div>
+          <div class="ft"><button class="btn s" id="demoReset">Reiniciar</button><button class="btn p" id="demoApply">Aplicar corrección</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">Ahora mostramos el sistema funcionando, siguiendo este recorrido: Inicio, carga de archivos, previsualización, sugerencias asistidas y bandeja de Pendientes. La tarjeta de la derecha es un ejemplo ilustrativo de sugerencia: el ERP tiene una Z donde Transbank tiene un 7, y al aplicar la corrección el voucher queda conciliado. El botón abre la aplicación publicada.</aside>
+</section>
+
+<!-- 12. Resultados -->
+<section class="slide" data-title="Resultados">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Resultados <em>obtenidos</em></h2>
+    <div class="body res-tight" style="margin-top:8px">
+      <div class="res">
+        <div class="card glass rv">
+          <div class="top">
+            <div class="donut"><svg viewBox="0 0 200 200"><circle class="track" cx="100" cy="100" r="90"/><circle class="val" cx="100" cy="100" r="90" style="--p:.773"/></svg><div class="c"><b><span class="count" data-count="77">0</span>%</b><small>automático</small></div></div>
+            <div><h3>Conciliación en dólares</h3><div class="tot"><span class="count" data-count="110">0</span> vouchers de un cierre real</div></div>
+          </div>
+          <div class="stackbar"><div class="c-ok" data-seg="ok" style="--f:85"></div><div class="c-dif" data-seg="dif" style="--f:3"></div><div class="c-no" data-seg="no" style="--f:22"></div></div>
+          <div class="legend">
+            <div data-seg="ok"><i class="c-ok"></i>Ubicadas<b class="count" data-count="85">0</b></div>
+            <div data-seg="dif"><i class="c-dif"></i>Con diferencia<b class="count" data-count="3">0</b></div>
+            <div data-seg="no"><i class="c-no"></i>No están en el ERP<b class="count" data-count="22">0</b></div>
+          </div>
+        </div>
+        <div class="card glass rv">
+          <div class="top">
+            <div class="donut"><svg viewBox="0 0 200 200"><circle class="track" cx="100" cy="100" r="90"/><circle class="val" cx="100" cy="100" r="90" style="--p:.688"/></svg><div class="c"><b><span class="count" data-count="69">0</span>%</b><small>automático</small></div></div>
+            <div><h3>Conciliación en pesos</h3><div class="tot"><span class="count" data-count="141">0</span> vouchers de un cierre real</div></div>
+          </div>
+          <div class="stackbar"><div class="c-ok" data-seg="ok" style="--f:97"></div><div class="c-dif" data-seg="dif" style="--f:2"></div><div class="c-no" data-seg="no" style="--f:12"></div><div class="c-out" data-seg="out" style="--f:30"></div></div>
+          <div class="legend">
+            <div data-seg="ok"><i class="c-ok"></i>Ubicadas<b class="count" data-count="97">0</b></div>
+            <div data-seg="dif"><i class="c-dif"></i>Con diferencia<b class="count" data-count="2">0</b></div>
+            <div data-seg="no"><i class="c-no"></i>No están en el Borderó<b class="count" data-count="12">0</b></div>
+            <div data-seg="out"><i class="c-out"></i>Cuotas fuera de período<b class="count" data-count="30">0</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="kstrip">
+        <div class="kpi glass gold rv"><div class="v count" data-count="51">0</div><div class="l">casos de prueba funcionales en dos ciclos</div></div>
+        <div class="kpi glass ok rv"><div class="v count" data-count="49">0</div><div class="l">casos aprobados (96%)</div></div>
+        <div class="kpi glass blue rv"><div class="v count" data-count="113">0</div><div class="l">pruebas automatizadas, todas correctas</div></div>
+        <div class="kpi glass warn rv"><div class="v count" data-count="6">0</div><div class="l">defectos detectados, 4 ya corregidos</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">Probamos un cierre real en cada moneda. En dólares, el sistema ubicó solo 85 de 110 vouchers; en pesos, 97 de 141, y 30 son cuotas de meses anteriores que identifica como fuera de período. En calidad, ejecutamos 51 casos de prueba en dos ciclos, con 49 aprobados, y las 113 pruebas automatizadas pasan. De seis defectos, cuatro ya están corregidos y los otros dos se corrigen antes de la puesta en marcha.</aside>
+</section>
+
+<!-- 13. Obstáculos -->
+<section class="slide" data-title="Obstáculos">
+  <div class="chrome">
+    <div class="eyebrow proj rv">Proyecto “Sistema de Conciliación Financiera”</div>
+    <h2 class="title rv">Obstáculos durante el <em>desarrollo</em></h2>
+    <div class="body">
+      <div class="obs">
+        <div class="ob glass tilt rv"><div class="num">01</div><div><h3>La primera versión no era confiable</h3><p>Perdía transacciones sin avisar y no guardaba los resultados en una base de datos.</p><div class="fix">La rehicimos como versión 2.0: vista previa en memoria, cierres en SQLite y auditoría.</div></div></div>
+        <div class="ob glass tilt rv"><div class="num">02</div><div><h3>Los archivos del cliente cambiaban</h3><p>Primero llegaban separados por crédito, débito y prepago, y luego mezclados en un solo Excel.</p><div class="fix">Detección automática por contenido y soporte para el archivo consolidado o separado.</div></div></div>
+        <div class="ob glass tilt rv"><div class="num">03</div><div><h3>Datos reales con errores</h3><p>Códigos mal digitados y Borderós exportados incompletos o filtrados.</p><div class="fix">Sugerencias asistidas Nivel 2 y paso previo de cobertura del Borderó.</div></div></div>
+        <div class="ob glass tilt rv"><div class="num">04</div><div><h3>Coordinar al equipo</h3><p>No siempre podíamos coincidir en horario y cada uno avanzaba su módulo por separado.</p><div class="fix">Trabajo asincrónico en GitHub con ramas y pull requests, y seguimiento semanal.</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><div class="brand"><svg viewBox="0 0 1000 1000"><use href="#logo"/></svg>Conciliación Financiera · Hotel Plaza San Francisco</div><div class="num"></div></div>
+  <aside class="note">Tuvimos cuatro obstáculos principales. La primera versión perdía transacciones y no guardaba resultados, así que la rehicimos como versión 2.0. Los archivos del cliente cambiaron de formato, lo que resolvimos con detección automática por contenido. Los datos reales venían con errores, que abordamos con las sugerencias asistidas y el paso previo de cobertura. Y para coordinarnos trabajamos de forma asincrónica en GitHub con seguimiento semanal.</aside>
+</section>
+
+<!-- 14. Preguntas -->
+<section class="slide" data-title="Preguntas">
+  <canvas id="confetti"></canvas>
+  <div class="closing">
+    <div class="mark-wrap rv"><span class="ring"></span><svg class="mark" viewBox="0 0 1000 1000" aria-hidden="true"><use href="#logo"/></svg></div>
+    <h1 class="rv">¡<em class="gold">Gracias</em>!</h1>
+    <p class="rv">Preguntas de la comisión</p>
+    <div class="names rv"><span>Fabián Araya</span><span>Eva Luna González</span><span>Diego Reyes</span></div>
+  </div>
+  <aside class="note">Muchas gracias. Quedamos atentos a las preguntas de la comisión.</aside>
+</section>
+</div></div>
+
+<div id="progress"></div>
+<div id="dots"></div>
+<div id="help">← → navegar · O vista general · N notas · F pantalla completa</div>
+<div id="nav"><button id="ovBtn" aria-label="Vista general" title="Vista general (O)">▦</button><button id="prev" aria-label="Anterior">‹</button><button id="next" aria-label="Siguiente">›</button></div>
+<div id="notes"><strong>Notas del orador</strong><span id="notesText"></span></div>
+
+<script>
+(function () {
+  const deck = document.getElementById('deck');
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const notes = document.getElementById('notes');
+  const notesText = document.getElementById('notesText');
+  const progress = document.getElementById('progress');
+  const dots = document.getElementById('dots');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let i = 0, overview = false;
+
+  // numbering, reveal order, dots
+  slides.forEach(function (s, n) {
+    const num = s.querySelector('.footer .num');
+    if (num) num.textContent = String(n + 1).padStart(2, '0') + ' / ' + String(slides.length).padStart(2, '0');
+    s.querySelectorAll('.rv').forEach(function (el, k) { el.style.setProperty('--i', k); });
+    s.querySelectorAll('.cu tbody tr').forEach(function (tr, k) { tr.style.setProperty('--r', k); });
+    const b = document.createElement('button');
+    b.setAttribute('aria-label', s.dataset.title);
+    b.innerHTML = '<span>' + String(n + 1).padStart(2, '0') + ' · ' + s.dataset.title + '</span>';
+    b.onclick = function () { show(n); };
+    dots.appendChild(b);
+  });
+  const dotBtns = Array.from(dots.children);
+
+  function fit() {
+    const k = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    deck.style.transform = 'translate(-50%, -50%) scale(' + k + ')';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+
+  // count-up
+  function countUp(root) {
+    root.querySelectorAll('[data-count]').forEach(function (el) {
+      const to = parseFloat(el.dataset.count);
+      if (reduce) { el.textContent = to; return; }
+      const t0 = performance.now() + 350, dur = 1600;
+      el.textContent = '0';
+      (function tick(now) {
+        const p = Math.min(Math.max((now - t0) / dur, 0), 1);
+        el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3)));
+        if (p < 1 && root.classList.contains('active')) requestAnimationFrame(tick);
+        else if (p >= 1) el.textContent = to;
+      })(performance.now());
+    });
+  }
+
+  function show(n) {
+    if (overview) toggleOverview(false);
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) {
+      const was = s.classList.contains('active');
+      s.classList.toggle('active', k === i);
+      s.classList.toggle('past', k < i);
+      if (k === i && !was) onEnter(s);
+    });
+    dotBtns.forEach(function (b, k) { b.classList.toggle('on', k === i); });
+    const note = slides[i].querySelector('aside.note');
+    notesText.textContent = note ? note.textContent : '';
+    progress.style.width = ((i + 1) / slides.length * 100) + '%';
+    try { history.replaceState(null, '', '#' + (i + 1)); } catch (e) {}
+  }
+
+  function onEnter(s) {
+    countUp(s);
+    if (s.querySelector('#flow')) startFlow();
+    if (s.querySelector('#demo')) resetDemo();
+    if (s.querySelector('#confetti')) burst();
+  }
+
+  // overview grid
+  function toggleOverview(on) {
+    overview = on === undefined ? !overview : on;
+    deck.classList.toggle('overview', overview);
+    document.body.classList.toggle('ov', overview);
+    const cols = 5, sc = 0.176, gap = 22;
+    const w = 1920 * sc, h = 1080 * sc;
+    const rows = Math.ceil(slides.length / cols);
+    const ox = (1920 - (cols * w + (cols - 1) * gap)) / 2, oy = (1080 - (rows * h + (rows - 1) * gap)) / 2;
+    slides.forEach(function (s, k) {
+      if (overview) {
+        const x = ox + (k % cols) * (w + gap), y = oy + Math.floor(k / cols) * (h + gap);
+        s.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + sc + ')';
+      } else s.style.transform = '';
+    });
+  }
+  slides.forEach(function (s, k) { s.addEventListener('click', function (e) { if (overview) { e.stopPropagation(); show(k); } }, true); });
+
+  document.addEventListener('keydown', function (e) {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'o' || e.key === 'O' || (e.key === 'Escape' && overview)) toggleOverview();
+    else if (e.key === 'n' || e.key === 'N') notes.classList.toggle('show');
+    else if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(function () {});
+      else document.exitFullscreen();
+    }
+  });
+  document.getElementById('prev').onclick = function () { show(i - 1); };
+  document.getElementById('next').onclick = function () { show(i + 1); };
+  document.getElementById('ovBtn').onclick = function () { toggleOverview(); };
+  document.querySelectorAll('[data-go]').forEach(function (b) { b.onclick = function () { show(parseInt(b.dataset.go, 10) - 1); }; });
+
+  let tx = null;
+  document.addEventListener('touchstart', function (e) { tx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (tx === null) return;
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 50) show(i + (dx < 0 ? 1 : -1));
+    tx = null;
+  });
+
+  // spotlight + 3D tilt
+  const bg = document.getElementById('bg');
+  document.addEventListener('mousemove', function (e) {
+    bg.style.setProperty('--mx', e.clientX + 'px');
+    bg.style.setProperty('--my', e.clientY + 'px');
+  });
+  document.querySelectorAll('.glass').forEach(function (el) {
+    el.addEventListener('mousemove', function (e) {
+      const r = el.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+      el.style.setProperty('--gx', (px * 100) + '%');
+      el.style.setProperty('--gy', (py * 100) + '%');
+      if (el.classList.contains('tilt') && !reduce && !overview) {
+        el.style.transform = 'perspective(1100px) rotateX(' + ((.5 - py) * 8).toFixed(2) + 'deg) rotateY(' + ((px - .5) * 10).toFixed(2) + 'deg) translateZ(0)';
+      }
+    });
+    el.addEventListener('mouseleave', function () { el.style.transform = ''; });
+  });
+
+  // results legend highlight
+  document.querySelectorAll('.res .card').forEach(function (card) {
+    card.querySelectorAll('.legend [data-seg]').forEach(function (row) {
+      row.addEventListener('mouseenter', function () {
+        card.classList.add('dim');
+        card.querySelectorAll('.stackbar [data-seg]').forEach(function (s) { s.classList.toggle('hl', s.dataset.seg === row.dataset.seg); });
+      });
+      row.addEventListener('mouseleave', function () { card.classList.remove('dim'); });
+    });
+  });
+
+  // interactive flow
+  const steps = Array.from(document.querySelectorAll('#flow .step'));
+  const det = document.getElementById('flowDetail');
+  let flowTimer = null, flowIdx = 0;
+  function pick(k) {
+    flowIdx = k;
+    steps.forEach(function (s, j) { s.classList.toggle('on', j === k); });
+    det.querySelector('.n').textContent = String(k + 1).padStart(2, '0');
+    const sw = det.querySelector('.swap');
+    sw.querySelector('h4').textContent = steps[k].dataset.h;
+    sw.querySelector('p').textContent = steps[k].dataset.p;
+    sw.style.animation = 'none'; void sw.offsetWidth; sw.style.animation = '';
+  }
+  function startFlow() {
+    clearInterval(flowTimer);
+    pick(0);
+    if (!reduce) flowTimer = setInterval(function () {
+      if (!slides[i].querySelector('#flow')) { clearInterval(flowTimer); return; }
+      pick((flowIdx + 1) % steps.length);
+    }, 4200);
+  }
+  steps.forEach(function (s, k) { s.onclick = function () { clearInterval(flowTimer); pick(k); }; });
+
+  // suggestion demo
+  const ch = document.getElementById('demoCh'), why = document.getElementById('demoWhy');
+  const fix = document.getElementById('demoFix'), pill = document.getElementById('demoPill');
+  const apply = document.getElementById('demoApply');
+  function resetDemo() {
+    ch.textContent = 'Z'; ch.className = 'ch bad';
+    why.textContent = '7 digitado como Z'; why.classList.remove('ok');
+    fix.className = 'fix'; fix.innerHTML = '<b>Corrección en el ERP:</b> fila 37 · Documento → 4B2705';
+    pill.className = 'pill hi'; pill.textContent = 'Confianza alta';
+    apply.disabled = false; apply.textContent = 'Aplicar corrección';
+  }
+  apply.onclick = function () {
+    if (apply.disabled) return;
+    ch.textContent = '7'; ch.className = 'ch fixed';
+    why.textContent = 'Corregido'; why.classList.add('ok');
+    fix.className = 'fix done'; fix.innerHTML = '<b>Corrección aplicada</b> · registrada en la bitácora · el voucher pasa a Ubicadas';
+    pill.className = 'pill done'; pill.textContent = 'Conciliado';
+    apply.disabled = true; apply.textContent = 'Aplicada ✓';
+    sparkle(apply);
+  };
+  document.getElementById('demoReset').onclick = resetDemo;
+
+  // gold sparkles from an element (demo)
+  function sparkle(el) {
+    if (reduce) return;
+    const r = el.getBoundingClientRect();
+    for (let k = 0; k < 26; k++) {
+      const p = document.createElement('i');
+      const a = Math.random() * Math.PI * 2, d = 60 + Math.random() * 120;
+      p.style.cssText = 'position:fixed;z-index:50;pointer-events:none;width:8px;height:8px;border-radius:2px;transform:rotate(45deg);' +
+        'left:' + (r.left + r.width / 2) + 'px;top:' + (r.top + r.height / 2) + 'px;background:' + (k % 3 ? '#E6C568' : '#9DB8FF') + ';' +
+        'transition:transform 900ms cubic-bezier(.2,.8,.2,1),opacity 900ms;box-shadow:0 0 10px #E6C568';
+      document.body.appendChild(p);
+      requestAnimationFrame(function () {
+        p.style.transform = 'translate(' + Math.cos(a) * d + 'px,' + Math.sin(a) * d + 'px) rotate(225deg)';
+        p.style.opacity = '0';
+      });
+      setTimeout(function () { p.remove(); }, 950);
+    }
+  }
+
+  // gold dust background
+  const dc = document.getElementById('dust'), dctx = dc.getContext('2d');
+  let parts = [];
+  function sizeDust() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dc.width = innerWidth * dpr; dc.height = innerHeight * dpr;
+    dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    parts = Array.from({ length: Math.round(innerWidth * innerHeight / 16000) }, function () {
+      return { x: Math.random() * innerWidth, y: Math.random() * innerHeight, r: Math.random() * 1.8 + .4,
+        v: Math.random() * .25 + .05, t: Math.random() * 6.28, gold: Math.random() < .7 };
+    });
+  }
+  window.addEventListener('resize', sizeDust);
+  sizeDust();
+  function dust() {
+    dctx.clearRect(0, 0, innerWidth, innerHeight);
+    parts.forEach(function (p) {
+      p.y -= p.v; p.t += .02; p.x += Math.sin(p.t) * .15;
+      if (p.y < -5) { p.y = innerHeight + 5; p.x = Math.random() * innerWidth; }
+      const a = .25 + .35 * (Math.sin(p.t * 1.7) + 1) / 2;
+      dctx.fillStyle = p.gold ? 'rgba(230,197,104,' + a.toFixed(3) + ')' : 'rgba(157,184,255,' + (a * .8).toFixed(3) + ')';
+      dctx.beginPath(); dctx.arc(p.x, p.y, p.r, 0, 6.283); dctx.fill();
+    });
+    requestAnimationFrame(dust);
+  }
+  if (!reduce) requestAnimationFrame(dust);
+
+  // closing confetti
+  const cc = document.getElementById('confetti'), cctx = cc.getContext('2d');
+  cc.width = 1920; cc.height = 1080;
+  let conf = [], confOn = false;
+  function burst() {
+    if (reduce) return;
+    conf = Array.from({ length: 180 }, function () {
+      return { x: 960 + (Math.random() - .5) * 200, y: 470, vx: (Math.random() - .5) * 22, vy: -Math.random() * 20 - 6,
+        w: Math.random() * 12 + 6, h: Math.random() * 6 + 4, rot: Math.random() * 6, vr: (Math.random() - .5) * .3,
+        c: ['#D4AF37', '#F4E2A6', '#E6C568', '#5C88F2', '#9DB8FF', '#FFFFFF'][Math.floor(Math.random() * 6)] };
+    });
+    if (!confOn) { confOn = true; requestAnimationFrame(confFrame); }
+  }
+  function confFrame() {
+    cctx.clearRect(0, 0, 1920, 1080);
+    conf.forEach(function (p) {
+      p.vy += .45; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      cctx.save(); cctx.translate(p.x, p.y); cctx.rotate(p.rot); cctx.fillStyle = p.c; cctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); cctx.restore();
+    });
+    conf = conf.filter(function (p) { return p.y < 1150; });
+    if (conf.length) requestAnimationFrame(confFrame); else confOn = false;
+  }
+  document.querySelector('.closing').addEventListener('click', burst);
+
+  const start = parseInt(location.hash.slice(1), 10);
+  show(isNaN(start) ? 0 : start - 1);
+})();
+</script>
+<script>
+/**
+ * Login fountain animation.
+ * Draws water over the hotel logo (logo-hotel-blanco.svg) on a canvas that shares the
+ * logo's 0..1000 viewBox: a small spray above the top cup, water spilling off both cups
+ * and splashes / ripples where it lands. Static logo when the user prefers reduced motion.
+ */
+(function () {
+  const canvas = document.getElementById('fountainCanvas');
+  if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const ctx = canvas.getContext('2d');
+
+  const VIEW = 1000;
+  const GRAVITY = 900; // logo units / s²
+
+  // Measured on the traced logo (viewBox units)
+  const TOP_CUP = { left: 449, right: 575, rim: 382, center: 512 };
+  const MID_BASIN = { left: 386, right: 638, rim: 527 };
+  const POOL = { left: 262, right: 762, surface: 704 };
+
+  // Water spills off a lip with a little outward push and lands on the surface below
+  const spills = [
+    { x: TOP_CUP.left, y: TOP_CUP.rim, dir: -1, land: MID_BASIN.rim, rate: 55 },
+    { x: TOP_CUP.right, y: TOP_CUP.rim, dir: 1, land: MID_BASIN.rim, rate: 55 },
+    { x: MID_BASIN.left, y: MID_BASIN.rim, dir: -1, land: POOL.surface, rate: 75 },
+    { x: MID_BASIN.right, y: MID_BASIN.rim, dir: 1, land: POOL.surface, rate: 75 },
+  ];
+
+  const streams = []; // falling water
+  const droplets = []; // splash droplets
+  const ripples = [];
+  let scale = 1;
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    scale = canvas.width / VIEW;
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  const rand = (min, max) => min + Math.random() * (max - min);
+
+  function emit(dt) {
+    spills.forEach(function (s) {
+      let n = s.rate * dt;
+      while (n > 0) {
+        if (n >= 1 || Math.random() < n) {
+          streams.push({
+            x: s.x + rand(-3, 3) * s.dir,
+            y: s.y + rand(-1, 2),
+            vx: s.dir * rand(28, 52),
+            vy: rand(-12, 18),
+            r: rand(5, 8),
+            land: s.land,
+          });
+        }
+        n -= 1;
+      }
+    });
+    // Spray rising above the top cup (where the jet in the logo meets the water)
+    if (Math.random() < 45 * dt) {
+      droplets.push({
+        x: TOP_CUP.center + rand(-12, 12),
+        y: TOP_CUP.rim - 4,
+        vx: rand(-60, 60),
+        vy: rand(-260, -130),
+        r: rand(3, 5),
+        land: TOP_CUP.rim,
+        life: 1,
+      });
+    }
+  }
+
+  function splash(x, y) {
+    const count = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      droplets.push({
+        x: x,
+        y: y - 1,
+        vx: rand(-90, 90),
+        vy: rand(-260, -90),
+        r: rand(2.6, 4.6),
+        land: y,
+        life: 1,
+      });
+    }
+    if (Math.random() < 0.14) {
+      ripples.push({ x: x, y: y + 3, age: 0, max: rand(34, 56) });
+    }
+  }
+
+  function update(dt) {
+    for (let i = streams.length - 1; i >= 0; i--) {
+      const p = streams[i];
+      p.vy += GRAVITY * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.y >= p.land) {
+        splash(p.x, p.land);
+        streams.splice(i, 1);
+      }
+    }
+    for (let i = droplets.length - 1; i >= 0; i--) {
+      const d = droplets[i];
+      d.vy += GRAVITY * dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.life -= dt * 0.9;
+      if ((d.vy > 0 && d.y >= d.land) || d.life <= 0) droplets.splice(i, 1);
+    }
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      ripples[i].age += dt;
+      if (ripples[i].age > 1) ripples.splice(i, 1);
+    }
+  }
+
+  function draw() {
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.clearRect(0, 0, VIEW, VIEW);
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Soft mist where the water lands
+    [[MID_BASIN.rim, TOP_CUP.left], [MID_BASIN.rim, TOP_CUP.right],
+     [POOL.surface, MID_BASIN.left], [POOL.surface, MID_BASIN.right]].forEach(function (m) {
+      const x = m[1] + (m[1] < 500 ? -38 : 38);
+      const g = ctx.createRadialGradient(x, m[0], 0, x, m[0], 60);
+      g.addColorStop(0, 'rgba(150, 205, 255, 0.22)');
+      g.addColorStop(1, 'rgba(150, 205, 255, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - 60, m[0] - 60, 120, 120);
+    });
+
+    // Falling water: short streaks along the velocity give a continuous ribbon
+    ctx.lineCap = 'round';
+    streams.forEach(function (p) {
+      const len = 0.022;
+      ctx.strokeStyle = 'rgba(175, 220, 255, 0.5)';
+      ctx.lineWidth = p.r;
+      ctx.beginPath();
+      ctx.moveTo(p.x - p.vx * len, p.y - p.vy * len);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    });
+
+    droplets.forEach(function (d) {
+      ctx.fillStyle = 'rgba(205, 235, 255, ' + (0.85 * Math.max(d.life, 0)).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    ctx.lineWidth = 3;
+    ripples.forEach(function (r) {
+      const t = r.age;
+      ctx.strokeStyle = 'rgba(180, 220, 255, ' + (0.45 * (1 - t)).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.ellipse(r.x, r.y, r.max * t + 2, (r.max * t + 2) * 0.22, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    // Clamp the step so returning to a hidden tab doesn't dump a burst of water
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    emit(dt);
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+</script>
+</body>
+</html>
