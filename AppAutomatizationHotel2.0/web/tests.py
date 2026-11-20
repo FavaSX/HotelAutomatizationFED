@@ -647,8 +647,8 @@ class DashboardViewTests(TestCase):
         self.assertEqual(cashiers["SCORREA"]["count"], 1)
         self.assertEqual(cashiers["Sin cajero (no está en Borderó)"]["count"], 2)
         errors = {g["label"]: g for g in usd["pending_by_error"]}
-        self.assertEqual(errors["Variación cambiaria"]["count"], 1)
-        self.assertEqual(errors["Variación cambiaria"]["action"], "Ajustar diferencia cambiaria de US$ 0,50")
+        self.assertEqual(errors["Diferencia de monto"]["count"], 1)
+        self.assertEqual(errors["Diferencia de monto"]["action"], "Ajustar diferencia cambiaria de US$ 0,50")
         self.assertEqual(errors["Error de tipeo"]["count"], 1)
         self.assertEqual(errors["No ubicada en Borderó"]["count"], 1)
         self.assertContains(response, "Excepciones por cajero")

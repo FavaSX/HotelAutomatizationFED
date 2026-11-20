@@ -155,7 +155,7 @@ def _classify_usd_error(item):
         elif "cruce parcial" in headline_lower or "cobro parcial" in headline_lower:
             label = "Cobro parcial / propina"
         elif "variación cambiaria" in headline_lower or "dif. cambiaria" in headline_lower:
-            label = "Variación cambiaria"
+            label = "Diferencia de monto"
         elif "no encontrado en posición por clientes" in obs_lower:
             label = "Falta en Pos. Clientes"
         else:
