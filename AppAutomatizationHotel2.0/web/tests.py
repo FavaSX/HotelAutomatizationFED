@@ -37,7 +37,7 @@ from .services.clp_report_exporter import generate_committed_clp_excel_bytes
 from .services.erp_corrections import erp_source_key
 from .services.erp_editing import CorrectionError, add_row, edit_row, soft_delete_row
 from .services.preview_corrections import PreviewCorrectionError, apply_preview_correction
-from .services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion
+from .services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion, undo_rejection
 from .services.exception_resolution import resolve_exception
 from .services.report_exporter import generate_committed_usd_excel_bytes
 from .services.tables_viewer import build_preview_source_tables_context
@@ -1671,6 +1671,41 @@ class SuggestionAcceptRejectTests(TestCase):
 
         response = self.client.post(reverse("exception_suggestion_accept", args=[case.id]), {"return_query": "moneda=clp"}, follow=True)
         self.assertContains(response, "Corregido en Borderó")
+
+    def test_undoing_a_rejection_brings_the_suggestion_back(self):
+        case = self._case("007626")
+        with self.assertRaises(CorrectionError):
+            undo_rejection(case, self.user)  # nothing rejected yet
+        reject_suggestion(case, self.user)
+        case.refresh_from_db()
+        self.assertIsNone(open_proposal(case))
+
+        undo_rejection(case, self.user)
+        case.refresh_from_db()
+        self.assertEqual(case.management_status.code, "PENDING")
+        self.assertIsNotNone(open_proposal(case))
+        log = AuditResolutionLog.objects.filter(cross_match_result=case).order_by("-created_at", "-id").first()
+        self.assertEqual((log.previous_status.code, log.new_status.code), ("REJECTED", "PENDING"))
+        self.assertIn("Se deshizo el rechazo", log.comment)
+        with self.assertRaises(CorrectionError):
+            undo_rejection(case, self.user)  # already undone
+
+        outcome = accept_suggestion(case, self.user)
+        self.assertTrue(outcome["matched"])
+
+    def test_inbox_offers_undo_only_on_rejected_cases(self):
+        self.client.force_login(self.user)
+        case = self._case("007626")
+        undo_url = reverse("exception_suggestion_undo_reject", args=[case.id])
+        self.assertNotContains(self.client.get(reverse("exceptions") + "?moneda=clp"), undo_url)
+
+        self.client.post(reverse("exception_suggestion_reject", args=[case.id]), {"return_query": "moneda=clp"})
+        self.assertContains(self.client.get(reverse("exceptions") + "?moneda=clp"), undo_url)
+
+        response = self.client.post(undo_url, {"return_query": "moneda=clp"}, follow=True)
+        self.assertContains(response, "se deshizo el rechazo")
+        self.assertNotContains(response, undo_url)
+        self.assertContains(response, reverse("exception_suggestion_accept", args=[case.id]))
 
 
 

@@ -32,6 +32,7 @@ urlpatterns = [
     path('excepciones/<int:match_id>/erp/agregar/', views.exception_erp_add_view, name='exception_erp_add'),
     path('excepciones/<int:match_id>/sugerencia/aceptar/', views.exception_suggestion_accept_view, name='exception_suggestion_accept'),
     path('excepciones/<int:match_id>/sugerencia/rechazar/', views.exception_suggestion_reject_view, name='exception_suggestion_reject'),
+    path('excepciones/<int:match_id>/sugerencia/deshacer-rechazo/', views.exception_suggestion_undo_reject_view, name='exception_suggestion_undo_reject'),
     path('excepciones/<int:match_id>/erp/<int:row_id>/eliminar/', views.exception_erp_delete_view, name='exception_erp_delete'),
     path('settings/', views.settings_view, name='settings'),
     path('reconciliation/clear-test-db/', views.clear_test_database_view, name='clear_test_db'),

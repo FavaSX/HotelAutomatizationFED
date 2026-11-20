@@ -306,3 +306,30 @@ def reject_suggestion(match: CrossMatchResult, user, comment: str = "") -> None:
         comment=f"{note}. {comment}" if comment else note + ".",
     )
     match.refresh_from_db()
+
+
+@transaction.atomic
+def undo_rejection(match: CrossMatchResult, user) -> None:
+    """Takes back a rejected suggestion: the case is Pendiente again and the suggestion can be accepted or rejected anew."""
+    locked_match = (
+        CrossMatchResult.objects.select_for_update()
+        .select_related("management_status")
+        .get(pk=match.pk)
+    )
+    if locked_match.management_status and locked_match.management_status.code not in OPEN_STATUS_CODES:
+        raise CorrectionError("Este caso ya está resuelto. Reábrelo primero.")
+    suggestion = load_suggestion(locked_match)
+    proposal = (suggestion or {}).get("proposed_change")
+    if not proposal or proposal.get("status") != REJECTED:
+        raise CorrectionError("Este caso no tiene una sugerencia rechazada que deshacer.")
+    proposal.pop("status")
+    locked_match.auditor_comment = json.dumps(suggestion, ensure_ascii=False)
+    previous_status = locked_match.management_status
+    pending = ReconciliationStatus.objects.get(code="PENDING")
+    locked_match.management_status = pending
+    locked_match.save(update_fields=["auditor_comment", "management_status"])
+    AuditResolutionLog.objects.create(
+        cross_match_result=locked_match, user=user, previous_status=previous_status, new_status=pending,
+        comment=f"Se deshizo el rechazo de la sugerencia ({proposal.get('label', '')}). Vuelve a estar disponible.",
+    )
+    match.refresh_from_db()

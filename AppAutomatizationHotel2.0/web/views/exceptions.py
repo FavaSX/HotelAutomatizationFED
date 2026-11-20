@@ -29,7 +29,14 @@ from ..services.erp_editing import (
     soft_delete_row,
 )
 from ..services.exception_resolution import ResolutionError, reopen_exception, resolve_exception
-from ..services.suggestion_actions import accept_suggestion, load_suggestion, open_proposal, reject_suggestion
+from ..services.suggestion_actions import (
+    REJECTED as SUGGESTION_REJECTED,
+    accept_suggestion,
+    load_suggestion,
+    open_proposal,
+    reject_suggestion,
+    undo_rejection,
+)
 from ..services.clp_reconciliation import MODALITY_LABELS
 from ..services.voucher_recross import RecrossError
 from ..services.report_exporter import generate_exceptions_excel_bytes
@@ -151,6 +158,8 @@ def _decorate_exception(item, today):
     item.suggestion = load_suggestion(item)
     # Opción A: one-click Aceptar / Rechazar while the case is open and nobody decided on the change yet
     item.proposal = open_proposal(item) if item.is_pending and not item.is_rejected else None
+    rejected_proposal = ((item.suggestion or {}).get("proposed_change") or {}).get("status") == SUGGESTION_REJECTED
+    item.can_undo_rejection = item.is_pending and rejected_proposal
     return item
 
 
@@ -484,6 +493,19 @@ def exception_suggestion_reject_view(request, match_id: int):
     if _is_ajax(request):
         return JsonResponse({"success": True, "matched": False, "message": text, "status": "rejected"})
     messages.info(request, f"Voucher {match.authorization_code}: {text[:1].lower()}{text[1:]}")
+    return _back_to_inbox(request)
+
+
+@login_required(login_url="login")
+@require_POST
+def exception_suggestion_undo_reject_view(request, match_id: int):
+    match = get_object_or_404(CrossMatchResult.objects.select_related("management_status"), pk=match_id)
+    try:
+        undo_rejection(match, request.user)
+    except CorrectionError as exc:
+        messages.error(request, f"Voucher {match.authorization_code}: {exc}")
+        return _back_to_inbox(request)
+    messages.success(request, f"Voucher {match.authorization_code}: se deshizo el rechazo; la sugerencia asistida vuelve a estar disponible.")
     return _back_to_inbox(request)
 
 
